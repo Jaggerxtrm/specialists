@@ -35,6 +35,9 @@ jobs:
     runs-on: ${{ fromJSON(vars.CI_RUNNER || '["self-hosted","linux","mercury-lite","specialists"]') }}
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -84,6 +87,9 @@ jobs:
     runs-on: ${{ fromJSON(vars.CI_RUNNER || '["self-hosted","linux","mercury-lite","specialists"]') }}
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
