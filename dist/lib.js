@@ -11148,6 +11148,24 @@ function findTokenUsage(payload) {
   }
   return normalizeTokenUsage(record);
 }
+function extractMessageTextContent(message) {
+  if (!message || typeof message !== "object")
+    return "";
+  const record = message;
+  const content = record.content;
+  if (typeof content === "string")
+    return content;
+  if (!Array.isArray(content))
+    return "";
+  return content.map((part) => {
+    if (!part || typeof part !== "object")
+      return "";
+    const item = part;
+    if (item.type !== undefined && item.type !== "text")
+      return "";
+    return typeof item.text === "string" ? item.text : "";
+  }).join("");
+}
 function findApiErrorMessage(payload) {
   if (!payload || typeof payload !== "object")
     return;
@@ -11640,7 +11658,8 @@ class PiAgentSession {
     if (type === "message_end") {
       const role = event.message?.role;
       if (role === "assistant") {
-        this.options.onEvent?.("message_end_assistant");
+        const content = extractMessageTextContent(event.message);
+        this.options.onEvent?.("message_end_assistant", content ? { content, charCount: content.length } : undefined);
       } else if (role === "toolResult") {
         this.options.onEvent?.("message_end_tool_result");
       }
@@ -11669,7 +11688,7 @@ class PiAgentSession {
       const messages = event.messages ?? [];
       const last = [...messages].reverse().find((m) => m.role === "assistant");
       if (last) {
-        this._lastOutput = last.content.filter((c) => c.type === "text").map((c) => c.text).join("");
+        this._lastOutput = extractMessageTextContent(last);
       }
       this._updateTokenUsage(findTokenUsage(event), "agent_end");
       this._updateFinishReason(findFinishReason(event), "agent_end");
@@ -11681,7 +11700,11 @@ class PiAgentSession {
       }
       this._agentEndReceived = true;
       this._clearStallTimer();
-      this.options.onEvent?.("agent_end");
+      if (this._lastOutput) {
+        this.options.onEvent?.("agent_end", { content: this._lastOutput, charCount: this._lastOutput.length });
+      } else {
+        this.options.onEvent?.("agent_end");
+      }
       this._doneResolve?.();
       return;
     }

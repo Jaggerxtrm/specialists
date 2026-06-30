@@ -7,6 +7,10 @@ import { isJobDead } from './supervisor.js';
 import type { TimelineEvent, TimelineEventRunComplete, TimelineEventTool, TimelineRunMetrics } from './timeline-events.js';
 import { parseTimelineEvent } from './timeline-events.js';
 
+function hasStatusId(status: SupervisorStatus): status is SupervisorStatus & { id: string } {
+  return typeof status.id === 'string' && status.id.trim().length > 0;
+}
+
 function readStatusesFromFiles(jobsDir: string): SupervisorStatus[] {
   if (!existsSync(jobsDir)) return [];
 
@@ -15,7 +19,8 @@ function readStatusesFromFiles(jobsDir: string): SupervisorStatus[] {
     const statusPath = join(jobsDir, entry, 'status.json');
     if (!existsSync(statusPath)) continue;
     try {
-      statuses.push(JSON.parse(readFileSync(statusPath, 'utf-8')) as SupervisorStatus);
+      const status = JSON.parse(readFileSync(statusPath, 'utf-8')) as SupervisorStatus;
+      if (hasStatusId(status)) statuses.push(status);
     } catch {
       // ignore malformed status files
     }
@@ -83,8 +88,11 @@ function statusFreshnessMs(status: SupervisorStatus): number {
 
 function mergeStatuses(fileStatuses: SupervisorStatus[], sqliteStatuses: SupervisorStatus[]): SupervisorStatus[] {
   const merged = new Map<string, SupervisorStatus>();
-  for (const status of fileStatuses) merged.set(status.id, status);
+  for (const status of fileStatuses) {
+    if (hasStatusId(status)) merged.set(status.id, status);
+  }
   for (const status of sqliteStatuses) {
+    if (!hasStatusId(status)) continue;
     const current = merged.get(status.id);
     if (!current || statusFreshnessMs(status) >= statusFreshnessMs(current)) {
       merged.set(status.id, status);
@@ -251,7 +259,7 @@ export function loadStatuses(): SupervisorStatus[] {
   const fileStatuses = readStatusesFromFiles(jobsDir);
 
   try {
-    const sqliteStatuses = sqliteClient?.listStatuses() ?? [];
+    const sqliteStatuses = (sqliteClient?.listStatuses() ?? []).filter(hasStatusId);
     const merged = sqliteStatuses.length === 0
       ? fileStatuses
       : mergeStatuses(fileStatuses, sqliteStatuses);
@@ -259,7 +267,7 @@ export function loadStatuses(): SupervisorStatus[] {
     return enrichStatusesWithDerivedCurrentTool(reconcileStatuses(merged, sqliteClient), jobsDir, sqliteClient)
       .sort((a, b) => b.started_at_ms - a.started_at_ms);
   } catch {
-    return enrichStatusesWithDerivedCurrentTool(fileStatuses, jobsDir, sqliteClient)
+    return enrichStatusesWithDerivedCurrentTool(fileStatuses.filter(hasStatusId), jobsDir, sqliteClient)
       .sort((a, b) => b.started_at_ms - a.started_at_ms);
   } finally {
     sqliteClient?.close();

@@ -339,6 +339,47 @@ describe('_handleEvent — RPC protocol parsing', () => {
     expect(onEvent).toHaveBeenCalledWith('text', { charCount: 5, content: 'hello' });
   });
 
+  it('message_end assistant forwards full message text content', async () => {
+    const onEvent = vi.fn();
+    const session = await PiAgentSession.create({ model: 'gemini', onEvent });
+    await session.start();
+
+    emitLine(fake, {
+      type: 'message_end',
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'First line\n' },
+          { type: 'text', text: 'Second line' },
+          { type: 'toolCall', text: 'ignored' },
+        ],
+      },
+    });
+
+    expect(onEvent).toHaveBeenCalledWith('message_end_assistant', {
+      content: 'First line\nSecond line',
+      charCount: 22,
+    });
+  });
+
+  it('agent_end forwards last assistant text content', async () => {
+    const onEvent = vi.fn();
+    const session = await PiAgentSession.create({ model: 'gemini', onEvent });
+    await session.start();
+
+    emitLine(fake, {
+      type: 'agent_end',
+      messages: [
+        { role: 'assistant', content: [{ type: 'text', text: 'final answer' }] },
+      ],
+    });
+
+    expect(onEvent).toHaveBeenCalledWith('agent_end', {
+      content: 'final answer',
+      charCount: 12,
+    });
+  });
+
   it('tool_execution_end passes undefined resultRaw when result is not an object', async () => {
     const onToolEnd = vi.fn();
     const session = await PiAgentSession.create({ model: 'gemini', onToolEnd });
