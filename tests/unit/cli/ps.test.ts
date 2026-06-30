@@ -8,6 +8,11 @@ const mockSqlite = {
   listEpicRuns: vi.fn(() => []),
   readEpicRun: vi.fn(() => null),
   listEpicChains: vi.fn(() => []),
+  readEvents: vi.fn(() => []),
+  readLatestToolEvent: vi.fn(() => null),
+  appendEvent: vi.fn(),
+  upsertStatus: vi.fn(),
+  upsertStatusWithEvent: vi.fn(),
   close: vi.fn(),
 };
 
@@ -83,6 +88,11 @@ describe('ps CLI — run()', () => {
     mockSqlite.listEpicRuns.mockReturnValue([]);
     mockSqlite.readEpicRun.mockReturnValue(null);
     mockSqlite.listEpicChains.mockReturnValue([]);
+    mockSqlite.readEvents.mockReturnValue([]);
+    mockSqlite.readLatestToolEvent.mockReturnValue(null);
+    mockSqlite.appendEvent.mockClear();
+    mockSqlite.upsertStatus.mockClear();
+    mockSqlite.upsertStatusWithEvent.mockClear();
     mockProcessHealth.mockClear();
   });
 
@@ -178,7 +188,7 @@ describe('ps CLI — run()', () => {
     expect(clean).toContain('running 1');
   }, TEST_TIMEOUT_MS);
 
-  it('filters dead jobs from default output', async () => {
+  it('surfaces dead active jobs in default output as actionable problems', async () => {
     createJob(tempDir, 'dead01', {
       status: 'running',
       pid: 99999999, // very unlikely to be alive
@@ -191,8 +201,18 @@ describe('ps CLI — run()', () => {
     const { run } = await import('../../../src/cli/ps.js');
     await run();
     const clean = stripAnsi(output.join('\n'));
-    expect(clean).not.toContain('dead01');
-    expect(clean).toMatch(/jobs 0\/0/);
+    expect(clean).toContain('dead01');
+    expect(clean).toContain('dead');
+    expect(clean).toMatch(/jobs 1\/1/);
+    expect(mockSqlite.appendEvent).toHaveBeenCalledWith(
+      'dead01',
+      'executor',
+      undefined,
+      expect.objectContaining({
+        source: 'status-load',
+        data: expect.objectContaining({ event: 'dead_job_detected', job_id: 'dead01' }),
+      }),
+    );
   }, TEST_TIMEOUT_MS);
 
   it('--all includes dead jobs with dead label', async () => {
@@ -315,6 +335,93 @@ describe('ps CLI — run()', () => {
     expect(parsed).toHaveProperty('trees');
     expect(parsed).toHaveProperty('process_health');
     expect(Array.isArray(parsed.trees)).toBe(true);
+  }, TEST_TIMEOUT_MS);
+
+  it('shows DB-backed running jobs in default and JSON ps output', async () => {
+    const startedAtMs = Date.now() - 30_000;
+    mockSqlite.listStatuses.mockReturnValue([
+      {
+        id: 'db-run1',
+        specialist: 'explorer',
+        status: 'running',
+        model: 'anthropic/claude-sonnet-4-6',
+        backend: 'anthropic',
+        started_at_ms: startedAtMs,
+        elapsed_s: 30,
+        pid: process.pid,
+      },
+    ]);
+
+    process.argv = ['node', 'specialists', 'ps'];
+    const humanOutput: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      humanOutput.push(args.map(String).join(' '));
+    });
+    const { run } = await import('../../../src/cli/ps.js');
+    await run();
+    expect(stripAnsi(humanOutput.join('\n'))).toContain('db-run1');
+
+    vi.restoreAllMocks();
+    const jsonOutput: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      jsonOutput.push(args.map(String).join(' '));
+    });
+    process.argv = ['node', 'specialists', 'ps', '--json'];
+    await run();
+    const parsed = JSON.parse(jsonOutput.join('\n'));
+    expect(parsed.flat).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'db-run1', status: 'running', is_dead: false }),
+    ]));
+  }, TEST_TIMEOUT_MS);
+
+  it('reconciles stale active DB rows when terminal run_complete exists', async () => {
+    const startedAtMs = Date.now() - 120_000;
+    const completeAtMs = Date.now() - 1_000;
+    mockSqlite.listStatuses.mockReturnValue([
+      {
+        id: 'stale-complete',
+        specialist: 'executor',
+        status: 'running',
+        model: 'anthropic/claude-sonnet-4-6',
+        backend: 'anthropic',
+        started_at_ms: startedAtMs,
+        last_event_at_ms: startedAtMs + 1_000,
+        elapsed_s: 10,
+        pid: process.pid,
+      },
+    ]);
+    mockSqlite.readEvents.mockReturnValue([
+      { t: startedAtMs, type: 'run_start', specialist: 'executor' },
+      {
+        t: completeAtMs,
+        type: 'run_complete',
+        status: 'COMPLETE',
+        elapsed_s: 119,
+        model: 'anthropic/claude-sonnet-4-6',
+        backend: 'anthropic',
+        token_usage: { total_tokens: 42, usage_source: 'provider_usage' },
+      },
+    ]);
+
+    process.argv = ['node', 'specialists', 'ps', 'stale-complete', '--json'];
+    const output: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      output.push(args.map(String).join(' '));
+    });
+    const { run } = await import('../../../src/cli/ps.js');
+    await run();
+
+    const payload = JSON.parse(output.join('\n'));
+    expect(payload.job.status).toBe('done');
+    expect(payload.job.elapsed_s).toBe(119);
+    expect(payload.job.metrics.token_usage.total_tokens).toBe(42);
+    expect(mockSqlite.upsertStatusWithEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'stale-complete', status: 'done', last_event_at_ms: completeAtMs }),
+      expect.objectContaining({
+        source: 'status-load',
+        data: expect.objectContaining({ event: 'status_reconciled', next_status: 'done' }),
+      }),
+    );
   }, TEST_TIMEOUT_MS);
 
   it('sorts waiting jobs before running jobs', async () => {

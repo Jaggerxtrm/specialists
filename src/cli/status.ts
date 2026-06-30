@@ -4,8 +4,9 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SpecialistLoader, checkStaleness } from '../specialist/loader.js';
-import { Supervisor } from '../specialist/supervisor.js';
+import { isJobDead, Supervisor } from '../specialist/supervisor.js';
 import type { SupervisorStatus, SupervisorStatusView } from '../specialist/supervisor.js';
+import { loadStatuses } from '../specialist/status-load.js';
 import { resolveJobsDir } from '../specialist/job-root.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import { detectJobFileOutputMode } from '../specialist/job-file-output.js';
@@ -299,7 +300,8 @@ export async function run(): Promise<void> {
   }
 
   if (jobId) {
-    const selectedJob = supervisor?.readStatus(jobId) ?? null;
+    const selectedStatus = loadStatuses().find((status) => status.id.startsWith(jobId)) ?? supervisor?.readStatus(jobId) ?? null;
+    const selectedJob = selectedStatus ? { ...selectedStatus, is_dead: isJobDead(selectedStatus) } : null;
     if (!selectedJob || !isStandaloneJob(selectedJob)) {
       if (jsonMode) {
         console.log(JSON.stringify({ error: `Job not found: ${jobId}` }, null, 2));

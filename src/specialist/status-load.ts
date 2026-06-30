@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import { createObservabilitySqliteClient } from './observability-sqlite.js';
 import { resolveJobsDir } from './job-root.js';
 import type { SupervisorStatus } from './supervisor.js';
-import type { TimelineEventTool } from './timeline-events.js';
+import { isJobDead } from './supervisor.js';
+import type { TimelineEvent, TimelineEventRunComplete, TimelineEventTool, TimelineRunMetrics } from './timeline-events.js';
 import { parseTimelineEvent } from './timeline-events.js';
 
 function readStatusesFromFiles(jobsDir: string): SupervisorStatus[] {
@@ -76,6 +77,174 @@ function enrichStatusesWithDerivedCurrentTool(
   }));
 }
 
+function statusFreshnessMs(status: SupervisorStatus): number {
+  return Math.max(status.last_event_at_ms ?? 0, status.started_at_ms ?? 0);
+}
+
+function mergeStatuses(fileStatuses: SupervisorStatus[], sqliteStatuses: SupervisorStatus[]): SupervisorStatus[] {
+  const merged = new Map<string, SupervisorStatus>();
+  for (const status of fileStatuses) merged.set(status.id, status);
+  for (const status of sqliteStatuses) {
+    const current = merged.get(status.id);
+    if (!current || statusFreshnessMs(status) >= statusFreshnessMs(current)) {
+      merged.set(status.id, status);
+    }
+  }
+  return [...merged.values()];
+}
+
+function isActiveStatus(status: SupervisorStatus): boolean {
+  return status.status === 'starting' || status.status === 'running' || status.status === 'waiting';
+}
+
+function statusFromRunComplete(status: TimelineEventRunComplete['status'] | undefined): SupervisorStatus['status'] | undefined {
+  if (status === 'COMPLETE') return 'done';
+  if (status === 'CANCELLED') return 'cancelled';
+  if (status === 'ERROR') return 'error';
+  return undefined;
+}
+
+function latestRunComplete(events: readonly TimelineEvent[]): TimelineEventRunComplete | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type === 'run_complete') return event as TimelineEventRunComplete;
+  }
+  return undefined;
+}
+
+function mergedMetrics(status: SupervisorStatus, complete: TimelineEventRunComplete): TimelineRunMetrics | undefined {
+  const tokenUsage = complete.token_usage ?? complete.metrics?.token_usage;
+  const metrics = {
+    ...(status.metrics ?? {}),
+    ...(complete.metrics ?? {}),
+    ...(tokenUsage ? { token_usage: tokenUsage } : {}),
+    ...(complete.finish_reason ? { finish_reason: complete.finish_reason } : {}),
+    ...(complete.tool_calls ? { tool_call_names: complete.tool_calls, tool_calls: complete.tool_calls.length } : {}),
+    ...(complete.exit_reason ? { exit_reason: complete.exit_reason } : {}),
+  };
+
+  return Object.keys(metrics).length > 0 ? metrics : undefined;
+}
+
+function hasStatusLoadEvidence(events: readonly TimelineEvent[], eventName: string): boolean {
+  return events.some((event) => {
+    if (event.type !== 'meta') return false;
+    const meta = event as TimelineEvent & { source?: string; data?: { event?: unknown; component?: unknown } };
+    return meta.source === 'status-load'
+      && meta.data?.component === 'status-load'
+      && meta.data?.event === eventName;
+  });
+}
+
+function statusLoadEvent(
+  eventName: 'status_reconciled' | 'dead_job_detected',
+  status: SupervisorStatus,
+  nextStatus: SupervisorStatus['status'],
+  reason: string,
+): TimelineEvent {
+  return {
+    t: Date.now(),
+    type: 'meta',
+    model: eventName,
+    backend: 'status-load',
+    source: 'status-load',
+    data: {
+      component: 'status-load',
+      event: eventName,
+      job_id: status.id,
+      previous_status: status.status,
+      next_status: nextStatus,
+      pid: status.pid,
+      tmux_session: status.tmux_session,
+      reason,
+    },
+  } as TimelineEvent;
+}
+
+function persistReconciledStatus(
+  sqliteClient: ReturnType<typeof createObservabilitySqliteClient>,
+  previous: SupervisorStatus,
+  next: SupervisorStatus,
+  events: readonly TimelineEvent[],
+  reason: string,
+): void {
+  if (!sqliteClient) return;
+  try {
+    const evidence = statusLoadEvent('status_reconciled', previous, next.status, reason);
+    if (hasStatusLoadEvidence(events, 'status_reconciled')) {
+      sqliteClient.upsertStatus(next);
+      return;
+    }
+    sqliteClient.upsertStatusWithEvent(next, evidence);
+  } catch {
+    // Reconciliation is best-effort; callers still receive the repaired snapshot.
+  }
+}
+
+function persistDeadJobEvidence(
+  sqliteClient: ReturnType<typeof createObservabilitySqliteClient>,
+  status: SupervisorStatus,
+  events: readonly TimelineEvent[],
+): void {
+  if (!sqliteClient || hasStatusLoadEvidence(events, 'dead_job_detected')) return;
+  try {
+    sqliteClient.appendEvent(
+      status.id,
+      status.specialist,
+      status.bead_id,
+      statusLoadEvent('dead_job_detected', status, status.status, 'active status has dead pid or tmux session'),
+    );
+  } catch {
+    // best-effort telemetry only
+  }
+}
+
+function reconcileStatusFromEvents(
+  status: SupervisorStatus,
+  sqliteClient: ReturnType<typeof createObservabilitySqliteClient>,
+): SupervisorStatus {
+  if (!isActiveStatus(status) || !sqliteClient) return status;
+
+  let events: TimelineEvent[] = [];
+  try {
+    events = sqliteClient.readEvents(status.id);
+  } catch {
+    events = [];
+  }
+
+  const complete = latestRunComplete(events);
+  const terminalStatus = statusFromRunComplete(complete?.status);
+  if (complete && terminalStatus && terminalStatus !== status.status) {
+    const reconciled: SupervisorStatus = {
+      ...status,
+      status: terminalStatus,
+      elapsed_s: complete.elapsed_s ?? status.elapsed_s,
+      last_event_at_ms: complete.t,
+      model: complete.model ?? status.model,
+      backend: complete.backend ?? status.backend,
+      bead_id: complete.bead_id ?? status.bead_id,
+      metrics: mergedMetrics(status, complete),
+      ...(complete.metrics?.output_type ? { output_type: complete.metrics.output_type } : {}),
+      ...(complete.error ? { error: complete.error } : {}),
+    };
+    persistReconciledStatus(sqliteClient, status, reconciled, events, `terminal run_complete ${complete.status}`);
+    return reconciled;
+  }
+
+  if (isJobDead(status)) {
+    persistDeadJobEvidence(sqliteClient, status, events);
+  }
+
+  return status;
+}
+
+function reconcileStatuses(
+  statuses: SupervisorStatus[],
+  sqliteClient: ReturnType<typeof createObservabilitySqliteClient>,
+): SupervisorStatus[] {
+  return statuses.map((status) => reconcileStatusFromEvents(status, sqliteClient));
+}
+
 export function loadStatuses(): SupervisorStatus[] {
   const sqliteClient = createObservabilitySqliteClient();
   const jobsDir = resolveJobsDir();
@@ -83,21 +252,11 @@ export function loadStatuses(): SupervisorStatus[] {
 
   try {
     const sqliteStatuses = sqliteClient?.listStatuses() ?? [];
-    if (sqliteStatuses.length === 0) {
-      return enrichStatusesWithDerivedCurrentTool(fileStatuses, jobsDir, sqliteClient)
-        .sort((a, b) => b.started_at_ms - a.started_at_ms);
-    }
+    const merged = sqliteStatuses.length === 0
+      ? fileStatuses
+      : mergeStatuses(fileStatuses, sqliteStatuses);
 
-    const merged = new Map<string, SupervisorStatus>();
-    for (const status of fileStatuses) merged.set(status.id, status);
-    for (const status of sqliteStatuses) {
-      const current = merged.get(status.id);
-      if (!current || status.started_at_ms >= current.started_at_ms) {
-        merged.set(status.id, status);
-      }
-    }
-
-    return enrichStatusesWithDerivedCurrentTool([...merged.values()], jobsDir, sqliteClient)
+    return enrichStatusesWithDerivedCurrentTool(reconcileStatuses(merged, sqliteClient), jobsDir, sqliteClient)
       .sort((a, b) => b.started_at_ms - a.started_at_ms);
   } catch {
     return enrichStatusesWithDerivedCurrentTool(fileStatuses, jobsDir, sqliteClient)

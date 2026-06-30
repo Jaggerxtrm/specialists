@@ -1127,7 +1127,7 @@ function render(args: PsArgs): void {
     if (args.all) return true;
     if (cleaned && !args.includeCleaned) return false;
     if (cleaned && args.includeCleaned && TERMINAL_STATES.includes(job.status)) return true;
-    if (job.is_dead) return false;
+    if (job.is_dead) return true;
     if (ACTIVE_STATES.includes(job.status)) return true;
     if (args.active) return false;
     if (args.includeTerminal && TERMINAL_STATES.includes(job.status)) return true;

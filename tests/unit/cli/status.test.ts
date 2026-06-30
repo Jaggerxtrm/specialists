@@ -225,6 +225,50 @@ describe('status CLI — run()', () => {
     expect(clean).toContain('events       1');
   }, TEST_TIMEOUT_MS);
 
+  it('reconciles stale SQLite job status from terminal run_complete for --job', async () => {
+    const startedAtMs = Date.now() - 120_000;
+    const completedAtMs = Date.now() - 1_000;
+    const seeded = await seedSqliteStatus(tempDir, 'job-stale-complete', {
+      id: 'job-stale-complete',
+      specialist: 'explorer',
+      status: 'running',
+      model: 'stale-model',
+      backend: 'stale-backend',
+      started_at_ms: startedAtMs,
+      last_event_at_ms: startedAtMs + 1000,
+      elapsed_s: 10,
+      pid: process.pid,
+    }, [
+      { t: startedAtMs, type: 'run_start', specialist: 'explorer' },
+      {
+        t: completedAtMs,
+        type: 'run_complete',
+        status: 'COMPLETE',
+        elapsed_s: 119,
+        model: 'final-model',
+        backend: 'final-backend',
+        token_usage: { total_tokens: 77, usage_source: 'provider_usage' },
+      },
+    ]);
+    if (!seeded) return;
+
+    process.argv = ['node', 'specialists', 'status', '--json', '--job', 'job-stale-complete'];
+    const output: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg?: unknown) => {
+      output.push(String(msg ?? ''));
+    });
+
+    const { run } = await import('../../../src/cli/status.js');
+    await run();
+
+    const payload = JSON.parse(output.join('\n')) as { job: { status: string; elapsed_s: number; model: string; backend: string; metrics?: { token_usage?: { total_tokens?: number } } } };
+    expect(payload.job.status).toBe('done');
+    expect(payload.job.elapsed_s).toBe(119);
+    expect(payload.job.model).toBe('final-model');
+    expect(payload.job.backend).toBe('final-backend');
+    expect(payload.job.metrics?.token_usage?.total_tokens).toBe(77);
+  }, TEST_TIMEOUT_MS);
+
   it('falls back to status.json when SQLite is unavailable', async () => {
     createJob(tempDir, 'job-file-only', 1);
     process.argv = ['node', 'specialists', 'status', '--job', 'job-file-only'];
