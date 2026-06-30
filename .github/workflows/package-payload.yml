@@ -12,7 +12,7 @@ on:
 
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["self-hosted","linux","mercury-lite","specialists"]') }}
     outputs:
       package_payload: ${{ steps.filter.outputs.package_payload }}
     steps:
@@ -32,7 +32,7 @@ jobs:
   payload-contract:
     needs: changes
     if: needs.changes.outputs.package_payload == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["self-hosted","linux","mercury-lite","specialists"]') }}
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
@@ -81,7 +81,7 @@ jobs:
   packed-smoke:
     needs: changes
     if: needs.changes.outputs.package_payload == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["self-hosted","linux","mercury-lite","specialists"]') }}
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
