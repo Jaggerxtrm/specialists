@@ -536,8 +536,7 @@ export function buildTmuxLiveFeedCommand(options: {
   const logPath = shellQuote(`${options.handoffPath}.log`);
   const script = [
     `cd ${shellQuote(options.cwd)}`,
-    `(${options.runCommand}) > ${logPath} 2>&1 &`,
-    'run_pid=$!',
+    `(${options.runCommand}) > ${logPath} 2>&1 & run_pid=$!`,
     'job_id=',
     `for _ in $(seq 1 150); do if [ -s ${handoffPath} ]; then job_id=$(tr -d '\\r\\n' < ${handoffPath}); break; fi; if ! kill -0 "$run_pid" 2>/dev/null; then break; fi; sleep 0.1; done`,
     `if [ -n "$job_id" ]; then printf '\\n[tmux live feed: %s]\\n' "$job_id"; ${options.feedCommandPrefix} "$job_id" --follow; wait "$run_pid"; run_status=$?; exit "$run_status"; fi`,
