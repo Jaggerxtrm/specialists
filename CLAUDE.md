@@ -27,6 +27,7 @@
 | **Commit** | `git commit` while claim is open | `bd close <id>` first, then commit |
 | **Stop** | Session end with unclosed claim | `bd close <id>` |
 | **Memory** | `bd close <id>` without issue ack | First run `bd remember "<insight>"` (or decide nothing novel), then `bd kv set "memory-acked:<id>" "saved:<key>"` or `"nothing novel:<reason>"`, then retry `bd close <id> --reason="..."` (Stop hook remains fallback reminder) |
+| **Dispatch** *(bridge — discipline only, not yet hook-enforced)* | Specialist run against a `contract:draft` bead | Promote first: explore + rewrite full 7-section contract + `bd set-state <id> contract=ready --reason "..."`. Check with `bd state <id> contract` before dispatch. |
 
 ## bd Command Reference
 
@@ -48,6 +49,8 @@ bd update                              # Update last-touched issue (no ID needed
 bd create --title="..." --description="..." --type=task --priority=2
 # --parent <bead-id>                    nest as <id>.1, .2, … (recursive: .1.1) — default whenever this bead
 #                                        services another bead's work, not only epics
+# --labels contract:draft               capture-for-later: real PROBLEM + rough SCOPE, rest TBD — never dispatchable
+#                                        until promoted (`bd set-state <id> contract=ready`); see using-specialists-v3
 # --deps "discovered-from:<parent-id>"  link follow-ups to source
 # priority: 0=critical  1=high  2=medium  3=low  4=backlog
 # types: task | bug | feature | epic | chore | decision
