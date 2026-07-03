@@ -46,6 +46,8 @@ bd update                              # Update last-touched issue (no ID needed
 
 # Creating
 bd create --title="..." --description="..." --type=task --priority=2
+# --parent <bead-id>                    nest as <id>.1, .2, … (recursive: .1.1) — default whenever this bead
+#                                        services another bead's work, not only epics
 # --deps "discovered-from:<parent-id>"  link follow-ups to source
 # priority: 0=critical  1=high  2=medium  3=low  4=backlog
 # types: task | bug | feature | epic | chore | decision
