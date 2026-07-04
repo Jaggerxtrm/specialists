@@ -870,7 +870,7 @@ export function runTypecheckGate(cwd = process.cwd()): void {
     existsSync(join(cwd, 'tsconfig.json')) ||
     readdirSync(cwd).some(entry => entry.startsWith('tsconfig') && entry.endsWith('.json'));
   if (!hasTypeScriptConfig) {
-    console.log('TypeScript gate: skipped (no tsconfig)');
+    console.log('TypeScript gate: skipped (no tsconfig — non-TS repo)');
     return;
   }
 
@@ -882,7 +882,23 @@ export function runTypecheckGate(cwd = process.cwd()): void {
   throw new Error(`TypeScript gate failed after merge.\n${stderr || stdout || 'Unknown tsc error'}`);
 }
 
+function hasNodeBuildScript(cwd: string): boolean {
+  const packageJsonPath = join(cwd, 'package.json');
+  if (!existsSync(packageJsonPath)) return false;
+  try {
+    const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { scripts?: Record<string, string> };
+    return typeof pkg.scripts?.build === 'string' && pkg.scripts.build.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function runRebuild(cwd = process.cwd()): void {
+  if (!hasNodeBuildScript(cwd)) {
+    console.log('Rebuild: skipped (no package.json build script — non-Node repo)');
+    return;
+  }
+
   const build = runCommand('bun', ['run', 'build'], cwd);
   if (build.status === 0) return;
 

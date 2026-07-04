@@ -11443,6 +11443,9 @@ class PiAgentSession {
     const cavemanPath = join(piExtDir, "caveman");
     if (existsSync2(cavemanPath))
       args.push("-e", cavemanPath);
+    const nvidiaNimPath = join(homedir(), ".pi", "agent", "git", "github.com", "xRyul", "pi-nvidia-nim");
+    if (existsSync2(nvidiaNimPath))
+      args.push("-e", nvidiaNimPath);
     const npmGlobalDir = resolveGlobalNodeModulesDir();
     const excludedExtensions = new Set(this.options.excludeExtensions ?? []);
     if (npmGlobalDir) {

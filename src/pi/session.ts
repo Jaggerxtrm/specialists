@@ -679,6 +679,11 @@ export class PiAgentSession {
     const cavemanPath = join(piExtDir, 'caveman');
     if (existsSync(cavemanPath)) args.push('-e', cavemanPath);
 
+    // NVIDIA NIM provider extension (xRyul/pi-nvidia-nim) — injects chat_template_kwargs
+    // and system-role compat for NIM models. Requires pi >= 0.80.3 (legacy stream aliases restored).
+    const nvidiaNimPath = join(homedir(), '.pi', 'agent', 'git', 'github.com', 'xRyul', 'pi-nvidia-nim');
+    if (existsSync(nvidiaNimPath)) args.push('-e', nvidiaNimPath);
+
     // npm package extensions (gitnexus, serena) - resolve from global node_modules
     // These are installed via npm, not as directory extensions in ~/.pi/agent/extensions/
     const npmGlobalDir = resolveGlobalNodeModulesDir();

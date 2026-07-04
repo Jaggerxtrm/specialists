@@ -22395,6 +22395,9 @@ class PiAgentSession {
     const cavemanPath = join7(piExtDir, "caveman");
     if (existsSync7(cavemanPath))
       args.push("-e", cavemanPath);
+    const nvidiaNimPath = join7(homedir2(), ".pi", "agent", "git", "github.com", "xRyul", "pi-nvidia-nim");
+    if (existsSync7(nvidiaNimPath))
+      args.push("-e", nvidiaNimPath);
     const npmGlobalDir = resolveGlobalNodeModulesDir();
     const excludedExtensions = new Set(this.options.excludeExtensions ?? []);
     if (npmGlobalDir) {
@@ -50521,7 +50524,7 @@ ${conflicts.map((file) => `- ${file}`).join(`
 function runTypecheckGate(cwd = process.cwd()) {
   const hasTypeScriptConfig = existsSync27(join32(cwd, "tsconfig.json")) || readdirSync11(cwd).some((entry) => entry.startsWith("tsconfig") && entry.endsWith(".json"));
   if (!hasTypeScriptConfig) {
-    console.log("TypeScript gate: skipped (no tsconfig)");
+    console.log("TypeScript gate: skipped (no tsconfig \u2014 non-TS repo)");
     return;
   }
   const tsc = runCommand("bunx", ["tsc", "--noEmit"], cwd);
@@ -50532,7 +50535,22 @@ function runTypecheckGate(cwd = process.cwd()) {
   throw new Error(`TypeScript gate failed after merge.
 ${stderr || stdout || "Unknown tsc error"}`);
 }
+function hasNodeBuildScript(cwd) {
+  const packageJsonPath = join32(cwd, "package.json");
+  if (!existsSync27(packageJsonPath))
+    return false;
+  try {
+    const pkg = JSON.parse(readFileSync25(packageJsonPath, "utf8"));
+    return typeof pkg.scripts?.build === "string" && pkg.scripts.build.length > 0;
+  } catch {
+    return false;
+  }
+}
 function runRebuild(cwd = process.cwd()) {
+  if (!hasNodeBuildScript(cwd)) {
+    console.log("Rebuild: skipped (no package.json build script \u2014 non-Node repo)");
+    return;
+  }
   const build = runCommand("bun", ["run", "build"], cwd);
   if (build.status === 0)
     return;
