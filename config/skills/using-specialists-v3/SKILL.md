@@ -7,7 +7,7 @@ description: >
   security checks, multi-step chains, integration-phase reconciliation,
   debugger-restitch on conflicting chains, pre-dispatch conflict-cluster
   mapping, test-failure-map epics, and questions about specialist workflow.
-version: 3.5
+version: 3.7
 ---
 
 # Using Specialists v3
@@ -215,6 +215,7 @@ Do small deterministic edits directly when scope is already obvious and delegati
 12. Drive routine stages autonomously once task is clear. Escalate only for human judgment, destructive actions, repeated crashes, or reviewer `FAIL`.
 13. The orchestrator NEVER edits code directly. Conflict resolution, even mechanical, goes through a debugger or executor specialist. Manual conflict resolution always escalates to the operator. (Exception: epics that explicitly restructure the specialists themselves — bootstrapping via the specialists they restructure is circular. Such epics are operator-authorized manual-orchestrator-direct work and must say so up-front.)
 14. Before dispatching any chain whose work depends on prior chain output, verify git state per the Git State Precondition section: `git status` clean, HEAD contains prior chain commits, no orphaned worktrees. Stale-base dispatch produces guaranteed debugger-restitch loops downstream.
+15. Never dispatch a specialist against a bead tagged `contract:draft` (`bd state <id> contract` returns `draft` or nothing). Promote it first — see Draft Beads And The Promotion Gate. A draft is a sanctioned capture format, not a shortcut around bead quality.
 
 ## Escalation Matrix
 
@@ -238,6 +239,7 @@ Do small deterministic edits directly when scope is already obvious and delegati
 | `npm publish` | Never | Always |
 | Dependency bump | Auto for security-patch bumps | Major/minor bumps escalate |
 | Config file schema-changing edit | Never | Always |
+| Dispatch against `contract:draft` bead | Never (rule #15) | Always — promote first: explore + rewrite full 7-section contract + `bd set-state <id> contract=ready --reason "..."` |
 
 ## Live Registry And Help
 
@@ -300,6 +302,58 @@ Fix three bad smells fast:
 
 What differs: orchestrator writes contract before dispatch, so specialist does less guessing and more useful work.
 
+## Draft Beads And The Promotion Gate
+
+Full 7-section contracts are expensive to write for an idea you won't touch for weeks. Demanding that rigor for every captured thought is exactly what produces the other failure mode: skipping the bead entirely, or writing a one-liner. There is a third, sanctioned option — but it is a capture format, not an escape hatch.
+
+**Draft state.** Tag a bead `contract:draft` at creation:
+
+```bash
+bd create --title "..." --labels contract:draft --type task --priority 3 \
+  --description "PROBLEM: <2+ real sentences — why this matters, not a title restated>
+SCOPE: <rough guess — 'somewhere in src/auth/, needs investigation' is fine>
+SUCCESS: TBD — needs exploration
+NON_GOALS: TBD — needs exploration
+CONSTRAINTS: TBD — needs exploration
+VALIDATION: TBD — needs exploration
+OUTPUT: TBD — needs exploration"
+```
+
+**No one-liners, ever — draft or not.** A draft still requires a real PROBLEM (why this exists, in prose) and a rough SCOPE. Every other section must be present and say `TBD — needs exploration` explicitly. A bare title, or a description that just restates the title, is never a valid bead — draft state lowers the bar on *completeness*, not on *honesty about what's missing*.
+
+**The promotion gate (rule #15).** No specialist may be dispatched against a `contract:draft` bead. Before dispatch, the orchestrator must:
+
+1. Re-read the bead (`bd show <id>`).
+2. Actually explore — the same Phase 2 evidence-gathering the `planning` skill requires before writing a real contract (`gitnexus_query`/`gitnexus_context`/`gitnexus_impact`, or Serena symbol reads).
+3. Rewrite the bead in place to the full 7-section contract (`bd update <id> --description "..."`), replacing every `TBD` with real content grounded in what was just found.
+4. Flip the state: `bd set-state <id> contract=ready --reason "Explored via <what>; rewrote to full contract"`.
+
+Check before any dispatch: `bd state <id> contract` — if it returns `draft` or nothing, stop and promote. This is a hard refuse (Escalation Matrix), not a warning — a stale draft wastes a full specialist turn on a contract the executor will have to guess at, which is the exact failure this rule exists to prevent.
+
+**Current enforcement is a bridge.** This is orchestrator-discipline-enforced today, not yet a hard `sp run` pre-dispatch check — see `specialists-roadmap.md` §5.3 for the planned real enforcement (same class as the existing C1 cwd-mismatch hard-refuse). Follow the rule anyway; do not treat the absence of a hook as license to dispatch against a draft.
+
+What differs: orchestrator has a sanctioned way to capture backlog ideas cheaply without either over-scoping them immediately or letting them decay into unusable one-liners.
+
+## Bead Title Convention (canonical)
+
+Every bead dispatched to a specialist gets a title in the form:
+
+```text
+<specialist-role>: <concise task description>
+```
+
+Examples: `explorer: map auth refresh path`, `executor: implement token refresh retry`, `reviewer: verify token refresh retry`, `seconder: sanity check token retry diff`, `security-auditor: scan token retry diff`, `test-runner: refresh <epic> failure map`.
+
+Why: `bd list`, `bd ready`, `bd query`, and `sp ps` all show titles inline — a role-prefixed title makes the board scannable at a glance (which role owns which open work) without opening each bead. It also disambiguates same-named chains dispatched to different roles against the same parent (e.g. a `seconder:` and a `security-auditor:` bead both `validates`-linked to the same `executor:` bead).
+
+Rules:
+
+- Prefix with the exact specialist name from `specialists list --full` (`explorer`, `debugger`, `executor`, `reviewer`, `seconder`, `security-auditor`, `test-runner`, `test-engineer`, `obligations-scanner`, `planner`, `overthinker`, `researcher`, `sync-docs`, `changelog-keeper`, `specialists-creator`), not a role synonym.
+- Root task/epic beads that are not themselves dispatched to a single specialist (the umbrella bead a chain is built under) are exempt — keep those descriptive without a role prefix, e.g. `Epic: auth refresh hardening`, `Fix token refresh retry`.
+- Combine with the nesting default above: a role-prefixed title on a `--parent`-nested bead gives both a scannable title and a scannable ID (`bd-x.2` = `seconder: ...`).
+
+What differs: orchestrator can `bd list`/`sp ps` and immediately tell which role owns which open work, instead of opening each bead to find out.
+
 ## SCRUTINY taxonomy (Iron-style)
 
 `SCRUTINY` is a chain-property from canon §2.2, not reviewer input and not a quality tier. Every substantive bead must declare it at creation. It modulates chain structure only; quality stays invariant. New beads without it are invalid unless read-only / none-chain work.
@@ -344,12 +398,6 @@ git log integration/<date>..HEAD    # MUST be empty (in sync with integration ta
 
 Decision rule: if any of the four checks fail, finish the merge/commit/cleanup first. Do not dispatch. A specialist forked from a stale base produces conflict work that costs more turns than the time saved by dispatching early.
 
-The dispatcher enforces this by running `git fetch` against the bead's base branch and refusing with a structured `stale_base` envelope (`base_sha_pinned`, `base_sha_observed`, `commits_behind`, `next_safe_action`) when HEAD is behind. To override, pass `--accept-stale-base --reason "<text>"` — `--reason` is required and recorded on the pinned `PrDriftState` row. `--force-stale-base` remains as a deprecated alias and prints a one-line stderr warning. Pass `--base-sha <sha>` or `--base-ref <branch>` to pin the dispatch base explicitly (otherwise the bead's parent branch is resolved at dispatch time).
-
-For operator triage after the fact: `specialists doctor --pr-drift` refreshes classifications via `gh pr view` for jobs whose `pr_drift_checked_at_ms` is stale (default > 5 min) or null, and `sp ps --needs-attention` filters the dashboard to jobs whose `pr_classification` is non-clean (`needs-rebase | conflicted | blocked | stale | unknown`). After container/host restarts, `specialists doctor --reap-dead-jobs [--dry-run] [--json]` cancels orphan rows whose PIDs are gone.
-
-Pair the specialists-side audit with the xt-side primitives for full coverage (details in `/using-xtrm`): `xt worktree audit-prs [--json]` reports the same PR merge-state classification at the worktree level — useful when a chain branch exists but no specialist row tracks it; `xt worktree branch-gc [--prefix xt/] [--apply --yes]` cleans up merged/closed `feature/<bead>-*` branches after reviewer PASS; `xt worktree restart-audit [--prefix xt/] [--json]` covers worktree-side orphans (orphaned dirs, branch/worktree drift) that complement `doctor --reap-dead-jobs`'s job-side orphans on a restart-recovery sweep.
-
 Strictness by scenario:
 
 | Scenario | Strictness |
@@ -369,12 +417,14 @@ Core commands:
 - `bd dep <blocker> --blocks <blocked>`: reverse phrasing of the same hard sequencing edge. [source: bd dep --help]
 - `bd dep add <issue> <other> --type <type>`: store a typed relationship. Supported types: `blocks`, `tracks`, `related`, `parent-child`, `discovered-from`, `until`, `caused-by`, `validates`, `relates-to`, `supersedes`. [source: bd dep add --help]
 - `bd dep relate <a> <b>` / `bd dep unrelate <a> <b>`: bidirectional non-blocking `relates_to` link. Use for context, not order. [source: bd dep --help]
-- `bd create --parent <epic-id>`: epic-child edge; auto-names child `.1`, `.2`, … and adds parent ownership. Use for chain members that must live under an epic. [source: bd create --help]
+- `bd create --parent <bead-id>`: hierarchical child edge; auto-names child `<parent>.1`, `<parent>.2`, … and nests recursively — a child's own child becomes `<parent>.1.1`. `<bead-id>` can be an epic, a plain task, or an already-nested child; bd does not restrict `--parent` by issue type (`bd create --help` describes it generically as "Parent issue ID for hierarchical child"). [source: bd create --help]
 - `bd create --deps discovered-from:<id>` or `bd dep add <new> <source> --type discovered-from`: follow-up work discovered from a source bead.
 - `bd duplicate <new> --of <canonical>`: close duplicate issue and point at canonical. Use when two beads describe the same required work.
 - `bd duplicates` / `bd find-duplicates --status open --method ai --json`: find exact or semantic duplicates before dispatching parallel chains.
 - `bd supersede <old> --with <new>` or `bd dep add <new> <old> --type supersedes`: mark a replacement when a better-scoped fix bead replaces an obsolete/abandoned one.
 - `bd dep cycles`, `bd dep tree <id>`, and `bd graph <id>`: sanity-check the execution graph before merge/publication.
+
+**Default to nesting, not loose beads.** When a chain is dispatched to service an existing bead — a top-level task, an epic, or an already-nested child like `bd-x.1` — create the new bead with `bd create --parent <that-bead>` so it inherits the next sequential child ID (`bd-x.1`, or `bd-x.1.1` if the parent is itself a child). This applies uniformly, not only under epics — the common failure mode is orchestrators treating `--parent` as epic-only and defaulting every explorer/executor/reviewer/seconder/security bead spawned mid-chain to a loose top-level bead linked solely by a typed dep. `--parent` (hierarchy/ID) and a typed `bd dep add ... --type <blocks|validates|discovered-from>` edge (semantic relationship) are independent flags — combine both when the relationship needs naming beyond parentage. Only skip `--parent` when the new bead is a genuine standalone sibling concern, not work done on behalf of the bead it services.
 
 Relationship vocabulary for specialist chains:
 
@@ -383,7 +433,7 @@ Relationship vocabulary for specialist chains:
 | `blocks` | Hard must-happen-before sequencing: planner before executor, implementation before reviewer, restitch before publish. | `bd dep add <impl> <plan> --type blocks` |
 | `tracks` | A local bead mirrors upstream or cross-project work whose status matters but is not owned here. | `bd dep add <local> external:xtrm-tools:<capability> --type tracks` |
 | `related` | Loose topical association when no direction or scheduling effect is intended. Prefer `bd dep relate` for bidirectional relation. | `bd dep add <a> <b> --type related` |
-| `parent-child` | Epic owns child chains. Prefer `bd create --parent <epic>` so IDs and parentage stay canonical. | `bd create --parent <epic> --title "Impl auth retry" ...` |
+| `parent-child` | Any bead spawns tracked child work — epic owning chains, a task spawning its explorer/executor/reviewer, or an already-nested child spawning its own sub-chain. Prefer `bd create --parent <bead>` (not only `<epic>`) so IDs nest and parentage stays canonical instead of drifting into loose top-level beads. | `bd create --parent <bead-id> --title "executor: Impl auth retry" ...` |
 | `discovered-from` | Reviewer, debugger, explorer, or test-runner surfaces new follow-up work from a run. | `bd dep add <follow-up> <reviewer-bead> --type discovered-from` |
 | `until` | Time-bounded or event-bounded precondition that blocks only until a stated condition lands. | `bd dep add <chain> <precondition> --type until` |
 | `caused-by` | Failure bead points to the root-cause bead/cluster that explains it. Makes test-failure-map epics navigable. | `bd dep add <failing-test> <root-cause> --type caused-by` |
@@ -422,7 +472,7 @@ Use each form for a different reason:
 - `discovered-from` for spawned follow-up beads.
 - `caused-by` for failure-to-root-cause attribution.
 - `relates-to` / `bd dep relate` for soft linkage with no schedule effect.
-- `parent-child` / `--parent` for epic ownership and child naming.
+- `parent-child` / `--parent` for hierarchy and child naming — use for any bead spawned to do work on behalf of another bead, not only epic ownership. Nests recursively: a chain dispatched from an already-nested child (e.g. `bd-x.1`) becomes `bd-x.1.1`, not a new loose top-level bead.
 - `supersedes` / `bd supersede` for replacement work; `duplicate` for same-work issues.
 
 Cross-repo consistency: keep this vocabulary aligned with the xtrm-tools triaging skill and sibling triage bead `xtrm-drkk`; both should use the same relationship names when rewiring issue graphs.
@@ -704,7 +754,7 @@ Use when:
 ### Step-by-step
 
 1. **Run the suite once**, save the full log. Do not interpret yet.
-2. **File one mapping bead** (e.g., `test-runner: refresh <epic> failure map`) with contract:
+2. **File one mapping bead** titled per the Bead Title Convention (e.g., `test-runner: refresh <epic> failure map`) with contract:
    - `PROBLEM:` exact command + exit status + raw failure count.
    - `SUCCESS:` cluster table grouping every failure by **likely shared root cause and file scope**, plus recommended fix-chain order.
    - `SCOPE:` the log file path + bounded test files involved.
@@ -742,29 +792,29 @@ Use for one implementation branch.
 bd create --title "Fix token refresh retry" --type task --priority 2 --description "PROBLEM: login and refresh flow have a retry bug when transient token refresh fails before backoff clears stale state. SUCCESS: token refresh retries once, login survives transient failure, and terminal failure stays clear. SCOPE: src/auth/refresh.ts, src/cli/login.ts, tests/unit/auth/refresh.test.ts. NON_GOALS: no auth provider redesign, no storage migration, no UI changes. CONSTRAINTS: preserve token format, keep error text backward-compatible, avoid broad retry changes outside auth flow. VALIDATION: add regression test for fail-then-succeed path and run targeted auth tests. OUTPUT: changed files, test proof, residual risks."
 bd update <task> --claim
 
-# 2. Optional discovery when path is unknown
-bd create --title "Explore auth refresh path" --type task --priority 2 --description "PROBLEM: token refresh retry path is undocumented and likely drifts on failure handling. SUCCESS: evidence-backed plan names exact files, symbols, and risk. SCOPE: src/auth/refresh.ts, src/cli/login.ts, tests/unit/auth/*.test.ts. NON_GOALS: no implementation, no broad audit. CONSTRAINTS: READ_ONLY, cite files/symbols/flows, stay within live repo evidence. VALIDATION: findings cite code path and recommended sequence. OUTPUT: tracked discovery plan with stop condition."
+# 2. Optional discovery when path is unknown — nested under task (bd-x.1) + typed edge for relationship semantics
+bd create --parent <task> --title "explorer: map auth refresh path" --type task --priority 2 --description "PROBLEM: token refresh retry path is undocumented and likely drifts on failure handling. SUCCESS: evidence-backed plan names exact files, symbols, and risk. SCOPE: src/auth/refresh.ts, src/cli/login.ts, tests/unit/auth/*.test.ts. NON_GOALS: no implementation, no broad audit. CONSTRAINTS: READ_ONLY, cite files/symbols/flows, stay within live repo evidence. VALIDATION: findings cite code path and recommended sequence. OUTPUT: tracked discovery plan with stop condition."
 bd dep add <explore> <task> --type discovered-from
 specialists run explorer --bead <explore> --context-depth 3
 specialists result <explore-job>
 
-# 3. Implementation
-bd create --title "Implement token refresh retry" --type task --priority 2 --description "PROBLEM: login fails after transient token refresh error because retry path returns before backoff and clear error state. SUCCESS: retry waits once, preserves session on success, and surfaces final failure clearly. SCOPE: src/auth/refresh.ts, src/cli/login.ts, tests/unit/auth/refresh.test.ts. NON_GOALS: no auth redesign, no storage migration, no UI refresh. CONSTRAINTS: preserve existing token format, keep backward-compatible error text, avoid broad retry changes elsewhere. VALIDATION: add regression test for transient failure then success; run targeted auth tests. OUTPUT: changed files, test evidence, residual risks."
+# 3. Implementation — nested under task (bd-x.2)
+bd create --parent <task> --title "executor: implement token refresh retry" --type task --priority 2 --description "PROBLEM: login fails after transient token refresh error because retry path returns before backoff and clear error state. SUCCESS: retry waits once, preserves session on success, and surfaces final failure clearly. SCOPE: src/auth/refresh.ts, src/cli/login.ts, tests/unit/auth/refresh.test.ts. NON_GOALS: no auth redesign, no storage migration, no UI refresh. CONSTRAINTS: preserve existing token format, keep backward-compatible error text, avoid broad retry changes elsewhere. VALIDATION: add regression test for transient failure then success; run targeted auth tests. OUTPUT: changed files, test evidence, residual risks."
 bd dep add <impl> <explore-or-task> --type blocks
 specialists run executor --bead <impl> --context-depth 3
 specialists result <exec-job>
 
-# 4. Advisory passes when diff smells risky
-bd create --title "Sanity check token retry diff" --type task --priority 2 --description "PROBLEM: auth retry diff has control-flow and state-handling smell that could hide bug. SUCCESS: findings identify concrete simplification or confirm clean shape. SCOPE: executor diff in auth refresh and login flow. NON_GOALS: no edits, no merge gate decision. CONSTRAINTS: READ_ONLY, keep feedback cheap, cite exact lines or symbols. VALIDATION: findings name concrete improvement or say OK. OUTPUT: FINDINGS with severity or OK with caveats."
+# 4. Advisory passes when diff smells risky — nested under impl (bd-x.2.1, bd-x.2.2), since they service impl's diff specifically
+bd create --parent <impl> --title "seconder: sanity check token retry diff" --type task --priority 2 --description "PROBLEM: auth retry diff has control-flow and state-handling smell that could hide bug. SUCCESS: findings identify concrete simplification or confirm clean shape. SCOPE: executor diff in auth refresh and login flow. NON_GOALS: no edits, no merge gate decision. CONSTRAINTS: READ_ONLY, keep feedback cheap, cite exact lines or symbols. VALIDATION: findings name concrete improvement or say OK. OUTPUT: FINDINGS with severity or OK with caveats."
 bd dep add <sanity-bead> <impl> --type validates
 specialists run seconder --bead <sanity-bead> --job <exec-job> --context-depth 3
 
-bd create --title "Security scan token retry diff" --type task --priority 2 --description "PROBLEM: auth refresh code touches secrets and session handling, so security regression is possible. SUCCESS: findings isolate real risk surface or confirm no obvious issue. SCOPE: executor diff in auth, token storage, and login path. NON_GOALS: no edits, no package updates, no destructive scans, no live exploit tests. CONSTRAINTS: LOW permissions, scan-only, recommendations only. VALIDATION: findings cite auth/secrets/input surface and why it matters. OUTPUT: recommendations for executor to apply in separate bead."
+bd create --parent <impl> --title "security-auditor: scan token retry diff" --type task --priority 2 --description "PROBLEM: auth refresh code touches secrets and session handling, so security regression is possible. SUCCESS: findings isolate real risk surface or confirm no obvious issue. SCOPE: executor diff in auth, token storage, and login path. NON_GOALS: no edits, no package updates, no destructive scans, no live exploit tests. CONSTRAINTS: LOW permissions, scan-only, recommendations only. VALIDATION: findings cite auth/secrets/input surface and why it matters. OUTPUT: recommendations for executor to apply in separate bead."
 bd dep add <security-bead> <impl> --type validates
 specialists run security-auditor --bead <security-bead> --job <exec-job> --context-depth 3
 
-# 5. Final review
-bd create --title "Review token refresh retry" --type task --priority 2 --description "PROBLEM: verify executor output against auth retry requirements. SUCCESS: PASS only if retry behavior, error handling, and tests satisfy contract. SCOPE: executor job, diff, acceptance criteria, and target auth files. NON_GOALS: do not rewrite unless explicitly asked. CONSTRAINTS: code-review mindset; findings first; verify security and sanity findings were handled. VALIDATION: inspect targeted checks and regression coverage. OUTPUT: PASS/PARTIAL/FAIL with file/line findings."
+# 5. Final review — nested under impl (bd-x.2.3)
+bd create --parent <impl> --title "reviewer: verify token refresh retry" --type task --priority 2 --description "PROBLEM: verify executor output against auth retry requirements. SUCCESS: PASS only if retry behavior, error handling, and tests satisfy contract. SCOPE: executor job, diff, acceptance criteria, and target auth files. NON_GOALS: do not rewrite unless explicitly asked. CONSTRAINTS: code-review mindset; findings first; verify security and sanity findings were handled. VALIDATION: inspect targeted checks and regression coverage. OUTPUT: PASS/PARTIAL/FAIL with file/line findings."
 bd dep add <review> <impl> --type validates
 specialists run reviewer --bead <review> --job <exec-job> --context-depth 3
 specialists result <review-job>
@@ -795,18 +845,20 @@ Use epic when multiple implementation chains publish together.
 # Epic bead
 bd create --title "Epic: auth refresh hardening" --type epic --priority 2 --description "PROBLEM: login and refresh flow have retry drift, weak error surfacing, and unclear follow-up ownership. SUCCESS: epic closes with stable retry behavior, tests, docs, and clean publish. SCOPE: src/auth/*, src/cli/login.ts, tests/unit/auth/*, docs/auth-refresh.md. NON_GOALS: no auth provider swap, no storage migration, no unrelated session revamp. CONSTRAINTS: preserve token format, keep login compatible, sequence risky fixes before merge, use child beads for parallelizable slices. VALIDATION: targeted tests, seconder or security pass if risk appears, final reviewer PASS. OUTPUT: merged chain set with notes on remaining gaps."
 
-# Planner bead
-bd create --parent <epic> --title "Plan auth refresh split" --type task --priority 2 --description "PROBLEM: epic needs disjoint chains before executor starts. SUCCESS: child beads, dependency edges, and file ownership split are explicit. SCOPE: auth refresh epic area. NON_GOALS: no code changes. CONSTRAINTS: keep chains disjoint, identify security-sensitive slice, name review order. VALIDATION: plan names beads and edges. OUTPUT: parallel-ready plan with risk notes."
+# Planner bead — bd-epic.1
+bd create --parent <epic> --title "planner: plan auth refresh split" --type task --priority 2 --description "PROBLEM: epic needs disjoint chains before executor starts. SUCCESS: child beads, dependency edges, and file ownership split are explicit. SCOPE: auth refresh epic area. NON_GOALS: no code changes. CONSTRAINTS: keep chains disjoint, identify security-sensitive slice, name review order. VALIDATION: plan names beads and edges. OUTPUT: parallel-ready plan with risk notes."
 specialists run planner --bead <plan> --context-depth 3
 
-# Parallel impl beads
-bd create --parent <epic> --title "Impl auth retry" --type task --priority 2 --description "PROBLEM: transient refresh failure breaks login flow. SUCCESS: retry path succeeds after one transient failure and preserves session state. SCOPE: src/auth/refresh.ts, tests/unit/auth/refresh.test.ts. NON_GOALS: no UI changes, no storage migration, no unrelated retry framework edits. CONSTRAINTS: preserve error text, keep backoff bounded, avoid side effects outside auth flow. VALIDATION: regression test for fail-then-succeed path. OUTPUT: code diff, test proof, residual risk list."
-bd create --parent <epic> --title "Impl login handoff" --type task --priority 2 --description "PROBLEM: login CLI does not surface refresh outcome clearly enough for operators. SUCCESS: login shows clear success/failure handoff and no stale token state. SCOPE: src/cli/login.ts, tests/unit/cli/login.test.ts. NON_GOALS: no auth protocol redesign. CONSTRAINTS: preserve CLI flags and error codes, keep output terse. VALIDATION: CLI regression test. OUTPUT: login diff and test evidence."
+# Parallel impl beads — bd-epic.2, bd-epic.3
+bd create --parent <epic> --title "executor: impl auth retry" --type task --priority 2 --description "PROBLEM: transient refresh failure breaks login flow. SUCCESS: retry path succeeds after one transient failure and preserves session state. SCOPE: src/auth/refresh.ts, tests/unit/auth/refresh.test.ts. NON_GOALS: no UI changes, no storage migration, no unrelated retry framework edits. CONSTRAINTS: preserve error text, keep backoff bounded, avoid side effects outside auth flow. VALIDATION: regression test for fail-then-succeed path. OUTPUT: code diff, test proof, residual risk list."
+bd create --parent <epic> --title "executor: impl login handoff" --type task --priority 2 --description "PROBLEM: login CLI does not surface refresh outcome clearly enough for operators. SUCCESS: login shows clear success/failure handoff and no stale token state. SCOPE: src/cli/login.ts, tests/unit/cli/login.test.ts. NON_GOALS: no auth protocol redesign. CONSTRAINTS: preserve CLI flags and error codes, keep output terse. VALIDATION: CLI regression test. OUTPUT: login diff and test evidence."
 
 specialists run executor --bead <impl-a> --context-depth 3
 specialists run executor --bead <impl-b> --context-depth 3
 
-# Per-chain review
+# Per-chain review — nested under each impl (bd-epic.2.1, bd-epic.3.1)
+bd create --parent <impl-a> --title "reviewer: verify auth retry" --type task --priority 2 --description "..."
+bd create --parent <impl-b> --title "reviewer: verify login handoff" --type task --priority 2 --description "..."
 bd dep add <review-a> <impl-a> --type validates
 bd dep add <review-b> <impl-b> --type validates
 specialists run reviewer --bead <review-a> --job <exec-a-job> --context-depth 3
@@ -1154,9 +1206,9 @@ When chain X conflicts with already-landed chain Y on shared files, raw `git che
    - "Reference original `feature/<X>-executor` for symbol shapes only — do NOT cherry-pick or merge. Re-implement on integration's current state."
    - `## VALIDATION:` includes both Y's tests passing AND X's new tests passing.
    - `## OUTPUT:` mandates a 5-line code excerpt showing both Y and X features coexisting.
-3. **Dispatch debugger** with `--accept-stale-base --reason "<text>"` if X is an epic child (the dispatcher's fetch-and-pin gate will otherwise refuse with a structured `stale_base` envelope; `--force-stale-base` is the deprecated alias and prints a stderr deprecation warning):
+3. **Dispatch debugger** with `--force-stale-base` if X is an epic child:
    ```bash
-   sp run debugger --bead <X> --accept-stale-base --reason "restitch <X> onto post-<Y> integration" --keep-alive --background
+   sp run debugger --bead <X> --force-stale-base --keep-alive --background
    ```
 4. **Sanity check the result**: when debugger reports back:
    ```bash
@@ -1248,9 +1300,7 @@ Then choose one action:
 | `sp ps` shows old terminal jobs after a session | Default dashboard keeps unresolved terminal problems visible until acknowledged | `sp clean --ps --dry-run`, then `sp clean --ps` to soft-hide from default ps; use `sp ps --include-cleaned`/`--all` for audit history |
 | Reviewer keeps returning PARTIAL on functional contracts already met | Reviewer demanding tool-event evidence — typically obsoleted after the gate relaxation, but if it persists check the executor's `gitnexus_detect_changes` ran and use the rebuttal pattern (see Specialist Rebuttal As Routine) | Rebut with cited evidence; second FAIL = escalate |
 | Multiple `sp run` background launches drop silently under shell parallelism | Known launch-ceremony race | Re-check `sp ps` after each dispatch and retry the missing one; serialize when reliability matters |
-| `sp run` returns `Warning: job started but ID not yet available` and nothing appears in `sp ps --bead <id>` after 30s | Dispatch was refused by epic guard or base-staleness check; stderr now surfaces the refusal reason (see `sp run --background` post-fix) | Read the surfaced reason. If it is a `stale_base` envelope (`error_code: "stale_base"` with `base_sha_observed`/`base_sha_pinned`/`commits_behind`), either rebase the bead's branch onto the named base or retry with `--accept-stale-base --reason "<text>"` if intentional. `--force-stale-base` still works but is deprecated. For `base_fetch_failed` envelopes, fix network/`gh auth` first |
-| `sp ps` shows a job stuck at `running` long after its PR landed/closed, or no longer reflects upstream rebase | `pr_drift_checked_at_ms` is stale or null | Run `specialists doctor --pr-drift` to refresh classifications via `gh pr view`. Then filter the dashboard with `sp ps --needs-attention` (drops jobs whose `pr_classification` is `clean`) or read `attention_reasons[]` from `sp ps --json` |
-| Container/host restart left jobs in `running`/`starting`/`waiting` whose PIDs no longer exist | Orphan rows from a previous process tree; conservative dead-job audit will not auto-fire | Run `specialists doctor --reap-dead-jobs --dry-run [--json]` to preview, then drop `--dry-run` to cancel and emit `xtrm.forensic.v1 lifecycle.dead_declared`. Cancellation reason: `container-restart-orphan` |
+| `sp run` returns `Warning: job started but ID not yet available` and nothing appears in `sp ps --bead <id>` after 30s | Dispatch was refused by epic guard or base-staleness check; stderr now surfaces the refusal reason (see `sp run --background` post-fix) | Read the surfaced reason; retry with `--force-stale-base` if intentional, or fix the bead/lineage |
 | `sp feed <job-id>` returns short tail with no tool events | Confirms DB-backed replay is active; if you see ≤10 lines on a real run, the DB is missing events for that job — verify with raw SQL on observability.db | If DB truly lacks events: re-run job; if DB has events but feed truncates: file bug bead — should not happen on current build |
 | bd "database not found" or per-project Dolt server respawn | bd has spawned a per-project Dolt instead of routing to the shared server | `ps aux \| grep "<repo>/.beads/dolt" \| awk '{print $2}' \| xargs -r kill -9`; ensure `.beads/config.yaml` contains `dolt.shared-server: true`; `bd ready` should now route to `~/.beads/shared-server/` |
 | Dolt journal corruption (`possible data loss detected at offset N`) | bd-internal | Operator-only — do NOT auto-recover. Stop bd writes, snapshot `~/.beads/shared-server/dolt`, run `dolt fsck` (read-only) first. Operator decides on `--revive-journal-with-data-loss` after reviewing the warning |
@@ -1258,6 +1308,8 @@ Then choose one action:
 ## What Orchestrator Does Differently Because Of This Skill
 
 - Writes bead contract before dispatch.
+- Nests specialist-dispatch beads under the bead they service via `--parent`, regardless of whether that bead is an epic, a task, or already a nested child — never defaults to loose top-level beads.
+- Titles every specialist-dispatch bead `<specialist-role>: <task>` so `bd list`/`sp ps` are scannable by role at a glance.
 - Chooses edge type before creating chain.
 - Uses specialist role by job shape, not by habit.
 - Keeps fix loops alive with resume, not re-spawn.
