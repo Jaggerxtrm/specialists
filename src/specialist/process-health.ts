@@ -38,7 +38,16 @@ export interface StaleSpecialistJobCandidate {
   specialist: string;
   cwd: string | null;
   ageMs: number;
-  reason: 'dead-pid' | 'orphaned-keep-alive' | 'dead-toolchain';
+  /**
+   * - dead-pid: registry active, PID gone (existing container-restart-orphan class).
+   * - orphaned-keep-alive: registry waiting, ppid==1, edit-capable keep-alive reparented after wrapper died.
+   * - dead-toolchain: registry active, PID alive but no tool/think activity in the window.
+   * - terminal-alive: registry done/error/cancelled but PID (and its detached pi child) still running.
+   *   Class introduced for unitAI-yme9q — pi keep-alive sessions dispatched via bare `sp run ... &`
+   *   (no console/daemon driving the FIFO, waiting_auto_close_ms unset) never receive a close signal;
+   *   the job's SQLite row is marked terminal for chain bookkeeping while the OS process leaks indefinitely.
+   */
+  reason: 'dead-pid' | 'orphaned-keep-alive' | 'dead-toolchain' | 'terminal-alive';
 }
 
 export type ProcessHealthStatus = 'OK' | 'WARN' | 'REFUSE';
@@ -386,14 +395,22 @@ export function collectStaleSpecialistJobs(options: {
   procRoot?: string;
   nowMs?: number;
   minKeepAliveAgeMs?: number;
+  /**
+   * Minimum ms since the last update on a terminal-status job before its still-alive PID
+   * is treated as a leak. pi's session close-path has an 8s group-SIGKILL backstop, so any
+   * process still alive well past that has failed to receive a close signal. Default 60s.
+   */
+  minTerminalAliveAgeMs?: number;
   observabilityClient?: StaleSpecialistJobSource;
 } = {}): StaleSpecialistJobCandidate[] {
   const procRoot = options.procRoot ?? '/proc';
   const nowMs = options.nowMs ?? Date.now();
   const minKeepAliveAgeMs = options.minKeepAliveAgeMs ?? 30 * 60 * 1000;
+  const minTerminalAliveAgeMs = options.minTerminalAliveAgeMs ?? 60 * 1000;
   const observabilityClient = options.observabilityClient ?? createObservabilitySqliteClient();
   const statuses = observabilityClient?.listStatuses() ?? [];
   const staleStatuses = statuses.filter((status) => ['starting', 'running', 'waiting'].includes(status.status));
+  const terminalStatuses = statuses.filter((status) => ['done', 'error', 'cancelled'].includes(status.status));
   const uptimeSeconds = readProcUptimeSecondsOrNull(procRoot) ?? (nowMs / 1000);
   const candidates: StaleSpecialistJobCandidate[] = [];
 
@@ -432,6 +449,42 @@ export function collectStaleSpecialistJobs(options: {
     const lastActivityMs = observabilityClient?.getLastActivityTimestampMs?.(status.id) ?? null;
     if (lastActivityMs !== null && (nowMs - lastActivityMs) < minKeepAliveAgeMs) continue;
     candidates.push({ jobId: status.id, pid, beadId: status.bead_id ?? null, specialist: status.specialist, cwd: snapshot.cwd, ageMs, reason: 'dead-toolchain' });
+  }
+
+  // Terminal-alive: registry says done/error/cancelled but the OS process (and its detached pi child)
+  // is still running past the pi close-path backstop window. Introduced for unitAI-yme9q.
+  for (const status of terminalStatuses) {
+    const pid = (status as SupervisorStatus & { pid?: number }).pid;
+    if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) continue;
+
+    const updatedAtMs = (status as SupervisorStatus & { updated_at_ms?: number }).updated_at_ms ?? nowMs;
+    const ageMs = Math.max(0, nowMs - updatedAtMs);
+    if (ageMs < minTerminalAliveAgeMs) continue;
+
+    const snapshot = readProcessSnapshot(pid, procRoot, uptimeSeconds);
+    if (!snapshot) {
+      if (readProcessLiveness(pid, procRoot) !== 'alive') continue;
+      candidates.push({
+        jobId: status.id,
+        pid,
+        beadId: status.bead_id ?? null,
+        specialist: status.specialist,
+        cwd: readProcCwdOrNull(pid, procRoot),
+        ageMs,
+        reason: 'terminal-alive',
+      });
+      continue;
+    }
+
+    candidates.push({
+      jobId: status.id,
+      pid,
+      beadId: status.bead_id ?? null,
+      specialist: status.specialist,
+      cwd: snapshot.cwd,
+      ageMs,
+      reason: 'terminal-alive',
+    });
   }
 
   return candidates.sort((left, right) => left.pid - right.pid);

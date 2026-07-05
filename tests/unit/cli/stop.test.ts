@@ -125,7 +125,7 @@ describe('stop CLI', () => {
     expect(stdoutWrites.join('')).toContain('auto-closed');
   });
 
-  it('labels already finalized job with terminal wording', async () => {
+  it('labels already finalized job with terminal wording when PID is genuinely dead', async () => {
     supervisorState.status = { status: 'done', pid: 1234, bead_id: 'bead-x', tmux_session: undefined, started_at_ms: Date.now() - 1000 };
 
     const stderrWrites: string[] = [];
@@ -133,12 +133,45 @@ describe('stop CLI', () => {
       stderrWrites.push(String(chunk));
       return true;
     });
-    vi.spyOn(process, 'kill').mockImplementation(() => true as never);
+    // Model a dead PID: signal=0 (liveness probe) throws ESRCH, everything else no-ops.
+    vi.spyOn(process, 'kill').mockImplementation((_pid: number, signal?: string | number) => {
+      if (signal === 0) {
+        const err = new Error('kill ESRCH') as NodeJS.ErrnoException;
+        err.code = 'ESRCH';
+        throw err;
+      }
+      return true as never;
+    });
 
     const { run } = await import('../../../src/cli/stop.js');
     await run();
 
     expect(stderrWrites.join('')).toContain('already finalized');
+  });
+
+  it('reaps orphaned PID when registry is terminal but process still alive (unitAI-yme9q)', async () => {
+    supervisorState.status = { status: 'done', pid: 1234, bead_id: 'bead-x', tmux_session: undefined, started_at_ms: Date.now() - 1000 };
+
+    const stdoutWrites: string[] = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk: any) => {
+      stdoutWrites.push(String(chunk));
+      return true;
+    });
+    const killCalls: Array<{ pid: number; signal: string | number | undefined }> = [];
+    // Model an alive PID: signal=0 succeeds; SIGTERM to -pid (process group) succeeds; record all.
+    vi.spyOn(process, 'kill').mockImplementation((pid: number, signal?: string | number) => {
+      killCalls.push({ pid, signal });
+      return true as never;
+    });
+
+    const { run } = await import('../../../src/cli/stop.js');
+    await run();
+
+    expect(stdoutWrites.join('')).toContain('Reaped orphaned PID 1234');
+    // Group SIGTERM to -pid must have been attempted for the detached pi child.
+    expect(killCalls.some(call => call.pid === -1234 && call.signal === 'SIGTERM')).toBe(true);
+    // A stop_terminal_alive_reaped control event should be emitted for observability.
+    expect(supervisorState.controlEvents.some(event => event.action === 'stop_terminal_alive_reaped')).toBe(true);
   });
 
   it('finalizes waiting keep-alive before stop bead auto-close path', async () => {

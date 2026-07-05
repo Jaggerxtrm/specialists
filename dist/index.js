@@ -43921,6 +43921,39 @@ async function stopJob(jobId, opts = {}) {
     if (!status)
       throw new Error(`No job found: ${jobId}`);
     if (status.status === "done" || status.status === "error" || status.status === "cancelled") {
+      const pid2 = status.pid;
+      if (typeof pid2 === "number" && Number.isInteger(pid2) && pid2 > 0 && isProcessAlive(pid2, status.started_at_ms)) {
+        supervisor.emitControlEvent(jobId, "stop_terminal_alive_reaped", {
+          source: "cli",
+          pid: pid2,
+          previous_status: status.status,
+          reason: "registry_terminal_process_alive",
+          signal: "SIGTERM/SIGKILL",
+          tmux_session: status.tmux_session
+        });
+        try {
+          process.kill(-pid2, "SIGTERM");
+        } catch (err) {
+          if (err?.code !== "ESRCH") {
+            try {
+              process.kill(pid2, "SIGTERM");
+            } catch {}
+          }
+        }
+        const exited = await waitForProcessExit(pid2, 3000);
+        if (!exited) {
+          try {
+            process.kill(-pid2, "SIGKILL");
+          } catch {
+            tryKillProcessGroup(pid2);
+          }
+        }
+        if (status.tmux_session)
+          killTmuxSession(status.tmux_session);
+        process.stdout.write(`${green10("\u2713")} Reaped orphaned PID ${pid2} for job ${jobId} (registry was ${status.status}).
+`);
+        return;
+      }
       process.stderr.write(`${dim10(`Job ${jobId} already finalized (${status.status}).`)}
 `);
       return;
@@ -45161,9 +45194,11 @@ function collectStaleSpecialistJobs(options2 = {}) {
   const procRoot = options2.procRoot ?? "/proc";
   const nowMs = options2.nowMs ?? Date.now();
   const minKeepAliveAgeMs = options2.minKeepAliveAgeMs ?? 30 * 60 * 1000;
+  const minTerminalAliveAgeMs = options2.minTerminalAliveAgeMs ?? 60 * 1000;
   const observabilityClient = options2.observabilityClient ?? createObservabilitySqliteClient();
   const statuses = observabilityClient?.listStatuses() ?? [];
   const staleStatuses = statuses.filter((status) => ["starting", "running", "waiting"].includes(status.status));
+  const terminalStatuses = statuses.filter((status) => ["done", "error", "cancelled"].includes(status.status));
   const uptimeSeconds = readProcUptimeSecondsOrNull(procRoot) ?? nowMs / 1000;
   const candidates = [];
   for (const status of staleStatuses) {
@@ -45198,6 +45233,39 @@ function collectStaleSpecialistJobs(options2 = {}) {
     if (lastActivityMs !== null && nowMs - lastActivityMs < minKeepAliveAgeMs)
       continue;
     candidates.push({ jobId: status.id, pid, beadId: status.bead_id ?? null, specialist: status.specialist, cwd: snapshot.cwd, ageMs, reason: "dead-toolchain" });
+  }
+  for (const status of terminalStatuses) {
+    const pid = status.pid;
+    if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0)
+      continue;
+    const updatedAtMs = status.updated_at_ms ?? nowMs;
+    const ageMs = Math.max(0, nowMs - updatedAtMs);
+    if (ageMs < minTerminalAliveAgeMs)
+      continue;
+    const snapshot = readProcessSnapshot(pid, procRoot, uptimeSeconds);
+    if (!snapshot) {
+      if (readProcessLiveness(pid, procRoot) !== "alive")
+        continue;
+      candidates.push({
+        jobId: status.id,
+        pid,
+        beadId: status.bead_id ?? null,
+        specialist: status.specialist,
+        cwd: readProcCwdOrNull(pid, procRoot),
+        ageMs,
+        reason: "terminal-alive"
+      });
+      continue;
+    }
+    candidates.push({
+      jobId: status.id,
+      pid,
+      beadId: status.bead_id ?? null,
+      specialist: status.specialist,
+      cwd: snapshot.cwd,
+      ageMs,
+      reason: "terminal-alive"
+    });
   }
   return candidates.sort((left, right) => left.pid - right.pid);
 }
@@ -60469,6 +60537,30 @@ async function reapStaleSpecialistJobs(jobs, dryRun) {
           process.kill(job.pid, "SIGKILL");
         } catch {}
       } catch {}
+    }
+    if (job.reason === "terminal-alive") {
+      try {
+        process.kill(-job.pid, "SIGTERM");
+      } catch (err) {
+        if (err?.code !== "ESRCH") {
+          try {
+            process.kill(job.pid, "SIGTERM");
+          } catch {}
+        }
+      }
+      await new Promise((resolve11) => setTimeout(resolve11, 500));
+      try {
+        process.kill(job.pid, 0);
+        try {
+          process.kill(-job.pid, "SIGKILL");
+        } catch {
+          try {
+            process.kill(job.pid, "SIGKILL");
+          } catch {}
+        }
+      } catch {}
+      reapedCount += 1;
+      continue;
     }
     sqliteClient.markSpecialistJobCancelled(job.jobId, `cleanup: stale-reaper:${job.reason}`);
     reapedCount += 1;
