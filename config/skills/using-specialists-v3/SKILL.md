@@ -374,6 +374,17 @@ Floor rule: author sets the minimum; dispatcher/reviewer can raise it on sensiti
 
 Cross-ref: [`docs/design/chain-templates.md` §2.2](../../../docs/design/chain-templates.md#22-scrutiny-is-a-chain-property--it-modulates-structure-not-quality), [`§2.3`](../../../docs/design/chain-templates.md#23-roles-in-the-canonical-pipeline), [`§2.5`](../../../docs/design/chain-templates.md#25-the-behavioral-validation-contract), [`§2.6`](../../../docs/design/chain-templates.md#26-the-release-checklist), roadmap Opp 15.
 
+## Restraint And The Ladder
+
+Best code = code never written. Applies to bead contracts and to whatever the orchestrator writes directly. The full ladder + rules + `// SIMPLIFIED:` marker + tag vocabulary live in the shared `code-quality-defaults` mandatory rule (executor / reviewer / seconder inherit it). Orchestrator-side reminders:
+
+- **In bead contracts.** Narrow SCOPE. Explicit NON_GOALS. Don't invent abstractions in the contract itself — no "extensible", no "for future X", no interface with one caller. If the target work is small, ship one implementation bead; don't pre-scaffold an epic when a single chain would do.
+- **In review loops.** When a reviewer or seconder emits `shrink: / delete: / stdlib: / yagni:` findings against a chain's diff, that's the shared tag vocab from `code-quality-defaults`. Consume verbatim. If the writer disagrees, dispatch overthinker to arbitrate — do NOT collapse the finding into prose defense.
+- **In direct edits.** When the orchestrator implements without delegating (small fixes, config edits, doc syncs), the same ladder applies. Reuse before writing; prefer deletion; mark deliberate shortcuts with `// SIMPLIFIED: <ceiling>. upgrade when <trigger>.`
+- **Boundary.** Never simplify away input validation at trust boundaries, error handling that prevents data loss, security, accessibility, or explicitly requested behavior. Never lazy about understanding the problem — the ladder shortens solutions, not reading.
+
+Split-bead vs one-bead heuristic: if the change fits in one specialist run under 30 minutes with a bounded diff, one bead. If it needs planner + two impl chains + integration, an epic. The failure mode both ways is over-scoping: don't sprawl a fix into a refactor, don't atomize a refactor into six unrelated beads.
+
 ## Git State Precondition (before any chain dispatch)
 
 Specialist worktrees fork from the current HEAD of the orchestrator's branch at dispatch time. If prior chain edits aren't merged in yet, the new chain works on a stale base, will conflict at integration, and debugger-restitch becomes mandatory. The fix is upstream: don't dispatch until prior work has landed.
