@@ -3,6 +3,14 @@ import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { collectOrphanProcesses, collectProcessHealth, collectStaleSpecialistJobs } from '../../../src/specialist/process-health.js';
+import type { SupervisorStatus } from '../../../src/specialist/supervisor.js';
+
+// SupervisorStatus is intentionally narrow, but the runtime source in process-health.ts casts
+// per-status to include pid/updated_at_ms (see `as SupervisorStatus & { pid?: number; updated_at_ms?: number }`
+// in collectStaleSpecialistJobs). Test fixtures need to carry these fields too; the type
+// alias makes that an intentional widening instead of a per-literal cast at every callsite.
+type StatusFixture = Partial<SupervisorStatus> & { pid?: number; updated_at_ms?: number };
+const asStatuses = (rows: StatusFixture[]): SupervisorStatus[] => rows as unknown as SupervisorStatus[];
 
 function writeProcProcess(root: string, pid: number, data: { cmdline: string; comm: string; stat: string; status: string; cwd?: string }): void {
   const dir = join(root, String(pid));
@@ -120,7 +128,8 @@ describe('process-health', () => {
       cwd: '/repo/.beads/dolt',
     });
 
-    const reapable = collectOrphanProcesses({ procRoot: root, meminfoPath: meminfo });
+    const reapable = collectOrphanProcesses({ procRoot: root });
+    void meminfo;
 
     expect(reapable.map(process => process.pid)).toEqual([301, 302]);
     expect(reapable[0]?.reason).toBe('dolt-worktree-local');
@@ -156,12 +165,12 @@ describe('process-health', () => {
       nowMs: 4_000_000,
       minKeepAliveAgeMs: 30 * 60 * 1000,
       observabilityClient: {
-        listStatuses: () => [
+        listStatuses: () => asStatuses([
           { id: 'dead-job', bead_id: 'bead-dead', specialist: 'tester', status: 'running', pid: deadPid, updated_at_ms: 1_000_000 },
           { id: 'keepalive-job', bead_id: 'bead-live', specialist: 'tester', status: 'waiting', pid: keepAlivePid, updated_at_ms: 1_000_000 },
           { id: 'toolchain-job', bead_id: 'bead-toolchain', specialist: 'tester', status: 'running', pid: deadToolchainPid, updated_at_ms: 1_000_000 },
           { id: 'too-fresh', bead_id: 'bead-fresh', specialist: 'tester', status: 'waiting', pid: 601, updated_at_ms: 3_900_000 },
-        ],
+        ]),
         getLastActivityTimestampMs: (jobId) => (jobId === 'toolchain-job' ? 2_000_000 : null),
       },
     });
@@ -170,6 +179,54 @@ describe('process-health', () => {
       { jobId: 'dead-job', pid: deadPid, beadId: 'bead-dead', specialist: 'tester', cwd: null, ageMs: 3_000_000, reason: 'dead-pid' },
       { jobId: 'keepalive-job', pid: keepAlivePid, beadId: 'bead-live', specialist: 'tester', cwd: '/repo/.worktrees/xtrm-tools', ageMs: 3_000_000, reason: 'orphaned-keep-alive' },
       { jobId: 'toolchain-job', pid: deadToolchainPid, beadId: 'bead-toolchain', specialist: 'tester', cwd: '/repo/.worktrees/xtrm-tools', ageMs: 3_000_000, reason: 'dead-toolchain' },
+    ]);
+  });
+
+  it('detects terminal-alive jobs: registry done/error/cancelled but PID still running (unitAI-yme9q)', () => {
+    root = mkdtempSync(join(tmpdir(), 'process-health-'));
+    const meminfo = join(root, 'meminfo');
+    writeFileSync(meminfo, 'MemAvailable:	100000 kB\n', 'utf-8');
+    writeFileSync(join(root, 'uptime'), '4000.00 1000.00\n', 'utf-8');
+
+    const terminalAlivePid = 700;
+    const terminalAliveErrorPid = 701;
+    const terminalAliveCancelledPid = 702;
+    const terminalFreshPid = 703;
+
+    for (const pid of [terminalAlivePid, terminalAliveErrorPid, terminalAliveCancelledPid, terminalFreshPid]) {
+      // Not orphaned (ppid=5000, not 1) — the whole point is this class survives with a normal
+      // parent (bash wrapper / tmux pane), which the existing orphaned-keep-alive check misses.
+      writeProcProcess(root, pid, {
+        cmdline: 'specialists run reviewer --bead abc\0',
+        comm: 'bun',
+        stat: `${pid} (bun) S 5000 1 1 0 -1 4194560 100 0 0 80 20 0 0 20 0 1 0 0 100000`,
+        status: 'VmRSS:\t1024 kB\n',
+        cwd: '/repo/.worktrees/xtrm-tools',
+      });
+    }
+
+    const jobs = collectStaleSpecialistJobs({
+      procRoot: root,
+      nowMs: 4_000_000,
+      minTerminalAliveAgeMs: 60_000,
+      observabilityClient: {
+        listStatuses: () => asStatuses([
+          // Terminal-alive: done > 60s ago, PID still alive with normal parent
+          { id: 'done-alive', bead_id: 'bead-done', specialist: 'reviewer', status: 'done', pid: terminalAlivePid, updated_at_ms: 3_000_000 },
+          { id: 'error-alive', bead_id: 'bead-err', specialist: 'reviewer', status: 'error', pid: terminalAliveErrorPid, updated_at_ms: 3_000_000 },
+          { id: 'cancelled-alive', bead_id: 'bead-cancel', specialist: 'reviewer', status: 'cancelled', pid: terminalAliveCancelledPid, updated_at_ms: 3_000_000 },
+          // Fresh terminal: transitioned <60s ago — grace period for pi's 8s close backstop
+          { id: 'done-fresh', bead_id: 'bead-fresh', specialist: 'reviewer', status: 'done', pid: terminalFreshPid, updated_at_ms: 3_990_000 },
+          // Terminal but PID gone: correctly finalized, nothing to reap
+          { id: 'done-dead', bead_id: 'bead-clean', specialist: 'reviewer', status: 'done', pid: 704, updated_at_ms: 3_000_000 },
+        ]),
+      },
+    });
+
+    expect(jobs).toEqual([
+      { jobId: 'done-alive', pid: terminalAlivePid, beadId: 'bead-done', specialist: 'reviewer', cwd: '/repo/.worktrees/xtrm-tools', ageMs: 1_000_000, reason: 'terminal-alive' },
+      { jobId: 'error-alive', pid: terminalAliveErrorPid, beadId: 'bead-err', specialist: 'reviewer', cwd: '/repo/.worktrees/xtrm-tools', ageMs: 1_000_000, reason: 'terminal-alive' },
+      { jobId: 'cancelled-alive', pid: terminalAliveCancelledPid, beadId: 'bead-cancel', specialist: 'reviewer', cwd: '/repo/.worktrees/xtrm-tools', ageMs: 1_000_000, reason: 'terminal-alive' },
     ]);
   });
   it('does not count MCP, tsserver, or shell tooling as specialist jobs', () => {

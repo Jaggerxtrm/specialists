@@ -68,6 +68,36 @@ export async function stopJob(jobId: string, opts: StopJobOptions = {}): Promise
     const status = supervisor.readStatus(jobId);
     if (!status) throw new Error(`No job found: ${jobId}`);
     if (status.status === 'done' || status.status === 'error' || status.status === 'cancelled') {
+      // unitAI-yme9q: "already finalized" is only true if the underlying OS process is actually dead.
+      // For keep-alive pi sessions dispatched via bare `sp run ... &` (no console/daemon driving the
+      // FIFO, waiting_auto_close_ms unset), the job's SQLite row transitions to terminal for chain
+      // bookkeeping while the OS process and its detached pi child leak indefinitely.
+      const pid = (status as typeof status & { pid?: number }).pid;
+      if (typeof pid === 'number' && Number.isInteger(pid) && pid > 0
+          && isProcessAlive(pid, status.started_at_ms)) {
+        supervisor.emitControlEvent(jobId, 'stop_terminal_alive_reaped', {
+          source: 'cli',
+          pid,
+          previous_status: status.status,
+          reason: 'registry_terminal_process_alive',
+          signal: 'SIGTERM/SIGKILL',
+          tmux_session: status.tmux_session,
+        });
+        try {
+          process.kill(-pid, 'SIGTERM');
+        } catch (err: any) {
+          if (err?.code !== 'ESRCH') {
+            try { process.kill(pid, 'SIGTERM'); } catch { /* already dead */ }
+          }
+        }
+        const exited = await waitForProcessExit(pid, 3_000);
+        if (!exited) {
+          try { process.kill(-pid, 'SIGKILL'); } catch { tryKillProcessGroup(pid); }
+        }
+        if (status.tmux_session) killTmuxSession(status.tmux_session);
+        process.stdout.write(`${green('✓')} Reaped orphaned PID ${pid} for job ${jobId} (registry was ${status.status}).\n`);
+        return;
+      }
       process.stderr.write(`${dim(`Job ${jobId} already finalized (${status.status}).`)}\n`);
       return;
     }

@@ -516,6 +516,28 @@ async function reapStaleSpecialistJobs(jobs: readonly StaleSpecialistJobCandidat
         try { process.kill(job.pid, 'SIGKILL'); } catch { /* race */ }
       } catch { /* already gone */ }
     }
+    if (job.reason === 'terminal-alive') {
+      // pi is spawned detached (own process group) — reap parent + the detached pi child + its MCP
+      // servers by targeting the whole group. SIGTERM first to give pi's stdin-EOF close-path a
+      // chance, then group-SIGKILL if anything survives. DO NOT overwrite the DB status: the job
+      // completed correctly in the registry (done/error/cancelled); only the OS process leaked.
+      try {
+        process.kill(-job.pid, 'SIGTERM');
+      } catch (err: any) {
+        if (err?.code !== 'ESRCH') {
+          try { process.kill(job.pid, 'SIGTERM'); } catch { /* already dead */ }
+        }
+      }
+      await new Promise(resolve => setTimeout(resolve, 500));
+      try {
+        process.kill(job.pid, 0);
+        try { process.kill(-job.pid, 'SIGKILL'); } catch {
+          try { process.kill(job.pid, 'SIGKILL'); } catch { /* race */ }
+        }
+      } catch { /* already gone */ }
+      reapedCount += 1;
+      continue;
+    }
     sqliteClient.markSpecialistJobCancelled(job.jobId, `cleanup: stale-reaper:${job.reason}`);
     reapedCount += 1;
   }
