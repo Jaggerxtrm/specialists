@@ -1,76 +1,174 @@
-# `xt pi --role` ↔ `sp run` flag parity
+# `xt pi --role` ↔ `pi` runtime flag passthrough
 
 **Context:** `xt pi --role <name>` (xtrm-tools/core PR #362, branch
-`feature/xtrm-yd1p1-pi-role-launcher`) is the interactive equivalent of
-`sp run <specialist>`. It currently accepts three flags:
+`feature/xtrm-yd1p1-pi-role-launcher`) launches a `pi` interactive session in
+a worktree. The current implementation forwards **zero flags** to the pi
+subprocess (`cli/src/utils/worktree-session.ts:373`):
 
-- `[name]` — positional session name (also branch suffix)
-- `--role <name>` — resolve specialist via `sp view <name> --raw`
-- `--bead <id>` — attach to `@agent_bead` tmux pane option; appended to session slug
-- `--no-attach` — create detached, print `session_name:pane_id`
+```ts
+const runtimeCmd = runtime === 'claude' ? 'claude' : 'pi';
+const runtimeArgs = runtime === 'claude' ? ['--dangerously-skip-permissions'] : [];
+const launchResult = spawnSync(runtimeCmd, runtimeArgs, { cwd: worktreePath, stdio: 'inherit' });
+```
 
-This doc catalogs every `sp run` flag (`sp run --help`) and rules each one
-**adopt / adapt / skip** for `xt pi --role`, so the next parity pass has a
-single reference to work from.
+xt pi's own flags today: `[name]`, `--role <name>`, `--bead <id>`, `--no-attach`.
+Everything `pi` accepts (`pi --help`) is currently unreachable through xt.
+
+This doc rules pi's ~30 CLI flags **passthrough / xt-owned / skip** for `xt pi --role`.
 
 Coordinated with xt-design.3, epic `xtmux-2i5`.
 
-## Decision heuristic
+## Recommended shape
 
-- **Adopt** — shapes the specialist's *runtime* independent of managed-job
-  semantics (model, context-depth, prompt seed).
-- **Adapt** — shape depends on a managed-run concept that needs reinterpretation
-  for an interactive tmux session (bead-notes, epic metadata).
-- **Skip** — meaningful only under managed-job orchestration (queue slots,
-  stale-base gate, worktree provisioning that pi already owns).
+**Adopt the `--` passthrough convention.** Anything after `--` on the `xt pi`
+command line is forwarded verbatim as pi argv:
 
-## Decision table
+```bash
+xt pi --role chain-coordinator --bead unitAI-2i5 -- --thinking high --no-extensions -e ./local-ext.js
+```
 
-| `sp run` flag | Verdict | Rationale |
+Rationale: pi's flag surface is large, changes independently, and includes
+extension-registered flags xt can't enumerate ahead of time (`--gitnexus-cmd`,
+`--mcp-config`, `--plan`, …). Enumerating each is a maintenance treadmill.
+The `--` convention gives full parity with one code change, zero drift.
+
+Individual xt flags (below) are reserved for pi flags xt itself needs to
+*read or override* — e.g. session naming, which xt derives from the branch.
+
+## Passthrough table
+
+Legend:
+- **passthrough** — forward as-is after `--` (no xt interpretation)
+- **xt-owned** — xt sets or overrides these; user cannot pass them
+- **surface** — worth a first-class xt flag (short-form convenience or
+  interpretation needed before pi launches)
+- **skip** — not meaningful under `xt pi --role`
+
+### Runtime shape
+
+| pi flag | Verdict | Rationale |
 |---|---|---|
-| `--bead <id>` | ✓ **already adopted** | Sets `@agent_bead` pane option; slug suffix. No work needed. |
-| `--prompt <text>` | **adapt** | Interactive pi has no "prompt to consume" step. Best path: write the text to `@agent_task_prompt` (or reuse `@agent_task`) and let the pi extension read it as the first-turn seed on session attach. Adopt once the extension exposes a seed hook. |
-| `--context-depth <n>` | **adopt** | Runtime shape. Passthrough to the pi extension's `bd show --depth` invocation when it resolves `--bead` context. Cheap. Default 3, matching sp. |
-| `--no-beads` | **skip** | `sp run` uses this to suppress *auto-creating* a tracking bead. `xt pi --role` never creates one — bead is user-supplied via `--bead` or none. Flag has no target. |
-| `--no-bead-notes` | **adapt** | Pi extension auto-appends per-turn notes to `--bead`. Provide `--no-bead-notes` as an env/pane-option signal (e.g. `@agent_bead_notes=off`) once the extension surfaces the hook. Same semantics as sp, different plumbing. |
-| `--model <model>` | **adopt** | Runtime shape and highest-value parity flag. Pi already reads `~/.pi/agent/models.json`; passthrough would set the model for this session only (via pane env or pi launch arg). Requires pi CLI to accept a per-launch override — verify before adopting; adapt if not. |
-| `--keep-alive` | **skip** | Redundant. An interactive tmux session is inherently keep-alive; it doesn't die on idle. `sp run --keep-alive` exists to hold a managed job's worktree open — pi's worktree is held open by the session itself. |
-| `--worktree` | **skip** | `xt pi` *always* provisions a worktree via `launchWorktreeSession` (see `cli/src/utils/worktree-session.ts`). Behavior is implicit; the flag would be a no-op. |
-| `--job <id>` | **skip** | No managed-job registry for interactive sessions. Reuse an existing pi session by name (`tmux attach -t <session>`) or relaunch with the same positional `<name>` — that's the interactive equivalent. |
-| `--epic <id>` | **adapt** | Bead epic membership isn't operationally load-bearing for a single interactive session, but is useful for chain-coordinator patterns (a coordinator persona needs to know which epic it owns). Cheap adapt: set `@agent_epic` pane option. |
-| `--force-job` | **skip** | Concurrency guard is managed-only — no queue in interactive mode. |
-| `--base-sha <sha>` | **skip** | Stale-base precondition (specialists-05q.3) is a managed-run gate that refuses execution when the base drifted. Interactive users judge freshness themselves. |
-| `--base-ref <branch>` | **skip** | Same. |
-| `--accept-stale-base` | **skip** | Same. |
-| `--reason <text>` | **skip** | Only meaningful paired with `--accept-stale-base`. |
-| `--force-stale-base` | **skip** | Deprecated upstream. Do not carry deprecated flags into new surfaces. |
+| `--provider <name>` | passthrough | Runtime shape. `pi --model provider/id` also handles this, but explicit form works. |
+| `--model <pattern>` | **surface** as `--model` | High-value parity flag. Also match `sp run --model`. Support `:thinking` shorthand pi already parses. |
+| `--api-key <key>` | passthrough | Rare; env vars usually suffice. Don't surface (secret on cmdline). |
+| `--thinking <level>` | **surface** as `--thinking` | Runtime shape and highest-frequency override. Match pi's levels: off/minimal/low/medium/high/xhigh. |
+| `--models <patterns>` | passthrough | Ctrl+P cycling config. Not critical to surface. |
 
-## Not in `sp run --help` — worth calling out
+### Session lifecycle
 
-The packet also lists `--thinking` and `--parent` as candidates. Neither is a
-`sp run` CLI flag today; both are specialist config fields (`thinking_level`)
-or inferred from bead ancestry (parent). Follow-ups:
-
-| Flag | Status | Recommendation |
+| pi flag | Verdict | Rationale |
 |---|---|---|
-| `--thinking <low\|medium\|high>` | Not on `sp run` | Nice-to-have on `xt pi --role` for per-session override, but this is *pi feature parity*, not `sp run` parity. Track separately if wanted. |
-| `--parent <id>` | Not on `sp run` | Bead parent already resolves from `bd show <bead>.parent`. Explicit override rarely needed. Skip. |
+| `--continue, -c` | passthrough | Meaningful when re-entering an existing xt worktree; user knows the intent. |
+| `--resume, -r` | passthrough | Same. |
+| `--session <path\|id>` | passthrough | Advanced use. Passthrough sufficient. |
+| `--session-id <id>` | passthrough | Same. |
+| `--fork <path\|id>` | passthrough | Same. |
+| `--session-dir <dir>` | **xt-owned** | xt sets `PI_CODING_AGENT_SESSION_DIR` (or equivalent) to a worktree-scoped path if desired. Don't let users override — breaks session locality. |
+| `--no-session` | passthrough | Ephemeral run inside a persistent worktree is a valid user choice. |
+| `--name, -n <name>` | **xt-owned** | xt derives the display name from `[name]` positional / branch slug. Overriding here fragments observability. |
+
+### Tools / extensions / skills
+
+| pi flag | Verdict | Rationale |
+|---|---|---|
+| `--no-tools, -nt` | passthrough | Read-only mode; user choice. |
+| `--no-builtin-tools, -nbt` | passthrough | Same. |
+| `--tools, -t <list>` | passthrough | Allowlist. Same. |
+| `--exclude-tools, -xt <list>` | passthrough | Denylist. Same. |
+| `--extension, -e <path>` | passthrough | Load explicit extension file. Multi-use. Passthrough. |
+| `--no-extensions, -ne` | passthrough | Disable discovery. Passthrough. |
+| `--skill <path>` | passthrough | Same as `-e` for skills. |
+| `--no-skills, -ns` | passthrough | Same. |
+| `--prompt-template <path>` | passthrough | Same. |
+| `--no-prompt-templates, -np` | passthrough | Same. |
+| `--theme <path>` | passthrough | Cosmetic. |
+| `--no-themes` | passthrough | Same. |
+| `--no-context-files, -nc` | passthrough | Disable AGENTS.md/CLAUDE.md load. Legitimate override. |
+
+### System prompt
+
+| pi flag | Verdict | Rationale |
+|---|---|---|
+| `--system-prompt <text>` | **xt-owned when `--role` set** | The role's `specialist.prompt.system` is already the system prompt (see `resolveRole` in worktree-session.ts). Passing this again would clobber the role. Reject with an error when `--role` is present; passthrough when it isn't. |
+| `--append-system-prompt <text>` | passthrough | Additive, not clobbering. Safe alongside `--role`. Multi-use. |
+
+### Startup / mode
+
+| pi flag | Verdict | Rationale |
+|---|---|---|
+| `--mode <mode>` | passthrough | text/json/rpc — user knows intent. |
+| `--print, -p` | **skip / warn** | Non-interactive mode contradicts `xt pi`'s interactive-tmux design. Warn and refuse (use `sp run` for one-shot). |
+| `--approve, -a` | passthrough | Trust project files this run. |
+| `--no-approve, -na` | passthrough | Same. |
+| `--offline` | passthrough | `PI_OFFLINE=1` alternative. |
+| `--verbose` | passthrough | Debug aid. |
+
+### Introspection / one-shot commands
+
+| pi flag | Verdict | Rationale |
+|---|---|---|
+| `--list-models [search]` | **skip** | Not a session — no worktree needed. User runs `pi --list-models` directly. |
+| `--export <file>` | **skip** | One-shot session-to-HTML. Not an xt workflow. |
+| `--help, -h` | **skip** | xt owns its own `--help`. |
+| `--version, -v` | **skip** | Use `xt pi status` (already exists per pi.ts). |
+
+### Subcommands (`pi install`, `pi update`, `pi list`, `pi config`)
+
+| Subcommand | Verdict | Rationale |
+|---|---|---|
+| `pi install / remove / uninstall / update / list / config` | **skip** | Not launch flows. User runs `pi <cmd>` directly outside a worktree. |
+
+### Extension-registered flags
+
+| Flag | Verdict | Rationale |
+|---|---|---|
+| `--gitnexus-cmd <value>` | passthrough | Registered by extension. Cannot enumerate ahead of time. |
+| `--mcp-config <value>` | passthrough | Same. |
+| Any future extension flag | passthrough | Same. Justifies the `--` convention as primary path. |
 
 ## Summary
 
-Adopt (net-new on `xt pi --role`):
-- `--context-depth <n>`
-- `--model <model>` (subject to pi launch-arg support)
+**Primary path — do this first:**
+Implement `--` passthrough in `launchWorktreeSession`. Every flag pi supports
+(current or future, first-party or extension-registered) becomes reachable
+with zero per-flag maintenance.
 
-Adapt (needs pi-extension coordination):
-- `--prompt <text>` — first-turn seed via pane metadata
-- `--no-bead-notes` — pane option gating auto-notes
-- `--epic <id>` — pane option `@agent_epic`
+**Surface as first-class xt flags** (short-form convenience for the two most
+common overrides):
+- `--model <pattern>` — passes to pi as `--model`
+- `--thinking <level>` — passes to pi as `--thinking`
 
-Skip (managed-only or already implicit):
-- `--no-beads`, `--keep-alive`, `--worktree`, `--job`, `--force-job`,
-  `--base-sha`, `--base-ref`, `--accept-stale-base`, `--reason`,
-  `--force-stale-base`
+**xt-owned (reject or override user attempts):**
+- `--session-dir` — xt controls session locality
+- `--name` — xt derives from branch slug
+- `--system-prompt` — clobbers `--role`'s specialist prompt when both set (error)
 
-Net additions if fully adopted: **2 pass-through flags + 3 pane-metadata
-flags**. No implementation in this PR — decision doc only.
+**Skip / warn:**
+- `--print, -p` — non-interactive contradicts xt pi's design
+- `--list-models`, `--export`, `--help`, `--version`, subcommands — not launch flows
+
+**Everything else** — passthrough via `--`.
+
+## Implementation sketch (~10 lines)
+
+```ts
+// worktree-session.ts, near line 373
+const passthroughIdx = process.argv.indexOf('--');
+const passthroughArgs = passthroughIdx >= 0 ? process.argv.slice(passthroughIdx + 1) : [];
+
+// commander already strips xt-owned flags; combine with surfaced overrides
+const piArgs: string[] = [];
+if (opts.model) piArgs.push('--model', opts.model);
+if (opts.thinking) piArgs.push('--thinking', opts.thinking);
+piArgs.push(...passthroughArgs);
+
+// Guard: reject conflicts before spawn
+if (roleName && passthroughArgs.includes('--system-prompt')) {
+    console.error(kleur.red('\n  ✗ --system-prompt conflicts with --role (role owns the system prompt). Use --append-system-prompt instead.\n'));
+    process.exit(1);
+}
+
+const runtimeArgs = runtime === 'claude' ? ['--dangerously-skip-permissions'] : piArgs;
+```
+
+Decision doc only — no implementation in this PR.
