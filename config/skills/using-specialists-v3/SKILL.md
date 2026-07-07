@@ -145,12 +145,33 @@ Routing across chain phases:
 
 Specialists run async. You will lose the chain if you do not actively monitor it.
 
-**Required pattern after every dispatch:**
+**`sp run` semantics — read carefully.** There is NO `--background` flag (older versions of this doc used it — it never existed).
+
+- **CLI form** (`sp run <role> --bead <id> ...`) prints `[job started: <id>]` on stderr AT THE START, but the process **keeps streaming stdout until the specialist finishes** — the shell call BLOCKS. This is async in the "job runs on the sp side" sense, not in the "your shell returns" sense.
+- **MCP form** (`use_specialist`) is foreground and returns the result directly.
+- **True background detach** requires shell-level `&` plus log redirect: `sp run <role> --bead <id> --prompt "..." > /tmp/job.log 2>&1 &`. Then `disown` if you want it to outlive the shell. Poll via the observability DB or `sp ps` afterward.
+
+**Required pattern after every dispatch (interactive orchestrator, blocking shell OK):**
 
 ```bash
-sp run <role> --bead <id> --background ...   # dispatch
-sleep 10 && sp ps                             # confirm started
+# tracked (bead-driven) — specialist reads the bead as its prompt
+sp run <role> --bead <id>                      # blocks; streams output; returns when done
+
+# ad-hoc (no bead) — arbitrary prompt
+sp run <role> --prompt "..."                   # blocks; streams output; returns when done
 ```
+
+`--bead` and `--prompt` are **mutually exclusive**. Use `--bead` for tracked work (the default for chains); use `--prompt` only for ad-hoc off-board queries.
+
+**Required pattern for non-blocking dispatch (orchestrator wants to do other work while it runs):**
+
+```bash
+sp run <role> --bead <id> > /tmp/job-<id>.log 2>&1 &
+JOB_PID=$!
+sleep 10 && sp ps                              # confirm started
+```
+
+**Pi runtime caveat (xtmux-19y):** dispatch `sp`/`xt`/`gh` via the **bash tool**, not pi's `process` tool. Pi's `process` tool spawns subprocesses with a stripped PATH that lacks `~/.nvm/.../bin` (or wherever npm globals live), so `sp run …` inside `process start` exits 127 (`command not found`). The bash tool inherits your PATH normally. If you must use `process` for a background dispatch, hand it an absolute path (`$(which sp)`) or wrap through `bash -lc '…'` to force a login shell.
 
 Then cycle sleeps based on average completion time per role, checking `sp ps` each cycle:
 
@@ -171,6 +192,70 @@ Rules:
 - If a job exceeds 2× its typical duration without completing, inspect with `sp feed <job-id>` before assuming hang.
 
 You are not "done" until every dispatched job is `completed` or `failed` and consumed.
+
+## Notification Via Observability DB (Preferred Over `sp ps` Polling)
+
+`sp ps` prints the same data the observability SQLite database holds. Query the DB directly instead of polling `sp ps` in a sleep loop — it is faster, structured, filterable, and survives session restarts. Works identically from Claude Code and Pi (both can shell out to `sqlite3` or `python3 -c "import sqlite3;..."`).
+
+**DB location**: `.specialists/db/observability.db` under the project root — always per-repo, never at `~/.specialists/`. Any 0-byte file at `~/.specialists/observability.db` is a placeholder, not a real DB; ignore it. Missing until the first `sp run` in that repo auto-provisions it. If missing, `sp ps` returns empty — same signal.
+
+**Sanity check when DB seems empty:**
+
+```bash
+DB="$(git rev-parse --show-toplevel 2>/dev/null)/.specialists/db/observability.db"
+[ -s "$DB" ] || { echo "no DB in this repo yet — fall back to sp ps"; sp ps; }
+```
+
+**Key table**: `specialist_jobs`. Columns of interest for notification:
+- `job_id` — primary key
+- `specialist` — role name
+- `bead_id`, `epic_id`, `chain_id`, `chain_root_job_id`
+- `status` — canonical values: `done`, `error`, `cancelled` (terminal); `queued`, `running` (in-flight); `waiting` (blocked on human/parent)
+- `updated_at_ms` — epoch millis
+- `last_output` — final assistant text
+- `pr_url`, `pr_state`, `pr_classification` — chain outcomes
+
+**Notification patterns:**
+
+```bash
+DB="${SPECIALISTS_DB:-$PWD/.specialists/db/observability.db}"
+
+# Just-completed jobs since a timestamp (dispatch time)
+sqlite3 "$DB" "SELECT job_id, specialist, bead_id, status FROM specialist_jobs
+  WHERE status IN ('done','error','cancelled')
+  AND updated_at_ms > $SINCE_MS
+  ORDER BY updated_at_ms DESC"
+
+# Latest status for a specific bead (any specialist)
+sqlite3 "$DB" "SELECT job_id, specialist, status, updated_at_ms FROM specialist_jobs
+  WHERE bead_id = '$BEAD' ORDER BY updated_at_ms DESC LIMIT 1"
+
+# All jobs in an epic (chain-scoped view)
+sqlite3 "$DB" "SELECT specialist, status, pr_state FROM specialist_jobs
+  WHERE epic_id = '$EPIC' ORDER BY updated_at_ms DESC"
+
+# Waiting-on-you jobs (needs orchestrator/parent input)
+sqlite3 "$DB" "SELECT job_id, specialist, bead_id, last_output FROM specialist_jobs
+  WHERE status = 'waiting'"
+```
+
+**When to use DB queries vs `sp ps`:**
+
+| Situation | Use |
+|---|---|
+| Waiting for one specific job/bead | DB query on `bead_id` or `job_id` |
+| Multi-chain / epic-level view | DB query on `epic_id` |
+| Detecting completions during a batch | DB query with `updated_at_ms > $SINCE_MS` (loop with sleep) |
+| Human-readable status board | `sp ps` (formatted) |
+| Debugging one job | `sp feed <job-id>` (event stream) |
+
+**Rules:**
+- Capture `SINCE_MS=$(date +%s%3N)` right before dispatch so subsequent queries filter noise.
+- Prefer targeted queries (by `bead_id` / `epic_id`) over full scans — the DB grows unbounded.
+- The DB is authoritative. If `sp ps` and the DB disagree, trust the DB.
+- Applies to both Pi and Claude Code — same shell-out to `sqlite3`. Do not build a language-specific SDK.
+
+Interactive coordinators (chain-coordinator role sessions launched via `xt pi --role`) should prefer this pattern over `sp ps` polling because they escalate to the parent orchestrator via `message-send` only when a job actually transitions, not on every poll cycle.
 
 ## Worktree Cleanup After Merge
 
@@ -373,17 +458,6 @@ SCRUTINY: none | low | medium | high | critical
 Floor rule: author sets the minimum; dispatcher/reviewer can raise it on sensitive surfaces per canon §2.4, never lower it.
 
 Cross-ref: [`docs/design/chain-templates.md` §2.2](../../../docs/design/chain-templates.md#22-scrutiny-is-a-chain-property--it-modulates-structure-not-quality), [`§2.3`](../../../docs/design/chain-templates.md#23-roles-in-the-canonical-pipeline), [`§2.5`](../../../docs/design/chain-templates.md#25-the-behavioral-validation-contract), [`§2.6`](../../../docs/design/chain-templates.md#26-the-release-checklist), roadmap Opp 15.
-
-## Restraint And The Ladder
-
-Best code = code never written. Applies to bead contracts and to whatever the orchestrator writes directly. The full ladder + rules + `// SIMPLIFIED:` marker + tag vocabulary live in the shared `code-quality-defaults` mandatory rule (executor / reviewer / seconder inherit it). Orchestrator-side reminders:
-
-- **In bead contracts.** Narrow SCOPE. Explicit NON_GOALS. Don't invent abstractions in the contract itself — no "extensible", no "for future X", no interface with one caller. If the target work is small, ship one implementation bead; don't pre-scaffold an epic when a single chain would do.
-- **In review loops.** When a reviewer or seconder emits `shrink: / delete: / stdlib: / yagni:` findings against a chain's diff, that's the shared tag vocab from `code-quality-defaults`. Consume verbatim. If the writer disagrees, dispatch overthinker to arbitrate — do NOT collapse the finding into prose defense.
-- **In direct edits.** When the orchestrator implements without delegating (small fixes, config edits, doc syncs), the same ladder applies. Reuse before writing; prefer deletion; mark deliberate shortcuts with `// SIMPLIFIED: <ceiling>. upgrade when <trigger>.`
-- **Boundary.** Never simplify away input validation at trust boundaries, error handling that prevents data loss, security, accessibility, or explicitly requested behavior. Never lazy about understanding the problem — the ladder shortens solutions, not reading.
-
-Split-bead vs one-bead heuristic: if the change fits in one specialist run under 30 minutes with a bounded diff, one bead. If it needs planner + two impl chains + integration, an epic. The failure mode both ways is over-scoping: don't sprawl a fix into a refactor, don't atomize a refactor into six unrelated beads.
 
 ## Git State Precondition (before any chain dispatch)
 
@@ -1219,7 +1293,7 @@ When chain X conflicts with already-landed chain Y on shared files, raw `git che
    - `## OUTPUT:` mandates a 5-line code excerpt showing both Y and X features coexisting.
 3. **Dispatch debugger** with `--force-stale-base` if X is an epic child:
    ```bash
-   sp run debugger --bead <X> --force-stale-base --keep-alive --background
+   sp run debugger --bead <X> --force-stale-base --keep-alive
    ```
 4. **Sanity check the result**: when debugger reports back:
    ```bash
@@ -1274,7 +1348,7 @@ If any landed chain in this integration touched auth, secrets, input handling, d
 
 ```bash
 git diff <baseline>..integration/<date>-orchestrator > /tmp/integration-diff.patch
-sp run security-auditor --bead <sec-bead> --context-depth 3 --background
+sp run security-auditor --bead <sec-bead> --context-depth 3
 ```
 
 Per-chain security-auditor passes catch chain-local risks; this cross-cutting pass catches interaction risks that only appear once all chains coexist (e.g. one chain weakens an input validator that another newly relies on). Skipping this on a sensitive-surface integration is an escalation event.
