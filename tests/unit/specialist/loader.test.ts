@@ -787,6 +787,36 @@ describe('KAN-90 — global override layer + null-model hard fail', () => {
     expect(demo!.model).toBe('');
   });
 
+  // xtmux-1lb.4 — getEffective returns the merged effective spec without
+  // enforcing the missing-model gate. Used by sp view --raw (inspection) so
+  // operators can render a partially-configured specialist without it
+  // erroring on null model.
+  it('getEffective returns the merged spec without throwing on null model', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      BASE_SPEC({ model: null }),
+    );
+    const spec = await loader.getEffective('demo');
+    expect(spec).not.toBeNull();
+    expect(spec!.specialist.metadata.name).toBe('demo');
+    expect(spec!.specialist.execution.model).toBeNull();
+  });
+
+  it('getEffective applies the global user.json override just like get()', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      BASE_SPEC({ model: null }),
+    );
+    await writeGlobalUserJson({ demo: { execution: { model: 'global/glm-5.1' } } });
+    const spec = await loader.getEffective('demo');
+    expect(spec!.specialist.execution.model).toBe('global/glm-5.1');
+  });
+
+  it('getEffective returns null for unknown specialists (no throw)', async () => {
+    const spec = await loader.getEffective('nonexistent-xyz');
+    expect(spec).toBeNull();
+  });
+
   it('global layer with a blocked field records a "strip"-severity warning', async () => {
     await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
     await writeGlobalUserJson({

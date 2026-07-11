@@ -226,9 +226,22 @@ function printFullSpecialist(spec: Specialist): void {
   printBySection(spec, 'beads');
 }
 
-async function printRaw(summary: SpecialistSummary): Promise<void> {
-  const content = await readFile(summary.filePath, 'utf-8');
-  console.log(content);
+async function printRaw(summary: SpecialistSummary, loader: SpecialistLoader): Promise<void> {
+  // xtmux-1lb.4: emit the MERGED effective spec (package canonical + global
+  // user.json + repo overrides), not the file text verbatim. "Raw" now means
+  // the machine-readable form of what humans see in `sp view <name>`.
+  // Consumers (notably the xt pi --role launcher's parseSpecialistJson) get
+  // resolved model/thinking_level/skills.paths instead of null placeholders.
+  //
+  // Uses loader.getEffective() so specialists with a null canonical model
+  // still print — --raw is for inspection, not runtime enforcement (get()
+  // stays the runtime path and keeps throwing SpecialistMissingModelError).
+  const spec = await loader.getEffective(summary.name);
+  if (!spec) {
+    console.error(`Specialist not found: ${summary.name}`);
+    process.exit(1);
+  }
+  console.log(JSON.stringify(spec, null, 2));
 }
 
 export async function run(): Promise<void> {
@@ -273,7 +286,7 @@ export async function run(): Promise<void> {
   }
 
   if (args.raw) {
-    await printRaw(selectedSummary);
+    await printRaw(selectedSummary, loader);
     return;
   }
 

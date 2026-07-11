@@ -455,6 +455,24 @@ export class SpecialistLoader {
   }
 
   /**
+   * Return the merged (effective) spec for `name`: package canonical + global
+   * user.json + repo overrides, in the same precedence as get().
+   *
+   * Unlike get(), does NOT enforce the "model must be set" gate — this method
+   * exists precisely so tooling (sp view --raw, launchers, doctors) can inspect
+   * the effective config even when it isn't yet runnable. Callers that need
+   * runtime enforcement should still use get().
+   *
+   * Returns null if the specialist has no package canonical (unknown name).
+   */
+  async getEffective(name: string): Promise<Specialist | null> {
+    const merged = await this.buildMergedSpec(name);
+    if (!merged) return null;
+    if (merged.warnings.length) this.blockedFieldWarnings.set(name, merged.warnings);
+    return merged.spec;
+  }
+
+  /**
    * Blocked-field warnings collected during the most recent list() or get() calls.
    * Returns all warnings when called without a name; filters to one specialist otherwise.
    */
