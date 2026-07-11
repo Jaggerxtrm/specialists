@@ -44,7 +44,7 @@
     },
     {
       "path": "config/skills/using-specialists-v3/SKILL.md",
-      "sha256": "0d865ab44d8d4a280a53cb4c479f9fb5c493df941545e841bfcf29dd51f7f2f3"
+      "sha256": "003bf1a4f70a30d26b39226f82cae61a03015832e4be33012caeb50ac6ef1e44"
     },
     {
       "path": "config/skills/using-specialists/SKILL.md",
@@ -54,6 +54,9 @@
   "shipped_specialists": [
     {
       "path": "config/specialists/bare.specialist.json"
+    },
+    {
+      "path": "config/specialists/chain-coordinator.specialist.json"
     },
     {
       "path": "config/specialists/changelog-drafter.specialist.json"
