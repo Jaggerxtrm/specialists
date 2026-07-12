@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
-const evalsPath = join(repoRoot, 'config/skills/using-specialists-v3/evals/evals.json');
-const fixtureDir = join(repoRoot, 'config/skills/using-specialists-v3/evals/fixtures/qa-routing');
+const evalsPath = join(repoRoot, 'config/skills/using-specialists/evals/evals.json');
+const fixtureDir = join(repoRoot, 'config/skills/using-specialists/evals/fixtures/qa-routing');
 
 type EvalSpec = {
   id: number;
@@ -24,11 +24,11 @@ function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, 'utf8')) as T;
 }
 
-describe('using-specialists-v3 qa-routing evals', () => {
+describe('using-specialists qa-routing evals', () => {
   const evals = readJson<EvalsFile>(evalsPath);
 
   it('keeps 8 evals with restored originals first and qa-routing appended', () => {
-    expect(evals.skill_name).toBe('using-specialists-v3');
+    expect(evals.skill_name).toBe('using-specialists');
     expect(evals.evals).toHaveLength(8);
     expect(evals.evals.map((entry) => entry.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(evals.evals.slice(0, 4).map((entry) => entry.eval_name)).toEqual([

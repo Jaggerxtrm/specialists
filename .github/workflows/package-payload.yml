@@ -69,7 +69,7 @@ jobs:
             config/specialists/reviewer.specialist.json \
             config/mandatory-rules/executor-delivery.md \
             config/mandatory-rules/index.json \
-            config/skills/using-specialists-v3/SKILL.md \
+            config/skills/using-specialists/SKILL.md \
             config/catalog/index.json \
             config/catalog/native.json \
             config/catalog/gitnexus.json \

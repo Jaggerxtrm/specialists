@@ -50,7 +50,7 @@ bd create --title="..." --description="..." --type=task --priority=2
 # --parent <bead-id>                    nest as <id>.1, .2, … (recursive: .1.1) — default whenever this bead
 #                                        services another bead's work, not only epics
 # --labels contract:draft               capture-for-later: real PROBLEM + rough SCOPE, rest TBD — never dispatchable
-#                                        until promoted (`bd set-state <id> contract=ready`); see using-specialists-v3
+#                                        until promoted (`bd set-state <id> contract=ready`); see using-specialists
 # --deps "discovered-from:<parent-id>"  link follow-ups to source
 # priority: 0=critical  1=high  2=medium  3=low  4=backlog
 # types: task | bug | feature | epic | chore | decision
@@ -212,7 +212,7 @@ Hook output appears as context. Fix failures before committing.
 
 | When | Skill |
 |---|---|
-| Specialist orchestration (run/review/merge) | `/using-specialists-v2` |
+| Specialist orchestration (run/review/merge) | `/using-specialists` |
 | Specialist authoring (`.specialist.json`) | `/specialists-creator` |
 | Worktree session lifecycle | `/using-xtrm`, `/xt-end`, `/xt-merge` |
 | Code exploration / impact / debugging / refactoring | `/gitnexus-exploring`, `/gitnexus-impact-analysis`, `/gitnexus-debugging`, `/gitnexus-refactoring` |
@@ -227,11 +227,11 @@ Run `bd memories <keyword>` or `bd recall <key>` for prior insights before subst
 
 ## Specialist orchestration in one paragraph
 
-`--bead` is the prompt — don't run a specialist until the bead is a usable task contract (PROBLEM / SUCCESS / SCRUTINY / SCOPE / NON_GOALS / CONSTRAINTS / VALIDATION / OUTPUT). Edit-capable specialists auto-provision a worktree from `--bead`. Reviewer reuses the executor workspace via `--job <exec-job>` — `--worktree` and `--job` are mutually exclusive. Keep executor/debugger jobs alive with `--keep-alive` so they're resumable. Default `--context-depth` is 3. **Merge via manual git workflow (Cherry-Pick Playbook or `git merge --no-ff`)** — `sp merge` and `sp epic merge` are prohibited (known broken, awaiting separate rework epic). Per-turn output auto-appends to bead notes; `bd show <id>` is the canonical way to read a handoff. Full reference: `/using-specialists-v3`.
+`--bead` is the prompt — don't run a specialist until the bead is a usable task contract (PROBLEM / SUCCESS / SCRUTINY / SCOPE / NON_GOALS / CONSTRAINTS / VALIDATION / OUTPUT). Edit-capable specialists auto-provision a worktree from `--bead`. Reviewer reuses the executor workspace via `--job <exec-job>` — `--worktree` and `--job` are mutually exclusive. Keep executor/debugger jobs alive with `--keep-alive` so they're resumable. Default `--context-depth` is 3. **Merge via manual git workflow (Cherry-Pick Playbook or `git merge --no-ff`)** — `sp merge` and `sp epic merge` are prohibited (known broken, awaiting separate rework epic). Per-turn output auto-appends to bead notes; `bd show <id>` is the canonical way to read a handoff. Full reference: `/using-specialists`.
 
 ## Common gotchas (project-specific)
 
-- **Merge is manual.** `sp merge` and `sp epic merge` are prohibited (rule #9 in `/using-specialists-v3`). Use `git merge --no-ff feature/<bead>` for per-chain merges, or `git update-ref` for FF-equivalent when checkout is blocked by transient `.beads/issues.jsonl` churn. Cherry-Pick Playbook is the canonical multi-chain path.
+- **Merge is manual.** `sp merge` and `sp epic merge` are prohibited (rule #9 in `/using-specialists`). Use `git merge --no-ff feature/<bead>` for per-chain merges, or `git update-ref` for FF-equivalent when checkout is blocked by transient `.beads/issues.jsonl` churn. Cherry-Pick Playbook is the canonical multi-chain path.
 - **Closing keep-alive specialists.** No `sp finalize` cascade — close each waiting job explicitly with `sp stop <job-id>` after reviewer PASS. Verify with `sp ps` first.
 - **`--worktree` and `--job` are mutually exclusive.** First executor: `--worktree`. Reviewer/fix: `--job <exec-job>`.
 - **Canonical QA+Iron pipeline is mandatory on production diffs.** Shape (canon `docs/design/chain-templates.md` §2.1): writer → **seconder** (fused dual-verdict scope+quality gate; emits `scope_verdict`/`quality_verdict`/`overall_verdict`) → **test-engineer** (authors tests from the diff) → **test-runner** (runs exact commands + classifies failures by owner) → security-auditor (if sensitive surface) → **obligations-scanner** (TODO/FIXME/HACK scan) → reviewer (phase-2 adversarial + Release Checklist). Skip seconder/obligations only for test-only or new-file-only diffs. Reviewer auto-escalates SCRUTINY on sensitive surfaces (auth, config/specialists, lockfiles, migrations, permissions/hooks).

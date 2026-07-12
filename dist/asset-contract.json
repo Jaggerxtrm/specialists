@@ -12,7 +12,7 @@
     },
     {
       "path": "config/skills/setup-specialists/SKILL.md",
-      "sha256": "5a8a6a4675f9240e1f75ca68a5ee5a13148c326956e8d0f4f5161e62c4c00cbe"
+      "sha256": "63dc55a2b942d4ac038834ba75d2c6d99aadcd3759b8998387e7315cd0496a63"
     },
     {
       "path": "config/skills/specialists-creator/SKILL.md",
@@ -32,23 +32,15 @@
     },
     {
       "path": "config/skills/using-script-specialists/SKILL.md",
-      "sha256": "b73f6113a76c598cd6cf4fc9a910df0ca6cedba5e8280b0028df1ca2fe86187d"
+      "sha256": "e87511d685eb7bc95c374641056194931a9da79434b624fdfb2805bd9dbac7b6"
     },
     {
       "path": "config/skills/using-specialists-auto/SKILL.md",
-      "sha256": "4cf6adb2bf50a0896e9d424025d05cbf6ba9d16f9830c56949b524f97ed998f6"
-    },
-    {
-      "path": "config/skills/using-specialists-v2/SKILL.md",
-      "sha256": "0a8613391c8bc627f6ce065c3eb8909da893735c3542a636b7fe441af2d599e0"
-    },
-    {
-      "path": "config/skills/using-specialists-v3/SKILL.md",
-      "sha256": "003bf1a4f70a30d26b39226f82cae61a03015832e4be33012caeb50ac6ef1e44"
+      "sha256": "932f4248cd4a8bcece747bcc08c6e0dc775126cbb83aab5318e1ea82dde09686"
     },
     {
       "path": "config/skills/using-specialists/SKILL.md",
-      "sha256": "5072d3356f9741557fba1b1419614301277f807c0799976099b9226c6f542e3f"
+      "sha256": "b1172e9405f6c6d2c9e8fdf2f9b53404d73467b83e4fabd64403baf981fd60a3"
     }
   ],
   "shipped_specialists": [

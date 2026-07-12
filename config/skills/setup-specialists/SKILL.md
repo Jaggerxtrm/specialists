@@ -552,5 +552,5 @@ KAN-91 global setup result:
   not allowlisted at the global layer. The global override layer reuses the
   same per-spec field semantics; see its §"Global User Override Layer
   (KAN-90/91)" section for the dot-path syntax mapping.
-- `using-specialists-v3` — orchestration discipline once specialists are
+- `using-specialists` — orchestration discipline once specialists are
   configured.

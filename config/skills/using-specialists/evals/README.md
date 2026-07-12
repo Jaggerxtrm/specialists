@@ -1,4 +1,4 @@
-# using-specialists-v3 evals
+# using-specialists evals
 
 Deterministic smoke for QA-routing semantics.
 

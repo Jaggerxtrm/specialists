@@ -8,7 +8,7 @@ description: >
   specialist into a service, script, or library, when the caller needs the
   output immediately, or when the work is a single LLM call with structured
   input/output. Do NOT use for tracked agent work — that belongs to
-  `using-specialists-v2`.
+  `using-specialists`.
 version: 1.1.0
 updated: 2026-05-06
 synced_at: a0e54d0c
@@ -17,7 +17,7 @@ synced_at: a0e54d0c
 # Script-Class Specialists
 
 `sp script` and `sp serve` are a separate runtime from the bead-first
-orchestration covered by `using-specialists-v2`. They exist for service and
+orchestration covered by `using-specialists`. They exist for service and
 library integration, not for agent chains.
 
 | Aspect | `sp run` (orchestration) | `sp script` / `sp serve` |
@@ -47,7 +47,7 @@ Trigger when:
 
 Do NOT trigger for: code review, debugging, implementation, multi-turn work,
 keep-alive sessions, anything that should write files. Those belong to
-`using-specialists-v2`.
+`using-specialists`.
 
 ## Specialist Compatibility (compatGuard)
 
@@ -183,7 +183,7 @@ saturated past `queue-timeout-ms`.
 - For container deployments, see `docs/specialists-service-install.md`. Image
   runs as non-root UID 10001; bind-mount `~/.pi` and `.specialists/`.
 
-## When To Switch Back To `using-specialists-v2`
+## When To Switch Back To `using-specialists`
 
 If any of these become true mid-design, drop script-class and use the
 orchestration runtime:
@@ -198,7 +198,7 @@ orchestration runtime:
 ## What Not To Put Here
 
 - Bead workflow, chains, epics, reviewers, worktrees — those live in
-  `using-specialists-v2`.
+  `using-specialists`.
 - Orchestration MCP tooling (`use_specialist`).
 - Long-running multi-turn examples.
 

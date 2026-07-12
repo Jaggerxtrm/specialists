@@ -36,26 +36,17 @@ User-authored skills belong in the user/active layer used by the local agent set
 
 The package ships the source copies under `config/skills/`. The active `.xtrm/skills/...` files in a project may be refreshed by xtrm-tools.
 
-### `using-specialists-v3`
+### `using-specialists`
 
-Location: `config/skills/using-specialists-v3/SKILL.md`
+Location: `config/skills/using-specialists/SKILL.md`
 
-Canonical orchestration doctrine for substantial tracked work. It covers bead contracts, dependency graph shape, conflict-cluster mapping, advisory passes, reviewer rebuttal, debugger-restitch, E2E smoke phases, monitoring cadence, `sp merge` / `sp epic merge`, and session-end handoff. Use this for multi-step implementation, debugging, reviews, docs sync planning, and specialist orchestration.
+Canonical orchestration doctrine for substantial tracked work. It covers bead contracts, dependency graph shape, conflict-cluster mapping, advisory passes, reviewer rebuttal, debugger-restitch, E2E smoke phases, monitoring cadence, manual publication, and session-end handoff. Use this for multi-step implementation, debugging, reviews, docs sync planning, and specialist orchestration.
 
 ### `using-specialists-auto`
 
 Location: `config/skills/using-specialists-auto/SKILL.md`
 
-Autonomous/offline orchestration overlay. It delegates shared mechanics to `using-specialists-v3` and adds auto-mode pacing, per-item loop shape, escalation triggers, and unattended-run discipline.
-
-### `using-specialists-v2` / `using-specialists`
-
-Locations:
-
-- `config/skills/using-specialists-v2/SKILL.md`
-- `config/skills/using-specialists/SKILL.md`
-
-Older orchestration references retained for compatibility and migration context. Prefer `using-specialists-v3` for current guidance.
+Autonomous/offline orchestration overlay. It delegates shared mechanics to `using-specialists` and adds auto-mode pacing, per-item loop shape, escalation triggers, and unattended-run discipline.
 
 ### `sync-docs`
 
