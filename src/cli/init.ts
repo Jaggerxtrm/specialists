@@ -1,6 +1,6 @@
 // src/cli/init.ts
 
-import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import {
@@ -563,6 +563,27 @@ function installProjectSkills(cwd: string, syncSkills: boolean): void {
 
   let copied = 0;
   let refreshed = 0;
+  let pruned = 0;
+
+  if (syncSkills) {
+    const currentSkills = new Set(skills);
+    for (const entry of readdirSync(defaultRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || currentSkills.has(entry.name)) continue;
+
+      const retiredDefaultPath = join(defaultRoot, entry.name);
+      const retiredActivePath = join(activeRoot, entry.name);
+      try {
+        if (lstatSync(retiredActivePath).isSymbolicLink()
+          && resolve(dirname(retiredActivePath), readlinkSync(retiredActivePath)) === resolve(retiredDefaultPath)) {
+          unlinkSync(retiredActivePath);
+        }
+      } catch {
+        // Missing or user-owned active entries are left alone.
+      }
+      rmSync(retiredDefaultPath, { recursive: true, force: true });
+      pruned++;
+    }
+  }
 
   for (const skill of skills) {
     const src = join(sourceDir, skill);
@@ -583,6 +604,7 @@ function installProjectSkills(cwd: string, syncSkills: boolean): void {
 
   if (copied > 0) ok(`copied ${copied} skill${copied === 1 ? '' : 's'} to .xtrm/skills/default/`);
   if (refreshed > 0) ok(`re-synced ${refreshed} skill${refreshed === 1 ? '' : 's'} in .xtrm/skills/default/`);
+  if (pruned > 0) ok(`pruned ${pruned} retired managed skill${pruned === 1 ? '' : 's'}`);
   ok('verified active skill symlinks in .xtrm/skills/active/');
 }
 

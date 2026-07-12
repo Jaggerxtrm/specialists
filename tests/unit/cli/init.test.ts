@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, readFile, mkdir, writeFile, readdir } from 'node:fs/promises';
-import { existsSync, lstatSync, readlinkSync } from 'node:fs';
+import { existsSync, lstatSync, readlinkSync, symlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { InitOptions } from '../../../src/cli/init.js';
@@ -245,6 +245,29 @@ describe('init CLI — run()', () => {
     expect(dirs.length).toBeGreaterThan(0);
     expect(dirs).toContain('specialists-creator');
     expect(dirs).toContain('using-specialists');
+  });
+  it('prunes retired managed skills during --sync-skills without removing user-owned active content', async () => {
+    await setupXtrmStructure(tempDir);
+    const defaultRoot = join(tempDir, '.xtrm', 'skills', 'default');
+    const activeRoot = join(tempDir, '.xtrm', 'skills', 'active');
+    const retiredName = 'using-specialists-v3';
+    await mkdir(join(defaultRoot, retiredName));
+    await writeFile(join(defaultRoot, retiredName, 'SKILL.md'), 'retired');
+    symlinkSync(`../default/${retiredName}`, join(activeRoot, retiredName), 'dir');
+
+    const userOwnedName = 'manual-legacy';
+    await mkdir(join(defaultRoot, userOwnedName));
+    await writeFile(join(defaultRoot, userOwnedName, 'SKILL.md'), 'retired');
+    await mkdir(join(activeRoot, userOwnedName));
+    await writeFile(join(activeRoot, userOwnedName, 'SKILL.md'), 'user-owned');
+
+    await runInit(tempDir, { syncSkills: true });
+
+    expect(existsSync(join(defaultRoot, retiredName))).toBe(false);
+    expect(existsSync(join(activeRoot, retiredName))).toBe(false);
+    expect(existsSync(join(defaultRoot, userOwnedName))).toBe(false);
+    expect(await readFile(join(activeRoot, userOwnedName, 'SKILL.md'), 'utf-8')).toBe('user-owned');
+    expect(existsSync(join(defaultRoot, 'using-specialists'))).toBe(true);
   });
   it('creates user specialists directory for custom assets', async () => {
     await runInit(tempDir);
