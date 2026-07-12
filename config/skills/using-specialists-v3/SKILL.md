@@ -255,7 +255,7 @@ sqlite3 "$DB" "SELECT job_id, specialist, bead_id, last_output FROM specialist_j
 - The DB is authoritative. If `sp ps` and the DB disagree, trust the DB.
 - Applies to both Pi and Claude Code — same shell-out to `sqlite3`. Do not build a language-specific SDK.
 
-Interactive coordinators (chain-coordinator role sessions launched via `xt pi --role`) should prefer this pattern over `sp ps` polling because they escalate to the parent orchestrator via `message-send` only when a job actually transitions, not on every poll cycle.
+Interactive coordinators (chain-coordinator role sessions launched via `xt pi --role` or `xt claude --role`) should prefer this pattern over `sp ps` polling because they escalate to the parent orchestrator via `message-send` only when a job actually transitions, not on every poll cycle. Full launcher-flag surface (`--reuse` / `--new-session` / `--parent` / `--child` / `--model` / `--thinking` / `--` passthrough), session-name shape (`role-<runtime>-<slug>[-<bead>]`), pane options + `XTMUX_AGENT_*` env vars, and address-space split (`@agent_parent_session` = tmux `#{session_id}`; poll `message-list --for $MY_SID`, not by session name) live in `/multiplexing` Pattern 7 — do not re-derive them here.
 
 ## Worktree Cleanup After Merge
 
@@ -325,6 +325,7 @@ Do small deterministic edits directly when scope is already obvious and delegati
 | Dependency bump | Auto for security-patch bumps | Major/minor bumps escalate |
 | Config file schema-changing edit | Never | Always |
 | Dispatch against `contract:draft` bead | Never (rule #15) | Always — promote first: explore + rewrite full 7-section contract + `bd set-state <id> contract=ready --reason "..."` |
+| Interactive coordinator escalation to orchestrator (merge decisions, reviewer PARTIAL/FAIL, sensitive-surface findings) | Coordinator sends via `tmux-session-picker message-send --to $@agent_parent_session --bead <id> --text "..."` — orchestrator replies via `safe-send-pointer` to coordinator's `pane_id` with a `/tmp/reply.md` pointer | Any human-judgment call the coordinator's system prompt flags (see `/multiplexing` Pattern 7 Escalation Contract) |
 
 ## Live Registry And Help
 
@@ -348,6 +349,8 @@ sp stop --help
 ```
 
 Do not rely on stale remembered flags when help is available. (Omitted: `sp finalize`, `sp merge`, `sp epic` — see rule #9. They exist in the binary but the skill prohibits their use.)
+
+**`sp view <name> --raw` returns the MERGED effective spec** (package canonical + global user overrides + repo user overrides), same layer precedence as the runtime uses, without the missing-model gate. Since specialists PR #178 this is the correct way to inspect what a specialist will actually run as — the old canonical-only reading is gone. If you need the raw package canonical for debugging (rare), read `.specialist.json` from the specialists package on disk.
 
 ## Writing Bead Contracts Well
 
@@ -1175,7 +1178,8 @@ A session that lands code but skips the close-report leaves the next agent cold-
 Source: latest xt report + `xt --help`; keep commands here, not full CLI surface.
 - `xt report` — session report input for release synthesis; see `/session-close-report`.
 - `xt end` — close worktree session: push, PR, merge, cleanup; see `/xt-end`.
-- `xt claude` — launch Claude in sandboxed worktree; see `/using-xtrm`.
+- `xt claude` — launch Claude in sandboxed worktree; see `/using-xtrm`. `xt claude --role <name>` has full parity with `xt pi --role` (same flags, same scaffold, same session-name shape).
+- `xt pi` — launch pi in sandboxed worktree. `xt pi --role <specialist>` spawns an interactive specialist session (chain-coordinator, pr-reviewer, sre-triage, deploy-monitor); full flag surface + monitoring pattern in `/multiplexing` Pattern 7.
 - `xt update` — refresh xtrm-managed files in one repo or many; see `/update-xt`.
 - `xt doctor` — diagnose xtrm drift in current project; see `/update-xt`.
 - `xt init` — bootstrap xtrm in project; see xtrm-tools docs.
