@@ -1744,7 +1744,7 @@ export class Supervisor {
           writeFileSync(this.resultPath(id), lastTurnSummaryTextContent || output, 'utf-8');
         }
         try {
-          this.withSqliteOperation('upsertResult:resume_turn', (client) => client.upsertResult(id, output));
+          this.withSqliteOperation('upsertResult:resume_turn', (client) => client.upsertResult(id, lastTurnSummaryTextContent || output));
         } catch (error: unknown) {
           console.warn(`[supervisor] SQLite upsertResult failed during resume turn: ${String(error)}`);
         }
@@ -1753,7 +1753,7 @@ export class Supervisor {
           model: statusSnapshot.model ?? 'unknown',
           backend: statusSnapshot.backend ?? 'unknown',
           beadId: statusSnapshot.bead_id,
-          output,
+          output: lastTurnSummaryTextContent || output,
         });
 
         const passFinalize = shouldAutoFinalizeKeepAlive(output);
@@ -2445,18 +2445,24 @@ export class Supervisor {
       isReadOnlySpecialist = finalResult.permissionRequired === 'READ_ONLY';
       autoCommitPolicy = finalResult.autoCommit;
 
+      // Reported output falls back to the last non-empty turn summary when the
+      // final turn itself produced no text (e.g. a model ends on an empty
+      // completion). Control-flow decisions below keep using finalResult.output
+      // (the true final turn) — only the externally-visible result substitutes.
+      const reportedOutput = lastTurnSummaryTextContent || finalResult.output;
+
       emitRunCompleteForTurn({
         model: finalResult.model,
         backend: finalResult.backend,
         beadId: finalResult.beadId,
-        output: finalResult.output,
+        output: reportedOutput,
       });
 
       // Persist result row on every turn boundary so `sp result` and stopped-job
       // recovery can read the last completed output without depending on the
       // file-output gate or keep-alive lifecycle.
       try {
-        this.withSqliteOperation('upsertResult:initial_turn', (client) => client.upsertResult(id, finalResult.output));
+        this.withSqliteOperation('upsertResult:initial_turn', (client) => client.upsertResult(id, reportedOutput));
       } catch (error: unknown) {
         console.warn(`[supervisor] SQLite upsertResult failed during initial turn: ${String(error)}`);
       }
@@ -2614,7 +2620,7 @@ export class Supervisor {
           exit_reason: runMetrics.exit_reason,
           metrics: enrichedRunMetrics,
           ...(gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}),
-        }), latestOutput);
+        }), reportedOutput);
         return true;
       });
       if (completePersisted === undefined) {
