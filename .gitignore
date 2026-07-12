@@ -81,6 +81,7 @@ __pycache__/
 .beads/
 .claude/
 .pi/
+.pi-lens/
 .serena/
 .specialists/
 .triage/
