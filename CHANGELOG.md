@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v3.18.3] — 2026-07-13
+
+### Changed
+
+- `using-specialists` skill and the `chain-coordinator` specialist now use the `xtmux` command prefix instead of the legacy `tmux-session-picker` name for coordinator→orchestrator escalation. `chain-coordinator`'s `external_commands` allowlist was updated to match, so the coordinator can actually run the command its prompt names (xtmux-d0a.22, #184).
+
 ## [v3.18.2] — 2026-07-12
 
 ### Added
