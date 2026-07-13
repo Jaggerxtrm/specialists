@@ -325,7 +325,7 @@ Do small deterministic edits directly when scope is already obvious and delegati
 | Dependency bump | Auto for security-patch bumps | Major/minor bumps escalate |
 | Config file schema-changing edit | Never | Always |
 | Dispatch against `contract:draft` bead | Never (rule #15) | Always — promote first: explore + rewrite full 7-section contract + `bd set-state <id> contract=ready --reason "..."` |
-| Interactive coordinator escalation to orchestrator (merge decisions, reviewer PARTIAL/FAIL, sensitive-surface findings) | Coordinator sends via `tmux-session-picker message-send --to $@agent_parent_session --bead <id> --text "..."` — orchestrator replies via `safe-send-pointer` to coordinator's `pane_id` with a `/tmp/reply.md` pointer | Any human-judgment call the coordinator's system prompt flags (see `/multiplexing` Pattern 7 Escalation Contract) |
+| Interactive coordinator escalation to orchestrator (merge decisions, reviewer PARTIAL/FAIL, sensitive-surface findings) | Coordinator sends via `xtmux message-send --to $@agent_parent_session --bead <id> --text "..."` — orchestrator replies via `safe-send-pointer` to coordinator's `pane_id` with a `/tmp/reply.md` pointer | Any human-judgment call the coordinator's system prompt flags (see `/multiplexing` Pattern 7 Escalation Contract) |
 
 ## Live Registry And Help
 
