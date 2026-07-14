@@ -13,10 +13,7 @@ async function main() {
   const contract = {
     schema_version: SCHEMA_VERSION,
     package_version: packageJson.version,
-    shipped_skills: await collectFiles('config/skills', 'SKILL.md', async (filePath) => ({
-      path: filePath,
-      sha256: await sha256File(path.join(ROOT, filePath)),
-    })),
+    shipped_skills: await collectSkillFiles(),
     shipped_specialists: await collectFiles('config/specialists', '.specialist.json', (filePath) => ({
       path: filePath,
     })),
@@ -38,6 +35,21 @@ async function main() {
 
   await mkdir(path.dirname(OUTPUT_PATH), { recursive: true });
   await writeFile(OUTPUT_PATH, `${JSON.stringify(contract, null, 2)}\n`, 'utf8');
+}
+
+// Every file a skill ships, not just its SKILL.md. A progressively-disclosed skill keeps
+// its doctrine in bundled resources (references/**), and skills may ship scripts — all of
+// those are packaged (package.json `files` includes config/skills/) and must be tracked
+// here, or a missing resource would sail through release and fresh-install validation.
+// `evals/` is excluded to mirror the package's own `!config/skills/**/evals/**` exclusion.
+async function collectSkillFiles() {
+  const files = [];
+  for await (const filePath of walk('config/skills')) {
+    if (filePath.split(path.sep).includes('evals')) continue;
+    files.push({ path: filePath, sha256: await sha256File(path.join(ROOT, filePath)) });
+  }
+  files.sort(compareByPath);
+  return files;
 }
 
 async function collectFiles(relativeDir, suffix, mapEntry) {

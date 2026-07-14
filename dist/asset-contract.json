@@ -3,6 +3,10 @@
   "package_version": "3.18.3",
   "shipped_skills": [
     {
+      "path": "config/skills/memory-audit-transaction/scripts/pre-bulk-export.sh",
+      "sha256": "e061da64bdca2abc1d6c3b361514361c2339266ccabfce4809dfe716fd8e306e"
+    },
+    {
       "path": "config/skills/memory-audit-transaction/SKILL.md",
       "sha256": "3b16310b507a94cc1c531670cd7e61af7696298a340246591d4b65bbb287e137"
     },
@@ -13,6 +17,18 @@
     {
       "path": "config/skills/setup-specialists/SKILL.md",
       "sha256": "63dc55a2b942d4ac038834ba75d2c6d99aadcd3759b8998387e7315cd0496a63"
+    },
+    {
+      "path": "config/skills/specialists-creator/scripts/audit-spec-uniformity.mjs",
+      "sha256": "0ada06784cfd5c3adfa9c9908a9cd23380e8278fb57329fc616a83140a47fb33"
+    },
+    {
+      "path": "config/skills/specialists-creator/scripts/scaffold-specialist.ts",
+      "sha256": "c1bfa3693d644072e6d387d2519e131624d99c5b85521ae638680d7485267403"
+    },
+    {
+      "path": "config/skills/specialists-creator/scripts/validate-specialist.ts",
+      "sha256": "3a5f5a3a77c50e98ecf9188634ff2882f8143b19d0f28a53aff5c42e1bd09dfa"
     },
     {
       "path": "config/skills/specialists-creator/SKILL.md",
@@ -39,8 +55,36 @@
       "sha256": "932f4248cd4a8bcece747bcc08c6e0dc775126cbb83aab5318e1ea82dde09686"
     },
     {
+      "path": "config/skills/using-specialists/references/bead-contracts.md",
+      "sha256": "b2c3f08758e5a998d52b37c8b5239db81f496a5ea63d93b680a5f49dd0446db4"
+    },
+    {
+      "path": "config/skills/using-specialists/references/chain-recipes.md",
+      "sha256": "c92e6447f8ec443db30a28b369d59bdec1f8438115803b9f4661437e97f88f75"
+    },
+    {
+      "path": "config/skills/using-specialists/references/content-migration-map.json",
+      "sha256": "32ec8787652b925b5c7dde04adff81baf129a5154decc5ffcd1034655da0bd5f"
+    },
+    {
+      "path": "config/skills/using-specialists/references/dispatch-preconditions.md",
+      "sha256": "66c7f52379fe546e79fe3eac0c0d52c47df1fc8d1491f805531f48cf83a89dd8"
+    },
+    {
+      "path": "config/skills/using-specialists/references/merge-and-integration.md",
+      "sha256": "7884a445b5ee7031fd0cf2b548a6f6bf4df8daa2ab1db5ec28f32c47cbc4d6dd"
+    },
+    {
+      "path": "config/skills/using-specialists/references/monitoring.md",
+      "sha256": "16ea4ee2b9bc868c7b8acd034d0156e803b344b757aa449b1b5559ebb3199a13"
+    },
+    {
+      "path": "config/skills/using-specialists/references/registry-and-locations.md",
+      "sha256": "d02cb1c2e68f59e14f57d8fda7e80e109fe5666bbd33cae4c0ab8f9b10814460"
+    },
+    {
       "path": "config/skills/using-specialists/SKILL.md",
-      "sha256": "9f4a1b124f6178d62d76b9e417e8233ecbae166d4e15b6ecd58fdb0b6a21b6a1"
+      "sha256": "11169f562bdba74c261850afb6110b91c393aa956152d1e22b8d275c24c0a9b7"
     }
   ],
   "shipped_specialists": [
