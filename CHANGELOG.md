@@ -1,13 +1,3 @@
-
-## [Unreleased]
-
-### Project maintenance
-
-- **Add git-cliff config and changelog** ([081ebc2](https://github.com/xtrm-dev/specialists/commit/081ebc2f5c6cef1324506d745f18b96ac12fcf0f))
-
-  Generic type-based parsers; repo-specific scopes to be tuned (see P0 bead).
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file.
@@ -18,6 +8,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## [Unreleased]
+
+### Added
+
+- **Expose read-only task-prompt renderer (sp render-task)** ([147c671](https://github.com/xtrm-dev/specialists/commit/147c67125fcb04e659934bacfa2bb4d9e47a2359))
+
+  Extract sp run's task-side prompt assembly into one pure seam
+  (src/specialist/task-prompt.ts renderTaskPrompt) and reuse it from a new
+  read-only CLI so `xt pi/claude --role` can send the same initial user prompt
+  without forking renderer logic. SpecialistRunner.run now delegates to the seam;
+  buildBeadContext / renderTemplate / buildMandatoryRulesInjection are unchanged.
+
+  Execution-only steps stay out of the renderer: pre-scripts and the reviewer
+  git-diff context (the latter enters sp run via appendExecutionContext, still
+  before the hash, so prompt_hash semantics are unchanged). Mandatory-rule
+  resolution failure is fatal for the renderer but keeps sp run's warn-and-skip.
+
+  Dedup chain-coordinator task_template: $prompt and $bead_context both resolved
+  to the same string, rendering the full bead context twice on every tracked run.
+
+  Closes unitAI-6639v.1, unitAI-6639v.4
+
+### Fixed
+
+- **Repoint skill refs to the global root and hard-fail missing skills** ([3f829b6](https://github.com/xtrm-dev/specialists/commit/3f829b6534247f8cdb036cc39a3feb42d5d1f77a))
+
+  The global-skills migration retired `.xtrm/skills/active/` in favour of
+  `~/.xtrm/skills/default/`, but every vendored specialist still pointed at the
+  old root. Nothing surfaced it: the loader passed bare relative paths through
+  unchanged, validateBeforeRun only warned, and pi silently ignores a
+  nonexistent `--skill` (exit 0, no diagnostic). chain-coordinator and its
+  siblings had been running with no skills loaded at all.
+
+  Repoint every stale reference, not just skills.paths: bare skill names and the
+  repo-local memory-audit-transaction path resolved against cwd and broke inside
+  worktrees; sync-docs' pre-script pointed at a file that no longer existed (it
+  never hard-failed because the check only verifies the `bash` binary); and
+  researcher's prompt prose named the retired root.
+
+  Promote a missing declared skill from a warning to a pre-launch hard failure so
+  a stale skill path can never again reach pi unnoticed.
+
+  Closes unitAI-6639v.2.1
+
+- **Stop re-expanding variables inside bead content** ([ca46e59](https://github.com/xtrm-dev/specialists/commit/ca46e59a22c8ce05e09c5146cd3ad1f15e70fa15))
+
+  The task render ran twice: the first pass substituted $prompt with the bead
+  body, and the second re-scanned the result. A bead whose text contained a
+  literal $cwd or $bead_id therefore had it replaced with the real value — bead
+  content was being treated as template source.
+
+  Render once over the original template with the union variable map. Every
+  template-origin token still resolves; only the injected content is no longer
+  re-scanned.
+
+  Closes unitAI-6639v.5
+
+### Project maintenance
+
+- **Add git-cliff config and changelog** ([d648135](https://github.com/xtrm-dev/specialists/commit/d64813593f8996ed02e4dc3d92ad813d20f31bf7))
+
+  Generic type-based parsers; repo-specific scopes to be tuned (see P0 bead).
+
+- **Split using-specialists into a router + on-demand references** ([b973312](https://github.com/xtrm-dev/specialists/commit/b973312dd2f53368b5218b5b0938a86f6704d08e))
+
+  using-specialists was a 1416-line monolith injected in full into every session
+  that referenced it — 98KB of eager context for chain-coordinator, most of it
+  irrelevant to the phase it was in.
+
+  Split it into a 256-line router that carries only always-needed policy (rules,
+  gates, specialist choice, escalation, promotion gate) plus six bundled
+  references loaded per phase. Sections were moved verbatim by line range, and
+  references/content-migration-map.json records where each of the 41 original
+  sections went, so "no content loss" is machine-testable rather than asserted.
+  Coordinator eager payload drops to 21,689 bytes (-78%).
+
+  The asset-contract generator collected only files literally named SKILL.md, so
+  bundled resources would have shipped untracked and a missing reference could
+  pass release and fresh-install validation unnoticed. It now tracks everything
+  under config/skills except evals/, which also closes a pre-existing gap where
+  four shipped skill scripts were absent from the contract.
+
+  Closes unitAI-6639v.2.2
+
+- **Validate progressive disclosure, selective loading, and role parity** ([23cd9e1](https://github.com/xtrm-dev/specialists/commit/23cd9e19dadc36abde48f4be501051b4ad0f6171))
+
+  Covers unitAI-6639v.3: prove the split skill preserves behaviour, that an agent
+  loads only what its phase needs, and that the three surfaces that build a task
+  prompt agree.
+
+  - role-envelope-parity: the pi/claude/sp-run matrix from the .1 parity decision.
+    pi and claude are byte-identical on the task side; sp run differs only by the
+    execution-only layers (pre-scripts, reviewer diff); prompt.system never leaks.
+  - selective-loading: each phase has exactly one owning reference, the router
+    routes to it, and the router alone answers always-needed policy. Cross-file
+    references are pointers, not copies — ownership is the invariant.
+  - three progressive-disclosure eval scenarios, each asserting the agent does NOT
+    open references irrelevant to its phase.
+  - benchmark artifact comparing v3.7 with v3.8, incl. live smoke transcripts and
+    the known limitations.
+
+  Closes unitAI-6639v.3
 
 ## [v3.18.3] — 2026-07-13
 

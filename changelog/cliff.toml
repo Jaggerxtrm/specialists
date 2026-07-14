@@ -11,20 +11,48 @@ body = """
 {% endif %}
 {% endfor %}{% endfor %}
 """
-trim = false
+trim = true
 footer = ""
+# Compaction. The body template and the commit bodies each emit blank lines, and they
+# stack into 2-4 line gaps between entries. These run on the FINAL rendered changelog:
+# strip trailing whitespace, then collapse any run of blank lines to a single one.
+# One blank line is kept on purpose — it separates paragraphs inside a commit body,
+# which is what makes the rendered rationale readable. Set postprocessors = [] to get
+# the old airy output back.
+postprocessors = [
+  { pattern = '[ \t]+\n', replace = "\n" },
+  { pattern = '\n{3,}', replace = "\n\n" },
+]
 
 [git]
 conventional_commits = true
 filter_unconventional = false
 split_commits = false
-# Generic type grouping. Add repo-specific SCOPE parsers above these — see the P0 bead.
+# Order matters: the FIRST match wins, so skips come before groups and groups before
+# the catch-all.
+#
+# The skips exist because "Other changes" was the second-largest section (35 commits)
+# and was pure noise: specialist chains write `checkpoint:` commits, merges restate
+# work that is already listed under its own commit, and release commits are just the
+# version bump. Anything reaching "Other changes" now is a genuinely unclassified
+# commit and should be treated as a prompt to add a parser (or to fix the commit
+# message), not as a dumping ground.
 commit_parsers = [
+  # ── noise: never user-facing ──────────────────────────────────────────────
+  { message = "^checkpoint", skip = true },              # specialist chain checkpoints
+  { message = "^(merge|Merge)", skip = true },           # merge commits restate their branch
+  { message = "^release", skip = true },                 # version bump commits
+  { message = "^v?[0-9]+\\.[0-9]+\\.[0-9]+$", skip = true },
+  { message = "^bump", skip = true },
+
+  # ── user-facing ───────────────────────────────────────────────────────────
   { message = "^feat", group = "Added" },
   { message = "^fix", group = "Fixed" },
   { message = "^perf", group = "Performance" },
+  { message = "^revert", group = "Reverted" },
   { message = "^(docs|chore|build|ci|test|refactor|style)", group = "Project maintenance" },
-  { message = "^v?[0-9]+\\.[0-9]+\\.[0-9]+$", skip = true },
+
+  # ── anything left is unclassified on purpose: see the note above ──────────
   { message = ".*", group = "Other changes" },
 ]
 protect_breaking_commits = true

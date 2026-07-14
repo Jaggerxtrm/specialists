@@ -244,6 +244,29 @@ Run `bd memories <keyword>` or `bd recall <key>` for prior insights before subst
 - **Package-tier specialists need direct JSON edit** (not `sp edit` — that's user-tier only). Use `jq -e` to validate after edit. `specialists list --full` to confirm registry sees the change.
 - **Edit-capable specialists that CREATE files need permission HIGH, not MEDIUM.** Runtime: `write` (create new files) → HIGH only; `edit` (modify existing) → MEDIUM (`src/specialist/runner.ts:236-237`, `schema.ts:32-33`). A file-authoring specialist (e.g. test-engineer) set to MEDIUM fails pre-run validation at 0s (`tool "write" requires higher permission`). **`sp validate` does NOT catch this — only a live dispatch does.** Enforce a "no production-source edits" boundary via `prompt` + `inline_rules`, never by lowering the tier.
 
+## Commit messages ARE the changelog
+
+`CHANGELOG.md` is generated from commits by git-cliff (`changelog/cliff.toml`). Write the
+commit once; never hand-write a changelog entry for the same change.
+
+| Prefix | Lands in |
+|---|---|
+| `feat:` | **Added** |
+| `fix:` | **Fixed** |
+| `perf:` | **Performance** |
+| `revert:` | **Reverted** |
+| `docs: chore: build: ci: test: refactor: style:` | **Project maintenance** |
+| `checkpoint:` `merge:` `release:` `bump:` | *skipped — never in the changelog* |
+| anything else | **Other changes** ← means "you used a prefix with no parser". Fix the message or add a parser. |
+
+**The commit BODY is rendered into the changelog verbatim** (indented under the bullet), so
+put the real rationale there — what broke, why, bead id, PR. That body is the changelog entry.
+Keep the subject one line, imperative, no trailing period.
+
+Release regenerates with `git-cliff --config changelog/cliff.toml --prepend CHANGELOG.md --unreleased`.
+**Never** run git-cliff with `-o` / plain generate on this repo — it rebuilds from the git log and
+drops every hand-written line (measured: 362 lines would be lost).
+
 ## Project-specific
 
 - gzrx manifest system: see `docs/design/gzrx-tool-catalog.md` (canonical), `docs/design/gzrx-completion-critique.md` (gap analysis), bead `unitAI-qujxo` (completion epic).
