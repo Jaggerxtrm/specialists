@@ -22432,8 +22432,7 @@ ${buildBeadBoundaryInstruction(cwd, input.worktreeBoundary)}`.trim() : input.fal
     ...input.variables ?? {},
     ...beadVariables
   };
-  const taskTemplate = beadId ? renderTemplate(prompt.task_template, beadTemplateVariables) : prompt.task_template;
-  let renderedTask = renderTemplate(taskTemplate, variables);
+  let renderedTask = renderTemplate(prompt.task_template, variables);
   const taskTemplateComponent = measurePayloadComponent("task_template", "task_template", renderedTask);
   let mandatoryRulesBlock = "";
   let mandatoryRules = null;

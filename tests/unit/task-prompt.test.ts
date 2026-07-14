@@ -83,6 +83,27 @@ describe('renderTaskPrompt', () => {
     expect(out.initial_prompt).not.toContain('DIFF CONTEXT');
   });
 
+  it('never re-expands variables that appear inside bead content', () => {
+    // unitAI-6639v.5: the old two-pass render substituted $prompt with the bead body and
+    // then re-scanned the RESULT, so a bead whose text contained a literal $cwd had it
+    // replaced with the real path. Bead-authored content is data, not template source.
+    const bead = {
+      ...BEAD,
+      description: 'The literal tokens $cwd and $bead_id must survive verbatim.',
+    } as BeadRecord;
+    const out = renderTaskPrompt({ ...base, bead, specialist: spec('$prompt'), cwd: '/SECRET/PATH' });
+
+    expect(out.initial_prompt).toContain('The literal tokens $cwd and $bead_id must survive verbatim.');
+    // ...while template-origin tokens still resolve (the boundary block renders the real cwd).
+    expect(out.initial_prompt).toContain('Current cwd: /SECRET/PATH');
+  });
+
+  it('still resolves every template-origin variable in one pass', () => {
+    const out = renderTaskPrompt({ ...base, specialist: spec('bead=$bead_id cwd=$cwd ctx=$bead_context') });
+    expect(out.initial_prompt.startsWith('bead=unitAI-6639v cwd=/repo ctx=')).toBe(true);
+    expect(out.initial_prompt).toContain(BEAD.title); // $bead_context expanded
+  });
+
   it('falls back to the caller-supplied prompt when there is no bead', () => {
     const out = renderTaskPrompt({
       cwd: '/repo',

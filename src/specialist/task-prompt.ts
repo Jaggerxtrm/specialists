@@ -126,10 +126,13 @@ export function renderTaskPrompt(input: TaskPromptInput): TaskPromptResult {
     ...beadVariables,
   };
 
-  const taskTemplate = beadId
-    ? renderTemplate(prompt.task_template, beadTemplateVariables)
-    : prompt.task_template;
-  let renderedTask = renderTemplate(taskTemplate, variables);
+  // ONE pass over the original template. The previous two-pass render substituted
+  // $prompt with the bead body and then re-scanned the RESULT, so a bead whose text
+  // contained a literal $cwd / $bead_id had it expanded — bead-authored content was
+  // being treated as template source (unitAI-6639v.5). `variables` is the union of
+  // every map the second pass used, so template tokens still all resolve; only the
+  // injected content is no longer re-scanned.
+  let renderedTask = renderTemplate(prompt.task_template, variables);
   const taskTemplateComponent = measurePayloadComponent('task_template', 'task_template', renderedTask);
 
   let mandatoryRulesBlock = '';
