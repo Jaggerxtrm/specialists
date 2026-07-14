@@ -1380,6 +1380,9 @@ class SqliteClient implements ObservabilitySqliteClient {
         traceId: context.traceId,
         spanId: context.spanId,
         parentSpanId: context.parentSpanId,
+        parentJobId: context.parentJobId,
+        spawnOrigin: context.spawnOrigin,
+        rootRuntimeOrigin: context.rootRuntimeOrigin,
       },
     );
     this.insertForensicEventRow(jobId, event.seq, forensicEvent);
