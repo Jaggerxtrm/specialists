@@ -21,6 +21,7 @@ import { createInterface } from 'node:readline';
 import { createReadStream } from 'node:fs';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import type { SpecialistRunner, RunOptions } from './runner.js';
+import { resolveSpawnOrigin, type RuntimeOriginV1, type SpecialistSpawnOriginV1 } from './runtime-origin.js';
 import { resolveJobsDir, resolveCurrentBranch } from './job-root.js';
 import { isJobFileOutputEnabled } from './job-file-output.js';
 import type { BeadsClient } from './beads.js';
@@ -140,6 +141,12 @@ export interface SupervisorStatus {
       count: number;
       activated: string[];
     };
+    // Compact origin projection for run_start / status inspection.
+    // Full origin lives in SupervisorStatus.spawn_origin / .root_runtime_origin.
+    spawn_origin_kind?: 'xtmux.agent_instance' | 'specialist.job' | 'unknown';
+    parent_job_id?: string;
+    root_pane_id?: string;
+    root_agent_instance_id?: string;
   };
   metrics?: SessionRunMetrics;
   context_pct?: number;
@@ -163,6 +170,11 @@ export interface SupervisorStatus {
   pr_drift_checked_at_ms?: number;
   base_sha_pinned?: string;
   base_sha_pinned_at_ms?: number;
+  // xtmux runtime origin binding (spec docs/xtmux-gaps.md §13.3).
+  // Recorded once at initial status construction via resolveSpawnOrigin.
+  spawn_origin?: SpecialistSpawnOriginV1;
+  parent_job_id?: string;
+  root_runtime_origin?: RuntimeOriginV1;
 }
 
 export type SupervisorStatusView = SupervisorStatus & { is_dead: boolean };
@@ -1271,6 +1283,14 @@ export class Supervisor {
         : {}),
     };
 
+    // Spec §13.4 precedence: explicit parent_job_id > ambient/propagated origin > unknown.
+    // F2 (unitAI-z8uli.8) refines the specialist.job case by looking up the
+    // parent's stored root_runtime_origin so the whole chain shares one root.
+    const originBinding = resolveSpawnOrigin({
+      explicitParentJobId: runOptions.explicitParentJobId,
+      ambientRuntimeOrigin: runOptions.ambientRuntimeOrigin,
+    });
+
     const initialStatus: SupervisorStatus = {
       id,
       specialist: runOptions.name,
@@ -1296,7 +1316,22 @@ export class Supervisor {
       ...(runOptions.workingDirectory
         ? { branch: resolveCurrentBranch(runOptions.workingDirectory) }
         : { branch: resolveCurrentBranch() }),
-      startup_context: startupContext,
+      startup_context: {
+        ...startupContext,
+        spawn_origin_kind: originBinding.spawn_origin.kind,
+        ...(originBinding.parent_job_id ? { parent_job_id: originBinding.parent_job_id } : {}),
+        ...(originBinding.root_runtime_origin
+          ? {
+              root_pane_id: originBinding.root_runtime_origin.tmux_pane_id,
+              ...(originBinding.root_runtime_origin.agent_instance_id
+                ? { root_agent_instance_id: originBinding.root_runtime_origin.agent_instance_id }
+                : {}),
+            }
+          : {}),
+      },
+      spawn_origin: originBinding.spawn_origin,
+      ...(originBinding.parent_job_id ? { parent_job_id: originBinding.parent_job_id } : {}),
+      ...(originBinding.root_runtime_origin ? { root_runtime_origin: originBinding.root_runtime_origin } : {}),
     };
     this.writeStatusFile(id, initialStatus);
     const statusWatchdogPid = startDetachedStatusWatchdog(this.observabilityDbPath(), this.statusPath(id), id, process.pid);

@@ -249,3 +249,37 @@ export function decodePropagatedOrigin(env: NodeJS.ProcessEnv): RuntimeOriginV1 
 export function encodePropagatedOrigin(origin: RuntimeOriginV1): string {
   return Buffer.from(JSON.stringify(origin), 'utf-8').toString('base64url');
 }
+
+// Precedence for spawn-origin resolution at job allocation (spec §13.4):
+//   1. explicit parent_job_id → spawn_origin.kind='specialist.job'
+//   2. ambient runtime origin (already propagated-vs-captured resolved by caller)
+//      → spawn_origin.kind='xtmux.agent_instance'
+//   3. neither → spawn_origin.kind='unknown'
+//
+// root_runtime_origin for the specialist.job case is left undefined here.
+// F2 (unitAI-z8uli.8) refines this by looking up the parent's stored root
+// origin so the whole chain shares one root binding.
+export function resolveSpawnOrigin(input: {
+  explicitParentJobId?: string;
+  ambientRuntimeOrigin?: RuntimeOriginV1;
+  inheritedRootRuntimeOrigin?: RuntimeOriginV1;
+}): {
+  spawn_origin: SpecialistSpawnOriginV1;
+  parent_job_id?: string;
+  root_runtime_origin?: RuntimeOriginV1;
+} {
+  if (input.explicitParentJobId) {
+    return {
+      spawn_origin: { kind: 'specialist.job', parent_job_id: input.explicitParentJobId },
+      parent_job_id: input.explicitParentJobId,
+      root_runtime_origin: input.inheritedRootRuntimeOrigin,
+    };
+  }
+  if (input.ambientRuntimeOrigin) {
+    return {
+      spawn_origin: { kind: 'xtmux.agent_instance', runtime_origin: input.ambientRuntimeOrigin },
+      root_runtime_origin: input.ambientRuntimeOrigin,
+    };
+  }
+  return { spawn_origin: { kind: 'unknown' } };
+}

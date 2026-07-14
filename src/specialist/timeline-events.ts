@@ -117,6 +117,13 @@ export interface TimelineEventRunStart extends TimelineEventBase {
       count: number;
       activated: string[];
     };
+    // Runtime-origin projection (spec docs/xtmux-gaps.md §13.3-§13.5).
+    // Compact form embedded into the timeline event; the full origin is stored
+    // in SupervisorStatus.spawn_origin / .root_runtime_origin.
+    spawn_origin_kind?: 'xtmux.agent_instance' | 'specialist.job' | 'unknown';
+    parent_job_id?: string;
+    root_pane_id?: string;
+    root_agent_instance_id?: string;
   };
 }
 

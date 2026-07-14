@@ -3,6 +3,7 @@ import {
   captureRuntimeOrigin,
   decodePropagatedOrigin,
   encodePropagatedOrigin,
+  resolveSpawnOrigin,
   validateRuntimeOrigin,
   SPECIALISTS_RUNTIME_ORIGIN_V1,
   type RuntimeOriginV1,
@@ -233,5 +234,48 @@ describe('encodePropagatedOrigin', () => {
     const encoded = encodePropagatedOrigin(VALID);
     const decoded = decodePropagatedOrigin({ [SPECIALISTS_RUNTIME_ORIGIN_V1]: encoded });
     expect(decoded).toEqual({ ...VALID, capture_source: 'propagated' });
+  });
+});
+
+describe('resolveSpawnOrigin — spec §13.4 precedence', () => {
+  it('explicit parent_job_id → specialist.job', () => {
+    const r = resolveSpawnOrigin({ explicitParentJobId: 'parent-42' });
+    expect(r.spawn_origin).toEqual({ kind: 'specialist.job', parent_job_id: 'parent-42' });
+    expect(r.parent_job_id).toBe('parent-42');
+    expect(r.root_runtime_origin).toBeUndefined();
+  });
+
+  it('explicit parent + inherited root → carries inherited root', () => {
+    const r = resolveSpawnOrigin({
+      explicitParentJobId: 'parent-42',
+      inheritedRootRuntimeOrigin: VALID,
+    });
+    expect(r.spawn_origin).toEqual({ kind: 'specialist.job', parent_job_id: 'parent-42' });
+    expect(r.root_runtime_origin).toEqual(VALID);
+  });
+
+  it('explicit parent WINS over ambient origin', () => {
+    const r = resolveSpawnOrigin({
+      explicitParentJobId: 'parent-42',
+      ambientRuntimeOrigin: VALID,
+    });
+    expect(r.spawn_origin.kind).toBe('specialist.job');
+    // Ambient origin is deliberately NOT the root when a parent is explicit —
+    // F2 will supply the inherited root from parent status lookup.
+    expect(r.root_runtime_origin).toBeUndefined();
+  });
+
+  it('ambient origin, no parent → xtmux.agent_instance with root=ambient', () => {
+    const r = resolveSpawnOrigin({ ambientRuntimeOrigin: VALID });
+    expect(r.spawn_origin).toEqual({ kind: 'xtmux.agent_instance', runtime_origin: VALID });
+    expect(r.root_runtime_origin).toEqual(VALID);
+    expect(r.parent_job_id).toBeUndefined();
+  });
+
+  it('neither → unknown', () => {
+    const r = resolveSpawnOrigin({});
+    expect(r.spawn_origin).toEqual({ kind: 'unknown' });
+    expect(r.parent_job_id).toBeUndefined();
+    expect(r.root_runtime_origin).toBeUndefined();
   });
 });

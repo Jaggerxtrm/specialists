@@ -1107,5 +1107,6 @@ export async function run(): Promise<void> {
     jobsDir,
     startEventTailer: (jobId, jobsDirArg) => startEventTailer(jobId, jobsDirArg, args.outputMode === 'raw' ? 'human' : args.outputMode, args.name, effectiveBeadId),
     formatFooterModel,
+    ambientRuntimeOrigin,
   });
 }
