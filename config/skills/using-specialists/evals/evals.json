@@ -177,6 +177,73 @@
       "files": [
         "fixtures/qa-routing/reviewer-input.json"
       ]
+    },
+    {
+      "id": 9,
+      "eval_name": "progressive-disclosure-merge-routing",
+      "prompt": "A specialist chain finished and the reviewer returned PASS. I need to merge it. Which part of the using-specialists skill do you consult, and what is the merge rule?",
+      "expected_output": "Agent uses the router's routing table to open references/merge-and-integration.md for the merge procedure, and states rule 9 (manual git only: Cherry-Pick Playbook / FF / git merge --no-ff; never sp merge or sp epic merge) \u2014 which it can answer from the router alone.",
+      "assertions": [
+        {
+          "name": "routes_to_merge_reference",
+          "description": "Agent names references/merge-and-integration.md as the file to open for the merge procedure."
+        },
+        {
+          "name": "states_manual_merge_rule",
+          "description": "Agent states that sp merge / sp epic merge are forbidden and merging is manual git."
+        },
+        {
+          "name": "does_not_load_irrelevant_references",
+          "description": "Agent does not open bead-contracts.md, monitoring.md, or dispatch-preconditions.md \u2014 they are irrelevant to this phase."
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": 10,
+      "eval_name": "progressive-disclosure-bead-authoring",
+      "prompt": "I captured a rough idea as a bead tagged contract:draft. Can I dispatch an executor against it right now?",
+      "expected_output": "Agent refuses: rule 15 / the promotion gate forbids dispatching against a contract:draft bead. It answers from the router alone (the promotion gate is always-needed policy) and points to references/bead-contracts.md only if the full contract shape is needed.",
+      "assertions": [
+        {
+          "name": "refuses_draft_dispatch",
+          "description": "Agent refuses to dispatch and cites the contract:draft promotion gate."
+        },
+        {
+          "name": "answers_from_router",
+          "description": "Agent does not need to open a reference to know the rule \u2014 the promotion gate lives in the router."
+        },
+        {
+          "name": "does_not_load_merge_reference",
+          "description": "Agent does not open merge-and-integration.md or chain-recipes.md for this question."
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": 11,
+      "eval_name": "progressive-disclosure-no-content-loss",
+      "prompt": "Before dispatching a chain that depends on a previous chain's commits, what must I verify?",
+      "expected_output": "Agent applies the Git State Precondition (clean git status, HEAD contains prior chain commits, no orphaned worktrees) \u2014 doctrine preserved from the pre-split skill \u2014 and opens references/dispatch-preconditions.md for the full procedure.",
+      "assertions": [
+        {
+          "name": "names_git_state_precondition",
+          "description": "Agent names the Git State Precondition and its three checks."
+        },
+        {
+          "name": "routes_to_dispatch_preconditions",
+          "description": "Agent opens references/dispatch-preconditions.md for the full procedure."
+        },
+        {
+          "name": "warns_stale_base",
+          "description": "Agent explains that a stale-base dispatch causes debugger-restitch loops."
+        },
+        {
+          "name": "does_not_load_irrelevant_references",
+          "description": "Agent does not open merge-and-integration.md or bead-contracts.md \u2014 the phase is pre-dispatch verification."
+        }
+      ],
+      "files": []
     }
   ]
 }
