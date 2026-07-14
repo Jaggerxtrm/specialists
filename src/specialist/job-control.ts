@@ -35,7 +35,10 @@ export class JobControl {
     });
   }
 
-  async startJob(opts: { nodeId: string; memberId: string }): Promise<string> {
+  async startJob(opts: { nodeId: string; memberId: string; explicitParentJobId?: string }): Promise<string> {
+    if (opts.explicitParentJobId) {
+      console.warn(`[specialists] component=launch event=child-dispatch parent_job_id=${opts.explicitParentJobId} node_id=${opts.nodeId} member_id=${opts.memberId} outcome=ok`);
+    }
     const runOptions: RunOptions = {
       ...this.baseRunOptions,
       variables: {
@@ -44,6 +47,7 @@ export class JobControl {
         SPECIALISTS_NODE_ID: opts.nodeId,
         member_id: opts.memberId,
       },
+      ...(opts.explicitParentJobId ? { explicitParentJobId: opts.explicitParentJobId } : {}),
     };
 
     let resolveJobId: ((jobId: string) => void) | undefined;

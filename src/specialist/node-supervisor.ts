@@ -923,7 +923,11 @@ export class NodeSupervisor {
 
       const previousGeneration = member.generation;
       const previousJobId = member.jobId;
-      const jobId = await controller.startJob({ nodeId: this.opts.nodeId, memberId: member.memberId });
+      const jobId = await controller.startJob({
+        nodeId: this.opts.nodeId,
+        memberId: member.memberId,
+        ...(this.coordinatorJobId ? { explicitParentJobId: this.coordinatorJobId } : {}),
+      });
       member.jobId = jobId;
       member.status = 'starting';
       member.generation += 1;
@@ -1671,7 +1675,11 @@ export class NodeSupervisor {
       jobsDir: this.opts.jobsDir,
     });
 
-    const jobId = await controller.startJob({ nodeId: this.opts.nodeId, memberId: member.memberId });
+    const jobId = await controller.startJob({
+      nodeId: this.opts.nodeId,
+      memberId: member.memberId,
+      ...(this.coordinatorJobId ? { explicitParentJobId: this.coordinatorJobId } : {}),
+    });
     member.jobId = jobId;
     member.status = 'starting';
     member.generation = nextGeneration;

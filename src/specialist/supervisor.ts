@@ -1284,11 +1284,27 @@ export class Supervisor {
     };
 
     // Spec §13.4 precedence: explicit parent_job_id > ambient/propagated origin > unknown.
-    // F2 (unitAI-z8uli.8) refines the specialist.job case by looking up the
-    // parent's stored root_runtime_origin so the whole chain shares one root.
+    // F2: when spawning a child job, look up the parent's stored root_runtime_origin
+    // so the whole chain shares one root pane binding. Missing parent is tolerated —
+    // the child's root_runtime_origin stays undefined; NEVER fabricated.
+    let inheritedRootRuntimeOrigin: RuntimeOriginV1 | undefined;
+    if (runOptions.explicitParentJobId) {
+      try {
+        const parentStatus = this.sqliteClient?.readStatus(runOptions.explicitParentJobId);
+        inheritedRootRuntimeOrigin = parentStatus?.root_runtime_origin;
+        console.warn(
+          `[specialists] component=launch event=inherit parent_job_id=${runOptions.explicitParentJobId} outcome=${inheritedRootRuntimeOrigin ? 'ok' : 'parent-missing'}`,
+        );
+      } catch (err) {
+        console.warn(
+          `[specialists] component=launch event=inherit parent_job_id=${runOptions.explicitParentJobId} outcome=lookup-failed reason=${(err as Error).message?.slice(0, 60) ?? 'unknown'}`,
+        );
+      }
+    }
     const originBinding = resolveSpawnOrigin({
       explicitParentJobId: runOptions.explicitParentJobId,
       ambientRuntimeOrigin: runOptions.ambientRuntimeOrigin,
+      inheritedRootRuntimeOrigin,
     });
 
     const initialStatus: SupervisorStatus = {
