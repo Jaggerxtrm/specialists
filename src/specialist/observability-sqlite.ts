@@ -1380,6 +1380,9 @@ class SqliteClient implements ObservabilitySqliteClient {
         traceId: context.traceId,
         spanId: context.spanId,
         parentSpanId: context.parentSpanId,
+        parentJobId: context.parentJobId,
+        spawnOrigin: context.spawnOrigin,
+        rootRuntimeOrigin: context.rootRuntimeOrigin,
       },
     );
     this.insertForensicEventRow(jobId, event.seq, forensicEvent);
@@ -1401,6 +1404,11 @@ class SqliteClient implements ObservabilitySqliteClient {
     traceId?: string;
     spanId?: string;
     parentSpanId?: string;
+    // Runtime-origin fields (spec docs/xtmux-gaps.md §13.5).
+    // Read verbatim from status_json — E4 does not modify the schema.
+    parentJobId?: string;
+    spawnOrigin?: unknown;
+    rootRuntimeOrigin?: unknown;
   } {
     const row = this.db.query(`
       SELECT bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status_json
@@ -1425,6 +1433,9 @@ class SqliteClient implements ObservabilitySqliteClient {
       traceId: typeof statusJson.trace_id === 'string' ? statusJson.trace_id : undefined,
       spanId: typeof statusJson.span_id === 'string' ? statusJson.span_id : undefined,
       parentSpanId: typeof statusJson.parent_span_id === 'string' ? statusJson.parent_span_id : undefined,
+      parentJobId: typeof statusJson.parent_job_id === 'string' ? statusJson.parent_job_id : undefined,
+      spawnOrigin: statusJson.spawn_origin,
+      rootRuntimeOrigin: statusJson.root_runtime_origin,
     };
   }
 

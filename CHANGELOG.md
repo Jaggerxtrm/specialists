@@ -1,3 +1,13 @@
+
+## [Unreleased]
+
+### Project maintenance
+
+- **Add git-cliff config and changelog** ([081ebc2](https://github.com/xtrm-dev/specialists/commit/081ebc2f5c6cef1324506d745f18b96ac12fcf0f))
+
+  Generic type-based parsers; repo-specific scopes to be tuned (see P0 bead).
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
