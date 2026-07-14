@@ -42,11 +42,11 @@
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/sync-docs/"
+        "~/.xtrm/skills/default/sync-docs/"
       ],
       "scripts": [
         {
-          "run": "bash .xtrm/skills/active/sync-docs/scripts/pre-context.sh",
+          "run": "bash ~/.xtrm/skills/default/sync-docs/scripts/pre-context.sh",
           "phase": "pre",
           "inject_output": true
         }
@@ -68,7 +68,7 @@
       "files_to_watch": [
         "config/specialists/sync-docs.specialist.json",
         "config/mandatory-rules/sync-docs-scope-discipline.md",
-        ".xtrm/skills/active/sync-docs/SKILL.md",
+        "~/.xtrm/skills/default/sync-docs/SKILL.md",
         ".xtrm/skills/default/sync-docs/scripts/context_gatherer.py",
         ".xtrm/skills/default/sync-docs/scripts/drift_detector.py"
       ],

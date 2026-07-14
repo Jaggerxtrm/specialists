@@ -97,7 +97,7 @@
     },
     "skills": {
       "paths": [
-        "test-planning"
+        "~/.xtrm/skills/default/test-planning"
       ],
       "scripts": []
     },

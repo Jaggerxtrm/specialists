@@ -68,7 +68,7 @@
     },
     "validation": {
       "files_to_watch": [
-        ".xtrm/skills/active/xt-debugging/SKILL.md"
+        "~/.xtrm/skills/default/xt-debugging/SKILL.md"
       ],
       "stale_threshold_days": 30
     },

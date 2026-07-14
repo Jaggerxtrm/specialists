@@ -34,7 +34,7 @@
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/specialists-creator/SKILL.md"
+        "~/.xtrm/skills/default/specialists-creator/SKILL.md"
       ],
       "scripts": [
         {

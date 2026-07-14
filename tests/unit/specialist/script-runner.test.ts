@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -651,6 +651,15 @@ describe('runScriptSpecialist skill forwarding', () => {
   });
 
   it('passes trusted skills.paths and prompt.skill_inherit as explicit --skill args', async () => {
+    // skills.paths must point at files that actually exist: a missing declared skill is
+    // now a hard pre-run failure (unitAI-6639v.2), because pi silently ignores a bad
+    // --skill arg. The forwarding contract under test is unchanged.
+    const skillDir = mkdtempSync(join(tmpdir(), 'sp-skill-forwarding-'));
+    const skillOne = join(skillDir, 'one-SKILL.md');
+    const skillTwo = join(skillDir, 'two-SKILL.md');
+    writeFileSync(skillOne, '# skill one');
+    writeFileSync(skillTwo, '# skill two');
+
     const specWithSkills = {
       ...baseSpec,
       specialist: {
@@ -659,7 +668,7 @@ describe('runScriptSpecialist skill forwarding', () => {
           ...baseSpec.specialist.prompt,
           skill_inherit: '/skills/inherited/SKILL.md',
         },
-        skills: { paths: ['/skills/one/SKILL.md', '/skills/two/SKILL.md'], scripts: [] },
+        skills: { paths: [skillOne, skillTwo], scripts: [] },
       },
     };
     const child = createSpawnMock();
@@ -677,8 +686,8 @@ describe('runScriptSpecialist skill forwarding', () => {
     const spawnArgs: string[] = spawnMock.mock.calls[0][1];
     expect(spawnArgs).not.toContain('--no-skills');
     expect(spawnArgs).toEqual(expect.arrayContaining([
-      '--skill', '/skills/one/SKILL.md',
-      '/skills/two/SKILL.md',
+      '--skill', skillOne,
+      skillTwo,
       '/skills/inherited/SKILL.md',
     ]));
     expect(spawnArgs.filter((arg) => arg === '--skill')).toHaveLength(3);

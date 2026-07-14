@@ -43,7 +43,7 @@
     },
     "skills": {
       "paths": [
-        "releasing"
+        "~/.xtrm/skills/default/releasing"
       ],
       "scripts": [
         {

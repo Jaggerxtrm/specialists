@@ -39,9 +39,9 @@
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/service-skills",
-        ".xtrm/skills/active/gitnexus-impact-analysis",
-        ".xtrm/skills/active/gitnexus-exploring"
+        "~/.xtrm/skills/default/service-skills",
+        "~/.xtrm/skills/default/gitnexus-impact-analysis",
+        "~/.xtrm/skills/default/gitnexus-exploring"
       ],
       "scripts": [
         {
