@@ -31,8 +31,8 @@
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/multiplexing/SKILL.md",
-        ".xtrm/skills/active/using-specialists/SKILL.md"
+        "~/.xtrm/skills/default/multiplexing/SKILL.md",
+        "~/.xtrm/skills/default/using-specialists/SKILL.md"
       ],
       "scripts": []
     },

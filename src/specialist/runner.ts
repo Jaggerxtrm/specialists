@@ -253,10 +253,21 @@ export function validateBeforeRun(
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  // Validate skills.paths files exist
+  // Validate skills.paths files exist.
+  // HARD FAILURE, not a warning: pi silently ignores a nonexistent `--skill` path
+  // (exit 0, no diagnostic), so a stale entry used to mean the specialist ran with
+  // its skills quietly missing. That is exactly how every specialist kept pointing
+  // at the retired `.xtrm/skills/active/**` root unnoticed after the global-skills
+  // migration (unitAI-6639v.1). Fail before launch instead.
   for (const p of spec.specialist.skills?.paths ?? []) {
     const abs = resolvePath(p);
-    if (!existsSync(abs)) warnings.push(`  ⚠ skills.paths: file not found: ${p}`);
+    if (!existsSync(abs)) {
+      errors.push(
+        `  ✗ skills.paths: skill not found: ${p}\n` +
+        `    resolved to: ${abs}\n` +
+        `    canonical global skills live in ~/.xtrm/skills/default/<skill>/`,
+      );
+    }
   }
 
   // Validate scripts/commands

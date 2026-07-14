@@ -35,7 +35,7 @@
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/using-nodes"
+        "~/.xtrm/skills/default/using-nodes"
       ]
     },
     "capabilities": {

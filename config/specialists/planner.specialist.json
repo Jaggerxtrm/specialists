@@ -58,8 +58,8 @@
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/planning/SKILL.md",
-        ".xtrm/skills/active/test-planning/SKILL.md"
+        "~/.xtrm/skills/default/planning/SKILL.md",
+        "~/.xtrm/skills/default/test-planning/SKILL.md"
       ],
       "scripts": []
     },

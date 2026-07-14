@@ -23941,8 +23941,11 @@ function validateBeforeRun(spec, permissionLevel) {
   const warnings = [];
   for (const p of spec.specialist.skills?.paths ?? []) {
     const abs = resolvePath(p);
-    if (!existsSync9(abs))
-      warnings.push(`  \u26A0 skills.paths: file not found: ${p}`);
+    if (!existsSync9(abs)) {
+      errors5.push(`  \u2717 skills.paths: skill not found: ${p}
+` + `    resolved to: ${abs}
+` + `    canonical global skills live in ~/.xtrm/skills/default/<skill>/`);
+    }
   }
   for (const script of spec.specialist.skills?.scripts ?? []) {
     const run = script.run ?? script.path;

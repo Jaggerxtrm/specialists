@@ -36,7 +36,7 @@
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/xt-merge/SKILL.md"
+        "~/.xtrm/skills/default/xt-merge/SKILL.md"
       ],
       "scripts": []
     },
@@ -44,7 +44,7 @@
       "files_to_watch": [
         "src/specialist/schema.ts",
         "src/specialist/runner.ts",
-        ".xtrm/skills/active/xt-merge/SKILL.md"
+        "~/.xtrm/skills/default/xt-merge/SKILL.md"
       ],
       "stale_threshold_days": 30
     },

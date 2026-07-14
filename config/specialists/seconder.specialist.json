@@ -153,8 +153,8 @@
         "src/specialist/schema.ts",
         "src/specialist/runner.ts",
         "docs/design/chain-templates.md",
-        ".xtrm/skills/active/clean-code/SKILL.md",
-        ".xtrm/skills/active/gitnexus-impact-analysis/SKILL.md"
+        "~/.xtrm/skills/default/clean-code/SKILL.md",
+        "~/.xtrm/skills/default/gitnexus-impact-analysis/SKILL.md"
       ],
       "stale_threshold_days": 30
     },

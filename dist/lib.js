@@ -15466,8 +15466,11 @@ function validateBeforeRun(spec, permissionLevel) {
   const warnings = [];
   for (const p of spec.specialist.skills?.paths ?? []) {
     const abs = resolvePath(p);
-    if (!existsSync6(abs))
-      warnings.push(`  ⚠ skills.paths: file not found: ${p}`);
+    if (!existsSync6(abs)) {
+      errors.push(`  ✗ skills.paths: skill not found: ${p}
+` + `    resolved to: ${abs}
+` + `    canonical global skills live in ~/.xtrm/skills/default/<skill>/`);
+    }
   }
   for (const script of spec.specialist.skills?.scripts ?? []) {
     const run = script.run ?? script.path;
