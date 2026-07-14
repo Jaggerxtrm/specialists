@@ -17,6 +17,13 @@ import type { TimelineEvent } from '../specialist/timeline-events.js';
 import { evaluateMergeWorthiness, previewBranchMergeDelta } from './merge.js';
 import { formatEventInlineDebounced, type InlineIndicatorPhase } from './format-helpers.js';
 import { isTmuxAvailable, buildSessionName, createTmuxSession } from './tmux-utils.js';
+import {
+  captureRuntimeOrigin,
+  decodePropagatedOrigin,
+  encodePropagatedOrigin,
+  SPECIALISTS_RUNTIME_ORIGIN_V1,
+  type RuntimeOriginV1,
+} from '../specialist/runtime-origin.js';
 import { launchSpecialist } from '../specialist/launch.js';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
@@ -875,6 +882,16 @@ export async function run(): Promise<void> {
     }
   }
 
+  // ── Capture xtmux runtime origin (BEFORE the --background branch) ──────────
+  // Spec docs/xtmux-gaps.md §13.1-13.2: the invoking pane's identity must be
+  // resolved here, because the detached child's TMUX_PANE will point at the
+  // sp-* feed pane. If a propagated origin exists in the environment (background
+  // re-invocation case), it wins over an ambient capture — the child must not
+  // rediscover its own sp-* pane.
+  const propagatedOrigin = decodePropagatedOrigin(process.env);
+  const ambientRuntimeOrigin: RuntimeOriginV1 | undefined =
+    propagatedOrigin ?? (await captureRuntimeOrigin());
+
   // ── Background mode: spawn detached child and exit ──────────────────────────
   if (args.background) {
     // Jobs dir may be worktree-anchored, but for the latest-poll we use the
@@ -892,6 +909,14 @@ export async function run(): Promise<void> {
     let childExitPromise: Promise<void> | undefined;
     let handoffPath: string | undefined;
     let tmuxSessionName: string | undefined;
+
+    // Propagate runtime origin to the detached child (spec §13.2). The child's
+    // own TMUX_PANE resolves to the sp-* feed pane — the propagated value keeps
+    // the binding on the ORIGINAL invoking pane.
+    const propagatedEnv: Record<string, string> = ambientRuntimeOrigin
+      ? { [SPECIALISTS_RUNTIME_ORIGIN_V1]: encodePropagatedOrigin(ambientRuntimeOrigin) }
+      : {};
+
     if (isTmuxAvailable()) {
       const suffix = randomBytes(3).toString('hex');
       const sessionName = buildSessionName(args.name, suffix);
@@ -904,14 +929,14 @@ export async function run(): Promise<void> {
         handoffPath,
         feedCommandPrefix,
       });
-      createTmuxSession(sessionName, cwd, tmuxCmd, { [JOB_ID_HANDOFF_PATH_ENV]: handoffPath });
+      createTmuxSession(sessionName, cwd, tmuxCmd, { [JOB_ID_HANDOFF_PATH_ENV]: handoffPath, ...propagatedEnv });
     } else {
       // Re-invoke ourselves without --background, fully detached
       const child = cpSpawn(process.execPath, [process.argv[1], ...innerArgs], {
         detached: true,
         stdio: ['ignore', 'ignore', 'pipe'],
         cwd,
-        env: process.env,
+        env: { ...process.env, ...propagatedEnv },
       });
       const childStderr = child.stderr;
       if (childStderr) {
