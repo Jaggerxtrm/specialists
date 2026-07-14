@@ -946,6 +946,27 @@ function synthesizeStatusFromEvents(jobId: string): SupervisorStatus | null {
   }
 }
 
+/**
+ * Compact "spawned-by" line for `sp ps` human output (spec §13.7). Returns
+ * undefined when the job has no origin — no misleading "unknown" line.
+ */
+export function formatSpawnedByLine(job: SupervisorStatus): string | undefined {
+  const spawn = job.spawn_origin;
+  if (!spawn) return undefined;
+  if (spawn.kind === 'specialist.job') {
+    const parent = spawn.parent_job_id.slice(0, 8);
+    return `spawned-by specialist.job ${parent}`;
+  }
+  if (spawn.kind === 'xtmux.agent_instance') {
+    const ro = spawn.runtime_origin;
+    const host = ro.host_id.replace(/^host-/, '').slice(0, 8);
+    const paneRef = `${ro.tmux_session_id}:${ro.tmux_pane_id}`;
+    const agent = ro.agent_instance_id ? ` / agent ${ro.agent_instance_id.slice(0, 8)}` : '';
+    return `spawned-by host-${host} / ${paneRef}${agent}`;
+  }
+  return undefined;
+}
+
 function renderInspectJson(job: SupervisorStatus & { is_dead: boolean; recovered_from_events?: boolean }): void {
   console.log(JSON.stringify({
     job: {
@@ -961,6 +982,11 @@ function renderInspectJson(job: SupervisorStatus & { is_dead: boolean; recovered
       elapsed_s: job.elapsed_s ?? null,
       metrics: job.metrics ?? null,
       recovered_from_events: Boolean(job.recovered_from_events),
+      // xtmux runtime origin (spec §13.7). Absent when the job has no binding —
+      // shape stays additive so consumers reading legacy rows are unaffected.
+      ...(job.spawn_origin ? { spawn_origin: job.spawn_origin } : {}),
+      ...(job.parent_job_id ? { parent_job_id: job.parent_job_id } : {}),
+      ...(job.root_runtime_origin ? { root_runtime_origin: job.root_runtime_origin } : {}),
     },
   }, null, 2));
 }
@@ -1013,6 +1039,8 @@ function renderInspect(jobId: string, args: PsArgs): void {
   const chainIdentity = job.chain_kind === 'chain' ? (job.chain_id ?? job.worktree_owner_job_id ?? '--') : '--';
   console.log(`  role      ${chainRole}`);
   console.log(`  chain_id  ${chainIdentity}`);
+  const spawnedByLine = formatSpawnedByLine(job);
+  if (spawnedByLine) console.log(`  ${spawnedByLine}`);
   if (chainJobs.length > 1) console.log(`  chain     ${chainStr}`);
   console.log(`  elapsed   ${formatElapsed(job.elapsed_s)}${job.metrics ? ` · ${job.metrics.turns ?? 0} turns · ${job.metrics.tool_calls ?? 0} tools` : ''}`);
   const tokenUsage = job.metrics?.token_usage;
@@ -1077,6 +1105,9 @@ function renderJson(
       attention_reasons: [
         ...(job.pr_classification && job.pr_classification !== 'clean' ? [`pr_drift:${job.pr_classification}`] : []),
       ],
+      ...(job.spawn_origin ? { spawn_origin: job.spawn_origin } : {}),
+      ...(job.parent_job_id ? { parent_job_id: job.parent_job_id } : {}),
+      ...(job.root_runtime_origin ? { root_runtime_origin: job.root_runtime_origin } : {}),
     })),
     nodes,
     trees,

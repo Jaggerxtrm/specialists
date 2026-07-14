@@ -9,6 +9,7 @@ import type { RunArgs } from '../cli/run.js';
 import type { Specialist } from './schema.js';
 import { SpecialistRunner } from './runner.js';
 import { createObservabilitySqliteClient } from './observability-sqlite.js';
+import type { RuntimeOriginV1 } from './runtime-origin.js';
 
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
@@ -45,6 +46,17 @@ export interface LaunchSpecialistOptions {
   onProgress?: (delta: string) => void;
   onMeta?: (meta: { backend: string; model: string; sessionId?: string }) => void;
   onJobStarted?: (job: { id: string }) => void;
+  /**
+   * xtmux runtime origin captured at the sp run boundary (spec §13.1-13.4).
+   * Threaded verbatim into RunOptions so the Supervisor's precedence rule
+   * can build the initial SupervisorStatus.spawn_origin.
+   */
+  ambientRuntimeOrigin?: RuntimeOriginV1;
+  /**
+   * Explicit parent job id, populated by internal launch paths (F1).
+   * When set, supersedes the ambient origin per spec §13.4.
+   */
+  explicitParentJobId?: string;
 }
 
 export async function launchSpecialist(opts: LaunchSpecialistOptions): Promise<void> {
@@ -77,6 +89,8 @@ export async function launchSpecialist(opts: LaunchSpecialistOptions): Promise<v
       reusedFromJobId: opts.reusedFromJobId,
       worktreeOwnerJobId: opts.worktreeOwnerJobId,
       output_file: opts.specialist.specialist.output_file,
+      ambientRuntimeOrigin: opts.ambientRuntimeOrigin,
+      explicitParentJobId: opts.explicitParentJobId,
     },
     beadsClient: opts.beadsClient,
     stallDetection: opts.specialist.specialist.stall_detection,

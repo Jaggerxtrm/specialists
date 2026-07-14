@@ -45,7 +45,47 @@ export interface ForensicCorrelation {
   policy_decision_id?: string;
   identity_request_id?: string;
   commit_sha?: string;
+  /**
+   * xtmux runtime-origin: parent specialist job id (spec §13.5).
+   * Set only for child jobs whose spawn_origin.kind === 'specialist.job'.
+   * Never promoted to a Prometheus label — see FORBIDDEN_PROMETHEUS_LABELS.
+   */
+  parent_job_id?: string;
   [key: string]: unknown;
+}
+
+/**
+ * Typed spawn-lineage link on `job.started` (spec §13.5).
+ *
+ * A direct spawn from a pane emits `xtmux.agent_instance`. A child spawned
+ * by another specialist emits `specialist.job`. The reader sees at most one
+ * `links.spawned_by` entry — never a `kind:'unknown'` placeholder.
+ */
+export type ForensicSpawnedByLink =
+  | {
+      kind: 'xtmux.agent_instance';
+      host_id: string;
+      tmux_session_id: string;
+      tmux_window_id: string;
+      tmux_pane_id: string;
+      agent_instance_id?: string;
+    }
+  | {
+      kind: 'specialist.job';
+      job_id: string;
+    };
+
+/**
+ * Compact projection of the root pane origin (spec §13.5). Only the fields
+ * needed to reconnect a job to its originating pane; no bead_id / server_id /
+ * captured_at_ms / capture_source / verified — those live on the source
+ * RuntimeOriginV1 in status_json and are not part of the durable forensic link.
+ */
+export interface ForensicRootRuntimeOrigin {
+  kind: 'xtmux.agent_instance';
+  host_id: string;
+  tmux_pane_id: string;
+  agent_instance_id?: string;
 }
 
 export interface ForensicRedaction {
@@ -127,6 +167,14 @@ export const FORBIDDEN_PROMETHEUS_LABELS = new Set([
   'email',
   'token',
   'credential',
+  // xtmux runtime-origin identifiers (spec §16). High-cardinality; must never
+  // appear as Prometheus labels. Kept only in forensic correlation/links.
+  'parent_job_id',
+  'agent_instance_id',
+  'host_id',
+  'tmux_session_id',
+  'tmux_window_id',
+  'tmux_pane_id',
 ]);
 
 export const DEFAULT_LABEL_ALLOWLIST = new Set([
@@ -392,6 +440,92 @@ export interface TimelineForensicContext {
   traceId?: string;
   spanId?: string;
   parentSpanId?: string;
+  // xtmux runtime-origin (spec §13.5). Read from persisted SupervisorStatus
+  // via readForensicContext; typed as `unknown` at read time and validated
+  // by projectSpawnedByLink / projectRootRuntimeOrigin below.
+  parentJobId?: string;
+  spawnOrigin?: unknown;
+  rootRuntimeOrigin?: unknown;
+}
+
+/** Origin-source enum for `run_start` body (spec §13.5). */
+export type ForensicOriginSource =
+  | 'xtmux-context'
+  | 'propagated'
+  | 'child-of-specialist'
+  | 'none';
+
+/**
+ * Project the persisted spawn_origin into a strictly-shaped
+ * `links.spawned_by` payload. Whitelists exact keys — future extra fields on
+ * RuntimeOriginV1 require a deliberate change here, not silent pass-through.
+ * Returns undefined if the input is unset, malformed, or `kind:'unknown'`.
+ */
+export function projectSpawnedByLink(spawnOrigin: unknown): ForensicSpawnedByLink | undefined {
+  if (!spawnOrigin || typeof spawnOrigin !== 'object') return undefined;
+  const o = spawnOrigin as Record<string, unknown>;
+  if (o.kind === 'xtmux.agent_instance') {
+    const ro = o.runtime_origin as Record<string, unknown> | undefined;
+    if (!ro || typeof ro !== 'object') return undefined;
+    if (typeof ro.host_id !== 'string' || typeof ro.tmux_session_id !== 'string'
+        || typeof ro.tmux_window_id !== 'string' || typeof ro.tmux_pane_id !== 'string') {
+      return undefined;
+    }
+    return {
+      kind: 'xtmux.agent_instance',
+      host_id: ro.host_id,
+      tmux_session_id: ro.tmux_session_id,
+      tmux_window_id: ro.tmux_window_id,
+      tmux_pane_id: ro.tmux_pane_id,
+      ...(typeof ro.agent_instance_id === 'string' ? { agent_instance_id: ro.agent_instance_id } : {}),
+    };
+  }
+  if (o.kind === 'specialist.job' && typeof o.parent_job_id === 'string') {
+    return { kind: 'specialist.job', job_id: o.parent_job_id };
+  }
+  return undefined;
+}
+
+/**
+ * Project the persisted root_runtime_origin into a compact
+ * `links.root_runtime_origin` payload. Same whitelist rules as above.
+ */
+export function projectRootRuntimeOrigin(rootRuntimeOrigin: unknown): ForensicRootRuntimeOrigin | undefined {
+  if (!rootRuntimeOrigin || typeof rootRuntimeOrigin !== 'object') return undefined;
+  const ro = rootRuntimeOrigin as Record<string, unknown>;
+  if (typeof ro.host_id !== 'string' || typeof ro.tmux_pane_id !== 'string') return undefined;
+  return {
+    kind: 'xtmux.agent_instance',
+    host_id: ro.host_id,
+    tmux_pane_id: ro.tmux_pane_id,
+    ...(typeof ro.agent_instance_id === 'string' ? { agent_instance_id: ro.agent_instance_id } : {}),
+  };
+}
+
+function deriveOriginSource(spawnOrigin: unknown, rootRuntimeOrigin: unknown): ForensicOriginSource {
+  if (!spawnOrigin || typeof spawnOrigin !== 'object') return 'none';
+  const o = spawnOrigin as Record<string, unknown>;
+  if (o.kind === 'specialist.job') return 'child-of-specialist';
+  if (o.kind === 'xtmux.agent_instance') {
+    const ro = (o.runtime_origin ?? rootRuntimeOrigin) as Record<string, unknown> | undefined;
+    if (ro && ro.capture_source === 'propagated') return 'propagated';
+    return 'xtmux-context';
+  }
+  return 'none';
+}
+
+function deriveOriginVerified(rootRuntimeOrigin: unknown): boolean {
+  if (!rootRuntimeOrigin || typeof rootRuntimeOrigin !== 'object') return false;
+  return (rootRuntimeOrigin as Record<string, unknown>).verified === true;
+}
+
+/** Sub-helper: whether the ROOT origin was propagated (used by launch_mode for child jobs). */
+function deriveOriginSourceFromRoot(rootRuntimeOrigin: unknown): 'propagated' | 'xtmux-context' | 'unknown' {
+  if (!rootRuntimeOrigin || typeof rootRuntimeOrigin !== 'object') return 'unknown';
+  const capture = (rootRuntimeOrigin as Record<string, unknown>).capture_source;
+  if (capture === 'propagated') return 'propagated';
+  if (capture === 'xtmux-context') return 'xtmux-context';
+  return 'unknown';
 }
 
 export function forensicEventFromTimelineEvent(
@@ -441,12 +575,14 @@ export function forensicEventFromTimelineEvent(
       jsonrpc_request_id: stringField(event, 'jsonrpc_request_id') ?? metaStringField(event, 'jsonrpc_request_id') ?? metaStringField(event, 'jsonrpc.request.id'),
       tool_call_id: typeof event.tool_call_id === 'string' ? event.tool_call_id : undefined,
       commit_sha: typeof event.commit_sha === 'string' ? event.commit_sha : undefined,
+      ...(context.parentJobId ? { parent_job_id: context.parentJobId } : {}),
     },
-    body: bodyForTimelineEvent(event),
+    body: bodyForTimelineEvent(event, context),
     otel: otelForTimelineEvent(event),
     redaction: { status: redactionStatusForTimelineEvent(event) },
     t_unix_ms: event.t,
     seq: event.seq,
+    ...(event.type === 'run_start' ? buildRunStartLinks(context) : {}),
   });
 }
 
@@ -471,7 +607,50 @@ function booleanField(source: Record<string, unknown>, key: string): boolean | u
   return typeof value === 'boolean' ? value : undefined;
 }
 
-function bodyForTimelineEvent(event: { type: string; [key: string]: unknown }): Record<string, unknown> {
+function buildRunStartLinks(context: TimelineForensicContext): { links?: Record<string, unknown> } {
+  const spawnedBy = projectSpawnedByLink(context.spawnOrigin);
+  const rootOrigin = projectRootRuntimeOrigin(context.rootRuntimeOrigin);
+  if (!spawnedBy && !rootOrigin) return {};
+  return {
+    links: {
+      ...(spawnedBy ? { spawned_by: spawnedBy } : {}),
+      ...(rootOrigin ? { root_runtime_origin: rootOrigin } : {}),
+    },
+  };
+}
+
+function bodyForTimelineEvent(
+  event: { type: string; [key: string]: unknown },
+  context?: TimelineForensicContext,
+): Record<string, unknown> {
+  if (event.type === 'run_start') {
+    const originSource = deriveOriginSource(context?.spawnOrigin, context?.rootRuntimeOrigin);
+    const originVerified = deriveOriginVerified(context?.rootRuntimeOrigin);
+    return {
+      legacy_timeline_event: event,
+      specialist: stringField(event, 'specialist'),
+      bead_id: stringField(event, 'bead_id'),
+      // launch_mode is a projection of origin_source: propagated implies the
+      // outer sp run detached into a background session; xtmux-context implies
+      // a foreground run. child-of-specialist inherits the mode of its root.
+      launch_mode:
+        originSource === 'propagated'
+          ? 'background'
+          : originSource === 'xtmux-context'
+            ? 'foreground'
+            : originSource === 'child-of-specialist'
+              // Approximate: if the root origin was propagated, we came from a
+              // background chain; otherwise treat as foreground. F4 fixture
+              // verifies this against the A → J1 (background) → J2 case.
+              ? (deriveOriginSourceFromRoot(context?.rootRuntimeOrigin) === 'propagated'
+                  ? 'background'
+                  : 'foreground')
+              : 'unknown',
+      origin_source: originSource,
+      origin_verified: originVerified,
+    };
+  }
+
   if (event.type === 'mcp') {
     return {
       legacy_timeline_event: event,
