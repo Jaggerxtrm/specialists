@@ -104,15 +104,33 @@ Task-side content for the three surfaces, per the `unitAI-6639v.1` decision:
 never alter content (test-enforced). All three are produced by **one** seam,
 `src/specialist/task-prompt.ts:renderTaskPrompt`, so the matrix cannot drift.
 
+## Launcher smoke (post-merge, v3.20.0)
+
+Run against the **installed** `xt` (0.10.6) and the **published** `sp` (3.20.0), no wrapper:
+
+```
+$ xt pi --role chain-coordinator --bead unitAI-6639v --no-attach --new-session
+role-pi-chain-coordinator-unitai-6639v:%4156
+```
+
+The live session lists `using-specialists` (v3.8, 256-line router + 7 references) and `multiplexing`
+in its skill registry, resolved from `~/.pi/agent/skills` → `~/.xtrm/skills/default`. Asked which
+reference the router sends it to for merging, the coordinator opened **only** `SKILL.md` (257 lines,
+21 KB — the router, not the monolith) and answered:
+
+```
+Reference: references/merge-and-integration.md
+Rule 9: ... never use sp merge or sp epic merge because both are broken.
+Opened: /home/dawid/.pi/agent/skills/using-specialists/SKILL.md
+```
+
+Progressive disclosure holds end to end in the real launcher: routed correctly, recited rule 9 from
+the router alone, and pulled in no irrelevant reference.
+
 ## Known limitations
 
-- **`xt <runtime> --role` was not smoked through the launcher.** It refuses to run from inside a
-  worktree ("cd to the main repo checkout"), and running it from the main checkout would resolve
-  `chain-coordinator` from `master` — i.e. smoke the *old* spec, not this branch. The skill-loading
-  behaviour it depends on is instead proven live above (both runtime roots) and deterministically by
-  the parity matrix. Re-run the launcher smoke after this branch merges.
 - **Claude role behaviour** is covered by the same deterministic contract plus the
   `~/.claude/skills` reachability check, not a live Claude session.
-- The globally installed copy is a **dev install of an unreleased branch**; the next release replaces
-  it with the published artifact, which ships the same tree (asset contract tracks all 8 files with
-  hashes). Rollback backup: `/tmp/skills-backup-131818`.
+- `xt pi --role` does not inject the rendered task prompt into the pane; it only sets
+  `@agent_task` / `@agent_bead`. Feeding it `sp render-task` output is core-side work, tracked
+  outside this repo.
