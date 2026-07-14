@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v3.19.0] — 2026-07-14
+
 ### Added
 
 - **Expose read-only task-prompt renderer (sp render-task)** ([147c671](https://github.com/xtrm-dev/specialists/commit/147c67125fcb04e659934bacfa2bb4d9e47a2359))
