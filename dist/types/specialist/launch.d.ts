@@ -4,6 +4,7 @@ import type { CircuitBreaker } from '../utils/circuitBreaker.js';
 import type { BeadsClient as BeadsClientType } from './beads.js';
 import type { RunArgs } from '../cli/run.js';
 import type { Specialist } from './schema.js';
+import type { RuntimeOriginV1 } from './runtime-origin.js';
 export interface LaunchSpecialistOptions {
     args: RunArgs;
     specialist: Specialist;
@@ -40,6 +41,17 @@ export interface LaunchSpecialistOptions {
     onJobStarted?: (job: {
         id: string;
     }) => void;
+    /**
+     * xtmux runtime origin captured at the sp run boundary (spec §13.1-13.4).
+     * Threaded verbatim into RunOptions so the Supervisor's precedence rule
+     * can build the initial SupervisorStatus.spawn_origin.
+     */
+    ambientRuntimeOrigin?: RuntimeOriginV1;
+    /**
+     * Explicit parent job id, populated by internal launch paths (F1).
+     * When set, supersedes the ambient origin per spec §13.4.
+     */
+    explicitParentJobId?: string;
 }
 export declare function launchSpecialist(opts: LaunchSpecialistOptions): Promise<void>;
 //# sourceMappingURL=launch.d.ts.map

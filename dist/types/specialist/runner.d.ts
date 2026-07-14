@@ -2,6 +2,7 @@ import { PiAgentSession, type PiSessionOptions, type SessionMetricEvent, type Se
 import type { SpecialistLoader } from './loader.js';
 import type { HookEmitter } from './hooks.js';
 import { type CircuitBreaker } from '../utils/circuitBreaker.js';
+import type { RuntimeOriginV1 } from './runtime-origin.js';
 export interface RunOptions {
     name: string;
     prompt: string;
@@ -46,6 +47,17 @@ export interface RunOptions {
     forceJob?: boolean;
     /** Permission level used to decide concurrency guard scope. */
     permissionRequired?: 'READ_ONLY' | 'LOW' | 'MEDIUM' | 'HIGH';
+    /**
+     * Ambient xtmux runtime origin captured at the sp run boundary
+     * (spec docs/xtmux-gaps.md §13.1-§13.4). Supervisor uses this in the spawn-
+     * origin precedence rule to build the initial SupervisorStatus.
+     */
+    ambientRuntimeOrigin?: RuntimeOriginV1;
+    /**
+     * Explicit parent job id, populated by internal launch paths (F1). When set,
+     * the spawn origin resolves to specialist.job, superseding any ambient origin.
+     */
+    explicitParentJobId?: string;
 }
 export interface RunResult {
     output: string;

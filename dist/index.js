@@ -10700,6 +10700,73 @@ function pickAllowedLabels(source, allowlist = DEFAULT_LABEL_ALLOWLIST) {
   assertNoForbiddenLabels(labels);
   return labels;
 }
+function projectSpawnedByLink(spawnOrigin) {
+  if (!spawnOrigin || typeof spawnOrigin !== "object")
+    return;
+  const o = spawnOrigin;
+  if (o.kind === "xtmux.agent_instance") {
+    const ro = o.runtime_origin;
+    if (!ro || typeof ro !== "object")
+      return;
+    if (typeof ro.host_id !== "string" || typeof ro.tmux_session_id !== "string" || typeof ro.tmux_window_id !== "string" || typeof ro.tmux_pane_id !== "string") {
+      return;
+    }
+    return {
+      kind: "xtmux.agent_instance",
+      host_id: ro.host_id,
+      tmux_session_id: ro.tmux_session_id,
+      tmux_window_id: ro.tmux_window_id,
+      tmux_pane_id: ro.tmux_pane_id,
+      ...typeof ro.agent_instance_id === "string" ? { agent_instance_id: ro.agent_instance_id } : {}
+    };
+  }
+  if (o.kind === "specialist.job" && typeof o.parent_job_id === "string") {
+    return { kind: "specialist.job", job_id: o.parent_job_id };
+  }
+  return;
+}
+function projectRootRuntimeOrigin(rootRuntimeOrigin) {
+  if (!rootRuntimeOrigin || typeof rootRuntimeOrigin !== "object")
+    return;
+  const ro = rootRuntimeOrigin;
+  if (typeof ro.host_id !== "string" || typeof ro.tmux_pane_id !== "string")
+    return;
+  return {
+    kind: "xtmux.agent_instance",
+    host_id: ro.host_id,
+    tmux_pane_id: ro.tmux_pane_id,
+    ...typeof ro.agent_instance_id === "string" ? { agent_instance_id: ro.agent_instance_id } : {}
+  };
+}
+function deriveOriginSource(spawnOrigin, rootRuntimeOrigin) {
+  if (!spawnOrigin || typeof spawnOrigin !== "object")
+    return "none";
+  const o = spawnOrigin;
+  if (o.kind === "specialist.job")
+    return "child-of-specialist";
+  if (o.kind === "xtmux.agent_instance") {
+    const ro = o.runtime_origin ?? rootRuntimeOrigin;
+    if (ro && ro.capture_source === "propagated")
+      return "propagated";
+    return "xtmux-context";
+  }
+  return "none";
+}
+function deriveOriginVerified(rootRuntimeOrigin) {
+  if (!rootRuntimeOrigin || typeof rootRuntimeOrigin !== "object")
+    return false;
+  return rootRuntimeOrigin.verified === true;
+}
+function deriveOriginSourceFromRoot(rootRuntimeOrigin) {
+  if (!rootRuntimeOrigin || typeof rootRuntimeOrigin !== "object")
+    return "unknown";
+  const capture = rootRuntimeOrigin.capture_source;
+  if (capture === "propagated")
+    return "propagated";
+  if (capture === "xtmux-context")
+    return "xtmux-context";
+  return "unknown";
+}
 function forensicEventFromTimelineEvent(event, context) {
   const participantRole = context.specialist;
   const participantKind = context.nodeId ? "node_member" : "specialist";
@@ -10742,13 +10809,15 @@ function forensicEventFromTimelineEvent(event, context) {
       mcp_session_id: stringField(event, "mcp_session_id") ?? metaStringField(event, "mcp_session_id") ?? metaStringField(event, "mcp.session.id"),
       jsonrpc_request_id: stringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc.request.id"),
       tool_call_id: typeof event.tool_call_id === "string" ? event.tool_call_id : undefined,
-      commit_sha: typeof event.commit_sha === "string" ? event.commit_sha : undefined
+      commit_sha: typeof event.commit_sha === "string" ? event.commit_sha : undefined,
+      ...context.parentJobId ? { parent_job_id: context.parentJobId } : {}
     },
-    body: bodyForTimelineEvent(event),
+    body: bodyForTimelineEvent(event, context),
     otel: otelForTimelineEvent(event),
     redaction: { status: redactionStatusForTimelineEvent(event) },
     t_unix_ms: event.t,
-    seq: event.seq
+    seq: event.seq,
+    ...event.type === "run_start" ? buildRunStartLinks(context) : {}
   });
 }
 function stringField(source, key) {
@@ -10769,7 +10838,31 @@ function booleanField(source, key) {
   const value = source[key];
   return typeof value === "boolean" ? value : undefined;
 }
-function bodyForTimelineEvent(event) {
+function buildRunStartLinks(context) {
+  const spawnedBy = projectSpawnedByLink(context.spawnOrigin);
+  const rootOrigin = projectRootRuntimeOrigin(context.rootRuntimeOrigin);
+  if (!spawnedBy && !rootOrigin)
+    return {};
+  return {
+    links: {
+      ...spawnedBy ? { spawned_by: spawnedBy } : {},
+      ...rootOrigin ? { root_runtime_origin: rootOrigin } : {}
+    }
+  };
+}
+function bodyForTimelineEvent(event, context) {
+  if (event.type === "run_start") {
+    const originSource = deriveOriginSource(context?.spawnOrigin, context?.rootRuntimeOrigin);
+    const originVerified = deriveOriginVerified(context?.rootRuntimeOrigin);
+    return {
+      legacy_timeline_event: event,
+      specialist: stringField(event, "specialist"),
+      bead_id: stringField(event, "bead_id"),
+      launch_mode: originSource === "propagated" ? "background" : originSource === "xtmux-context" ? "foreground" : originSource === "child-of-specialist" ? deriveOriginSourceFromRoot(context?.rootRuntimeOrigin) === "propagated" ? "background" : "foreground" : "unknown",
+      origin_source: originSource,
+      origin_verified: originVerified
+    };
+  }
   if (event.type === "mcp") {
     return {
       legacy_timeline_event: event,
@@ -11061,7 +11154,13 @@ var init_forensic_events = __esm(() => {
     "user_id",
     "email",
     "token",
-    "credential"
+    "credential",
+    "parent_job_id",
+    "agent_instance_id",
+    "host_id",
+    "tmux_session_id",
+    "tmux_window_id",
+    "tmux_pane_id"
   ]);
   DEFAULT_LABEL_ALLOWLIST = new Set([
     "service_namespace",
@@ -12088,7 +12187,10 @@ class SqliteClient {
       conversationId: context.conversationId,
       traceId: context.traceId,
       spanId: context.spanId,
-      parentSpanId: context.parentSpanId
+      parentSpanId: context.parentSpanId,
+      parentJobId: context.parentJobId,
+      spawnOrigin: context.spawnOrigin,
+      rootRuntimeOrigin: context.rootRuntimeOrigin
     });
     this.insertForensicEventRow(jobId, event.seq, forensicEvent);
   }
@@ -12115,7 +12217,10 @@ class SqliteClient {
       conversationId: typeof statusJson.conversation_id === "string" ? statusJson.conversation_id : undefined,
       traceId: typeof statusJson.trace_id === "string" ? statusJson.trace_id : undefined,
       spanId: typeof statusJson.span_id === "string" ? statusJson.span_id : undefined,
-      parentSpanId: typeof statusJson.parent_span_id === "string" ? statusJson.parent_span_id : undefined
+      parentSpanId: typeof statusJson.parent_span_id === "string" ? statusJson.parent_span_id : undefined,
+      parentJobId: typeof statusJson.parent_job_id === "string" ? statusJson.parent_job_id : undefined,
+      spawnOrigin: statusJson.spawn_origin,
+      rootRuntimeOrigin: statusJson.root_runtime_origin
     };
   }
   insertForensicEventRow(jobId, seq, forensicEvent) {
@@ -25432,6 +25537,224 @@ var init_list_rules = __esm(() => {
   ];
 });
 
+// src/specialist/runtime-origin.ts
+import { spawnSync as spawnSync5 } from "child_process";
+function defaultRunner(cmd, args, opts) {
+  const result = spawnSync5(cmd, args, {
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: opts.timeoutMs,
+    env: opts.env
+  });
+  return {
+    status: result.status,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+    error: result.error
+  };
+}
+function isNonEmptyString(v) {
+  return typeof v === "string" && v.length > 0;
+}
+function isOptionalString(v) {
+  return v === undefined || typeof v === "string" && v.length > 0;
+}
+function validateRuntimeOrigin(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { error: "not-object" };
+  }
+  const o = input;
+  if (o.schema_version !== SCHEMA_VERSION)
+    return { error: "wrong-schema-version" };
+  if (o.kind !== KIND_AGENT_INSTANCE)
+    return { error: "wrong-kind" };
+  if (!isNonEmptyString(o.host_id))
+    return { error: "invalid-host-id" };
+  if (!isNonEmptyString(o.tmux_session_id))
+    return { error: "invalid-tmux-session-id" };
+  if (!isNonEmptyString(o.tmux_window_id))
+    return { error: "invalid-tmux-window-id" };
+  if (!isNonEmptyString(o.tmux_pane_id))
+    return { error: "invalid-tmux-pane-id" };
+  if (!isOptionalString(o.tmux_server_id))
+    return { error: "invalid-tmux-server-id" };
+  if (!isOptionalString(o.agent_instance_id))
+    return { error: "invalid-agent-instance-id" };
+  if (!isOptionalString(o.bead_id))
+    return { error: "invalid-bead-id" };
+  if (!isOptionalString(o.parent_session_id))
+    return { error: "invalid-parent-session-id" };
+  if (typeof o.captured_at_ms !== "number" || !Number.isFinite(o.captured_at_ms) || o.captured_at_ms < 0) {
+    return { error: "invalid-captured-at-ms" };
+  }
+  if (o.capture_source !== "xtmux-context" && o.capture_source !== "propagated") {
+    return { error: "invalid-capture-source" };
+  }
+  if (typeof o.verified !== "boolean")
+    return { error: "invalid-verified" };
+  for (const key of Object.keys(o)) {
+    if (!ALLOWED_KEYS.has(key)) {
+      return { error: `unknown-field:${key}` };
+    }
+  }
+  return {
+    schema_version: SCHEMA_VERSION,
+    kind: KIND_AGENT_INSTANCE,
+    host_id: o.host_id,
+    tmux_server_id: o.tmux_server_id,
+    tmux_session_id: o.tmux_session_id,
+    tmux_window_id: o.tmux_window_id,
+    tmux_pane_id: o.tmux_pane_id,
+    agent_instance_id: o.agent_instance_id,
+    bead_id: o.bead_id,
+    parent_session_id: o.parent_session_id,
+    captured_at_ms: o.captured_at_ms,
+    capture_source: o.capture_source,
+    verified: o.verified
+  };
+}
+function logLine(fields) {
+  const parts = ["[specialists] component=runtime-origin"];
+  for (const [k, v] of Object.entries(fields)) {
+    if (v === undefined)
+      continue;
+    parts.push(`${k}=${v}`);
+  }
+  console.warn(parts.join(" "));
+}
+async function captureRuntimeOrigin(opts = {}) {
+  const started = Date.now();
+  const runner = opts.subprocess ?? defaultRunner;
+  const env = opts.env ?? process.env;
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_CAPTURE_TIMEOUT_MS;
+  if (!env.TMUX_PANE) {
+    logLine({ event: "capture", outcome: "skipped", reason: "outside-tmux", duration_ms: Date.now() - started });
+    return;
+  }
+  let result;
+  try {
+    result = runner("xtmux", ["context", "--current", "--json"], { timeoutMs, env });
+  } catch (err) {
+    logLine({ event: "capture", outcome: "unavailable", reason: `runner-throw:${String(err.message).slice(0, 60)}`, duration_ms: Date.now() - started });
+    return;
+  }
+  if (result.error?.code === "ENOENT") {
+    logLine({ event: "capture", outcome: "unavailable", reason: "binary-missing", duration_ms: Date.now() - started });
+    return;
+  }
+  if (result.status !== 0) {
+    logLine({ event: "capture", outcome: "unavailable", reason: `exit-${result.status ?? "null"}`, duration_ms: Date.now() - started });
+    return;
+  }
+  if (result.stdout.length > MAX_ORIGIN_JSON_BYTES) {
+    logLine({ event: "capture", outcome: "malformed", reason: "payload-too-large", duration_ms: Date.now() - started });
+    return;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(result.stdout);
+  } catch {
+    logLine({ event: "capture", outcome: "malformed", reason: "json-parse", duration_ms: Date.now() - started });
+    return;
+  }
+  const validated = validateRuntimeOrigin(parsed);
+  if ("error" in validated) {
+    logLine({ event: "reject", outcome: "malformed", reason: validated.error, duration_ms: Date.now() - started });
+    return;
+  }
+  logLine({
+    event: "capture",
+    outcome: "ok",
+    pane: validated.tmux_pane_id,
+    agent: validated.agent_instance_id?.slice(0, 8) ?? "-",
+    verified: String(validated.verified),
+    duration_ms: Date.now() - started
+  });
+  return validated;
+}
+function decodePropagatedOrigin(env) {
+  const raw = env[SPECIALISTS_RUNTIME_ORIGIN_V1];
+  if (!raw)
+    return;
+  if (raw.length > MAX_ORIGIN_JSON_BYTES) {
+    logLine({ event: "reject", outcome: "malformed", reason: "propagated-too-large" });
+    return;
+  }
+  let jsonText = raw;
+  const trimmed = raw.trim();
+  if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) {
+    try {
+      jsonText = Buffer.from(trimmed, "base64url").toString("utf-8");
+    } catch {
+      logLine({ event: "reject", outcome: "malformed", reason: "base64url-decode" });
+      return;
+    }
+    if (jsonText.length > MAX_ORIGIN_JSON_BYTES) {
+      logLine({ event: "reject", outcome: "malformed", reason: "propagated-decoded-too-large" });
+      return;
+    }
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch {
+    logLine({ event: "reject", outcome: "malformed", reason: "propagated-json-parse" });
+    return;
+  }
+  const validated = validateRuntimeOrigin(parsed);
+  if ("error" in validated) {
+    logLine({ event: "reject", outcome: "malformed", reason: `propagated:${validated.error}` });
+    return;
+  }
+  const propagated = { ...validated, capture_source: "propagated" };
+  logLine({
+    event: "propagate",
+    outcome: "ok",
+    pane: propagated.tmux_pane_id,
+    agent: propagated.agent_instance_id?.slice(0, 8) ?? "-",
+    verified: String(propagated.verified)
+  });
+  return propagated;
+}
+function encodePropagatedOrigin(origin) {
+  return Buffer.from(JSON.stringify(origin), "utf-8").toString("base64url");
+}
+function resolveSpawnOrigin(input) {
+  if (input.explicitParentJobId) {
+    return {
+      spawn_origin: { kind: "specialist.job", parent_job_id: input.explicitParentJobId },
+      parent_job_id: input.explicitParentJobId,
+      root_runtime_origin: input.inheritedRootRuntimeOrigin
+    };
+  }
+  if (input.ambientRuntimeOrigin) {
+    return {
+      spawn_origin: { kind: "xtmux.agent_instance", runtime_origin: input.ambientRuntimeOrigin },
+      root_runtime_origin: input.ambientRuntimeOrigin
+    };
+  }
+  return { spawn_origin: { kind: "unknown" } };
+}
+var SPECIALISTS_RUNTIME_ORIGIN_V1 = "SPECIALISTS_RUNTIME_ORIGIN_V1", MAX_ORIGIN_JSON_BYTES, DEFAULT_CAPTURE_TIMEOUT_MS = 500, SCHEMA_VERSION = "xtrm.runtime-origin.v1", KIND_AGENT_INSTANCE = "xtmux.agent_instance", ALLOWED_KEYS;
+var init_runtime_origin = __esm(() => {
+  MAX_ORIGIN_JSON_BYTES = 16 * 1024;
+  ALLOWED_KEYS = new Set([
+    "schema_version",
+    "kind",
+    "host_id",
+    "tmux_server_id",
+    "tmux_session_id",
+    "tmux_window_id",
+    "tmux_pane_id",
+    "agent_instance_id",
+    "bead_id",
+    "parent_session_id",
+    "captured_at_ms",
+    "capture_source",
+    "verified"
+  ]);
+});
+
 // src/specialist/timeline-events.ts
 function summarizeToolResult(resultContent) {
   if (!resultContent)
@@ -26270,7 +26593,7 @@ function derivePersistedChainIdentity(status, chainRootSnapshot) {
 var init_chain_identity = () => {};
 
 // src/cli/tmux-utils.ts
-import { spawnSync as spawnSync5 } from "child_process";
+import { spawnSync as spawnSync6 } from "child_process";
 function escapeForSingleQuotedBash(script) {
   return script.replace(/'/g, "'\\''");
 }
@@ -26278,7 +26601,7 @@ function quoteShellValue(value) {
   return `'${escapeForSingleQuotedBash(value)}'`;
 }
 function isTmuxAvailable() {
-  return spawnSync5("which", ["tmux"], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync6("which", ["tmux"], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function buildSessionName(specialist, suffix) {
   return `${TMUX_SESSION_PREFIX}-${specialist}-${suffix}`;
@@ -26293,14 +26616,14 @@ function createTmuxSession(name, cwd, cmd, extraEnv = {}) {
   }
   const startupScript = `${exports.join("; ")}; exec ${cmd}`;
   const wrappedCommand = `/bin/bash -c '${escapeForSingleQuotedBash(startupScript)}'`;
-  const result = spawnSync5("tmux", ["new-session", "-d", "-s", name, "-c", cwd, wrappedCommand], { encoding: "utf8", stdio: "pipe" });
+  const result = spawnSync6("tmux", ["new-session", "-d", "-s", name, "-c", cwd, wrappedCommand], { encoding: "utf8", stdio: "pipe" });
   if (result.status !== 0) {
     const errorOutput = (result.stderr ?? "").trim() || (result.error?.message ?? "unknown error");
     throw new Error(`Failed to create tmux session "${name}": ${errorOutput}`);
   }
 }
 function isTmuxSessionAlive(sessionName) {
-  const result = spawnSync5("tmux", ["has-session", "-t", sessionName], {
+  const result = spawnSync6("tmux", ["has-session", "-t", sessionName], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 2000
@@ -26310,7 +26633,7 @@ function isTmuxSessionAlive(sessionName) {
   return result.status === 0;
 }
 function killTmuxSession(name) {
-  spawnSync5("tmux", ["kill-session", "-t", name], { encoding: "utf8", stdio: "pipe" });
+  spawnSync6("tmux", ["kill-session", "-t", name], { encoding: "utf8", stdio: "pipe" });
 }
 var TMUX_SESSION_PREFIX = "sp";
 var init_tmux_utils = () => {};
@@ -26346,9 +26669,9 @@ import {
 import { join as join12 } from "path";
 import { createInterface } from "readline";
 import { createReadStream } from "fs";
-import { spawn as spawn2, spawnSync as spawnSync6, execFileSync as execFileSync2 } from "child_process";
+import { spawn as spawn2, spawnSync as spawnSync7, execFileSync as execFileSync2 } from "child_process";
 function getCurrentGitSha() {
-  const result = spawnSync6("git", ["rev-parse", "HEAD"], {
+  const result = spawnSync7("git", ["rev-parse", "HEAD"], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
   });
@@ -26480,7 +26803,7 @@ function isAutoCommitNoisePath(path) {
   return AUTO_COMMIT_NOISE_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 function listSubstantiveWorktreeFiles(worktreePath) {
-  const status = spawnSync6("git", ["status", "--porcelain"], {
+  const status = spawnSync7("git", ["status", "--porcelain"], {
     cwd: worktreePath,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -26512,7 +26835,7 @@ function runAutoCommitCheckpoint(options) {
       return { status: "skipped", reason: "no_substantive_changes" };
     }
     const addStart = Date.now();
-    const addResult = spawnSync6("git", ["add", "--", ...substantiveFiles], {
+    const addResult = spawnSync7("git", ["add", "--", ...substantiveFiles], {
       cwd: worktreePath,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -26525,7 +26848,7 @@ function runAutoCommitCheckpoint(options) {
     emitCommandEvent?.("completed", { command_kind: "git", duration_ms: addDuration, command: "git", args: ["add", "--", ...substantiveFiles], exit_code: 0, redacted: true });
     const commitMessage = buildAutoCommitMessage(specialist, beadId, turnNumber);
     const commitStart = Date.now();
-    const commitResult = spawnSync6("git", ["commit", "-m", commitMessage], {
+    const commitResult = spawnSync7("git", ["commit", "-m", commitMessage], {
       cwd: worktreePath,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -26537,7 +26860,7 @@ function runAutoCommitCheckpoint(options) {
     }
     emitCommandEvent?.("completed", { command_kind: "git", duration_ms: commitDuration, command: "git", args: ["commit", "-m", commitMessage], exit_code: 0, redacted: true });
     const shaStart = Date.now();
-    const shaResult = spawnSync6("git", ["rev-parse", "HEAD"], {
+    const shaResult = spawnSync7("git", ["rev-parse", "HEAD"], {
       cwd: worktreePath,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -26585,7 +26908,7 @@ function resolveDetachedRuntime() {
   const envRuntime = process.env.SPECIALISTS_BUN_PATH ?? process.env.BUN_PATH;
   if (envRuntime)
     return envRuntime;
-  const whichResult = spawnSync6("which", ["bun"], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  const whichResult = spawnSync7("which", ["bun"], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
   if (whichResult.status === 0) {
     const resolved = (whichResult.stdout ?? "").trim();
     if (resolved)
@@ -27288,6 +27611,21 @@ class Supervisor {
         }
       } : {}
     };
+    let inheritedRootRuntimeOrigin;
+    if (runOptions.explicitParentJobId) {
+      try {
+        const parentStatus = this.sqliteClient?.readStatus(runOptions.explicitParentJobId);
+        inheritedRootRuntimeOrigin = parentStatus?.root_runtime_origin;
+        console.warn(`[specialists] component=launch event=inherit parent_job_id=${runOptions.explicitParentJobId} outcome=${inheritedRootRuntimeOrigin ? "ok" : "parent-missing"}`);
+      } catch (err) {
+        console.warn(`[specialists] component=launch event=inherit parent_job_id=${runOptions.explicitParentJobId} outcome=lookup-failed reason=${err.message?.slice(0, 60) ?? "unknown"}`);
+      }
+    }
+    const originBinding = resolveSpawnOrigin({
+      explicitParentJobId: runOptions.explicitParentJobId,
+      ambientRuntimeOrigin: runOptions.ambientRuntimeOrigin,
+      inheritedRootRuntimeOrigin
+    });
     const initialStatus = {
       id,
       specialist: runOptions.name,
@@ -27309,7 +27647,18 @@ class Supervisor {
       } : { chain_kind: "prep" },
       ...runOptions.epicId ? { epic_id: runOptions.epicId } : {},
       ...runOptions.workingDirectory ? { branch: resolveCurrentBranch(runOptions.workingDirectory) } : { branch: resolveCurrentBranch() },
-      startup_context: startupContext
+      startup_context: {
+        ...startupContext,
+        spawn_origin_kind: originBinding.spawn_origin.kind,
+        ...originBinding.parent_job_id ? { parent_job_id: originBinding.parent_job_id } : {},
+        ...originBinding.root_runtime_origin ? {
+          root_pane_id: originBinding.root_runtime_origin.tmux_pane_id,
+          ...originBinding.root_runtime_origin.agent_instance_id ? { root_agent_instance_id: originBinding.root_runtime_origin.agent_instance_id } : {}
+        } : {}
+      },
+      spawn_origin: originBinding.spawn_origin,
+      ...originBinding.parent_job_id ? { parent_job_id: originBinding.parent_job_id } : {},
+      ...originBinding.root_runtime_origin ? { root_runtime_origin: originBinding.root_runtime_origin } : {}
     };
     this.writeStatusFile(id, initialStatus);
     const statusWatchdogPid = startDetachedStatusWatchdog(this.observabilityDbPath(), this.statusPath(id), id, process.pid);
@@ -27502,7 +27851,7 @@ class Supervisor {
     let skipFinalKeepAliveInputBeadAppend = false;
     let latestEvidenceRefs;
     const getObservedPrEvidenceRef = (worktreePath) => {
-      const result = spawnSync6("gh", ["pr", "view", "--json", "number,url,state"], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      const result = spawnSync7("gh", ["pr", "view", "--json", "number,url,state"], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
       if (result.status !== 0)
         return;
       try {
@@ -27578,12 +27927,12 @@ ${appendError}
     };
     const appendResultToInputBead = (params) => writeUnifiedHandoff(params);
     const buildAutoCommitEvidenceRefs = (jobId, worktreePath, commitSha) => {
-      const baseShaResult = spawnSync6("git", ["rev-parse", commitSha + "^"], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      const baseShaResult = spawnSync7("git", ["rev-parse", commitSha + "^"], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
       const baseSha = baseShaResult.status === 0 ? (baseShaResult.stdout ?? "").trim() : undefined;
       const baseRef = baseSha ? commitSha + "^" : undefined;
       const range = baseSha ? baseSha + ".." + commitSha : commitSha + "^.." + commitSha;
-      const numstatResult = spawnSync6("git", ["diff", "--numstat", "--no-renames", range], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
-      const hunksResult = spawnSync6("git", ["diff", "--unified=0", "--no-ext-diff", "--no-renames", range], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      const numstatResult = spawnSync7("git", ["diff", "--numstat", "--no-renames", range], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      const hunksResult = spawnSync7("git", ["diff", "--unified=0", "--no-ext-diff", "--no-renames", range], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
       const hunksOutput = (hunksResult.stdout ?? "").trim();
       const artifactRef = hunksOutput && !willHunksBeInline(hunksOutput) ? writeGitDiffHunksArtifact(this.jobDir(jobId), "git-diff-" + commitSha.slice(0, 12) + ".patch", hunksOutput) : undefined;
       const diff = buildGitDiffEvidence({
@@ -28473,7 +28822,7 @@ ${appendError}
           rmSync2(fifoPath);
       } catch {}
       if (statusSnapshot.tmux_session) {
-        spawnSync6("tmux", ["kill-session", "-t", statusSnapshot.tmux_session], { stdio: "ignore" });
+        spawnSync7("tmux", ["kill-session", "-t", statusSnapshot.tmux_session], { stdio: "ignore" });
       }
       await this.dispose();
     }
@@ -28481,6 +28830,7 @@ ${appendError}
 }
 var JOB_TTL_DAYS, STALL_DETECTION_DEFAULTS, WAITING_AUTO_CLOSE_GRACE_MS = 5000, GITNEXUS_RISK_ORDER, MODEL_CONTEXT_WINDOWS, TERMINAL_COMPLIANCE_VERDICT_REGEX, PASS_COMPLIANCE_VERDICT_REGEX, REVIEW_VERDICT_REGEX, AUTO_COMMIT_NOISE_PREFIXES, STATUS_WATCHDOG_INTERVAL_MS = 5000, STATUS_WATCHDOG_STALE_AFTER_MS = 30000;
 var init_supervisor = __esm(() => {
+  init_runtime_origin();
   init_job_root();
   init_timeline_events();
   init_git_diff_evidence();
@@ -28516,7 +28866,7 @@ var init_supervisor = __esm(() => {
 });
 
 // src/cli/version-check.ts
-import { spawnSync as spawnSync7 } from "child_process";
+import { spawnSync as spawnSync8 } from "child_process";
 import { existsSync as existsSync13, mkdirSync as mkdirSync7, readFileSync as readFileSync11, writeFileSync as writeFileSync6 } from "fs";
 import { dirname as dirname7, join as join13 } from "path";
 import { createRequire as createRequire2 } from "module";
@@ -28584,7 +28934,7 @@ function compareVersions(left, right) {
   return 0;
 }
 function runRemoteTagLookup() {
-  const result = spawnSync7("git", ["ls-remote", "--tags", "--refs", "origin"], {
+  const result = spawnSync8("git", ["ls-remote", "--tags", "--refs", "origin"], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: NETWORK_TIMEOUT_MS
@@ -28657,7 +29007,7 @@ __export(exports_list, {
   computeMedianElapsedMs: () => computeMedianElapsedMs,
   ArgParseError: () => ArgParseError
 });
-import { spawnSync as spawnSync8 } from "child_process";
+import { spawnSync as spawnSync9 } from "child_process";
 import { existsSync as existsSync14, readdirSync as readdirSync3, readFileSync as readFileSync12 } from "fs";
 import { join as join14 } from "path";
 import readline from "readline";
@@ -28843,7 +29193,7 @@ async function runLiveMode(showDead) {
   const selected = await selectLiveJob(jobs);
   if (!selected)
     return;
-  const attach = spawnSync8("tmux", ["attach-session", "-t", selected.tmuxSession], {
+  const attach = spawnSync9("tmux", ["attach-session", "-t", selected.tmuxSession], {
     stdio: "inherit"
   });
   if (attach.error) {
@@ -29361,9 +29711,9 @@ var exports_models = {};
 __export(exports_models, {
   run: () => run7
 });
-import { spawnSync as spawnSync9 } from "child_process";
+import { spawnSync as spawnSync10 } from "child_process";
 function parsePiModels() {
-  const r = spawnSync9("pi", ["--list-models"], {
+  const r = spawnSync10("pi", ["--list-models"], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 8000
@@ -29468,7 +29818,7 @@ __export(exports_init, {
   run: () => run8
 });
 import { copyFileSync, cpSync, existsSync as existsSync15, lstatSync, mkdirSync as mkdirSync8, readdirSync as readdirSync4, readFileSync as readFileSync13, readlinkSync, renameSync as renameSync3, rmSync as rmSync3, symlinkSync, unlinkSync, writeFileSync as writeFileSync7 } from "fs";
-import { spawnSync as spawnSync10 } from "child_process";
+import { spawnSync as spawnSync11 } from "child_process";
 import { basename as basename4, dirname as dirname8, join as join15, relative, resolve as resolve6 } from "path";
 function ok(msg) {
   console.log(`  ${green4("\u2713")} ${msg}`);
@@ -29480,7 +29830,7 @@ function warn(msg) {
   console.warn(`  ${yellow5("!")} ${msg}`);
 }
 function isInstalled(bin) {
-  return spawnSync10("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync11("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function assertXtrmPrerequisites(cwd) {
   const hasXtrmDir = existsSync15(join15(cwd, ".xtrm"));
@@ -32285,7 +32635,7 @@ __export(exports_edit, {
   run: () => run12
 });
 import { existsSync as existsSync19, mkdirSync as mkdirSync10, readFileSync as readFileSync16, writeFileSync as writeFileSync9 } from "fs";
-import { spawnSync as spawnSync11 } from "child_process";
+import { spawnSync as spawnSync12 } from "child_process";
 import { join as join18 } from "path";
 function usage() {
   const aliasList = Object.keys(LEGACY_FIELD_ALIASES).map((v) => `--${v}`).join(", ");
@@ -32843,7 +33193,7 @@ function openInEditor(filePath) {
 Run ${setCommand} in scripts.`);
   }
   const editor = process.env.EDITOR?.trim() || process.env.VISUAL?.trim() || "vi";
-  const result = spawnSync11(editor, [filePath], { stdio: "inherit" });
+  const result = spawnSync12(editor, [filePath], { stdio: "inherit" });
   if (result.error) {
     fail2(`Error: failed to launch $EDITOR (${editor}): ${result.error.message}`);
   }
@@ -33194,7 +33544,7 @@ __export(exports_config, {
   run: () => run13
 });
 import { readFileSync as readFileSync17 } from "fs";
-import { spawnSync as spawnSync12 } from "child_process";
+import { spawnSync as spawnSync13 } from "child_process";
 import { dirname as dirname10, join as join20 } from "path";
 import { fileURLToPath as fileURLToPath3 } from "url";
 function usage2() {
@@ -33225,17 +33575,17 @@ function readPackageVersion(packageJsonPath) {
   }
 }
 function isInsideGitWorktree(projectDir) {
-  const result = spawnSync12("git", ["rev-parse", "--is-inside-work-tree"], { cwd: projectDir, encoding: "utf-8" });
+  const result = spawnSync13("git", ["rev-parse", "--is-inside-work-tree"], { cwd: projectDir, encoding: "utf-8" });
   return result.status === 0 && result.stdout.trim() === "true";
 }
 function getGitCommonDir(projectDir) {
-  const result = spawnSync12("git", ["rev-parse", "--git-common-dir"], { cwd: projectDir, encoding: "utf-8" });
+  const result = spawnSync13("git", ["rev-parse", "--git-common-dir"], { cwd: projectDir, encoding: "utf-8" });
   if (result.status !== 0)
     return;
   return result.stdout.trim() || undefined;
 }
 function getGitTopLevel(projectDir) {
-  const result = spawnSync12("git", ["rev-parse", "--show-toplevel"], { cwd: projectDir, encoding: "utf-8" });
+  const result = spawnSync13("git", ["rev-parse", "--show-toplevel"], { cwd: projectDir, encoding: "utf-8" });
   if (result.status !== 0)
     return;
   return result.stdout.trim() || undefined;
@@ -33338,7 +33688,7 @@ ${usage2()}`);
     console.error(yellow9("\u26A0 hint: use --from-source for worktree-source resolver review"));
   }
   if (flags.has("--from-source") && !import.meta.url.includes("/src/")) {
-    const result = spawnSync12("bunx", ["tsx", "src/index.ts", "config", "show", specialistName, "--resolved"], {
+    const result = spawnSync13("bunx", ["tsx", "src/index.ts", "config", "show", specialistName, "--resolved"], {
       cwd: projectDir,
       encoding: "utf-8",
       stdio: "pipe"
@@ -33410,7 +33760,9 @@ async function launchSpecialist(opts) {
       baseShaPinnedAtMs: opts.basePin ? Date.now() : undefined,
       reusedFromJobId: opts.reusedFromJobId,
       worktreeOwnerJobId: opts.worktreeOwnerJobId,
-      output_file: opts.specialist.specialist.output_file
+      output_file: opts.specialist.specialist.output_file,
+      ambientRuntimeOrigin: opts.ambientRuntimeOrigin,
+      explicitParentJobId: opts.explicitParentJobId
     },
     beadsClient: opts.beadsClient,
     stallDetection: opts.specialist.specialist.stall_detection,
@@ -44377,7 +44729,7 @@ __export(exports_chat, {
   formatChatShow: () => formatChatShow,
   createCleanup: () => createCleanup
 });
-import { spawnSync as spawnSync13 } from "child_process";
+import { spawnSync as spawnSync14 } from "child_process";
 import { appendFileSync as appendFileSync4, readFileSync as readFileSync19, writeFileSync as writeFileSync12 } from "fs";
 function dbg(msg, extra) {
   if (!DEBUG_LOG_PATH)
@@ -44583,7 +44935,7 @@ function buildPrompt(args) {
 }
 function createEphemeralBead(prompt) {
   const title = buildEphemeralBeadTitle(prompt);
-  const result = spawnSync13("bd", ["create", title, "-t", "task", "-p3", "--json"], {
+  const result = spawnSync14("bd", ["create", title, "-t", "task", "-p3", "--json"], {
     cwd: process.cwd(),
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -46898,7 +47250,7 @@ var init_config_source = __esm(() => {
 });
 
 // src/cli/console/runtime.ts
-import { spawnSync as spawnSync14 } from "child_process";
+import { spawnSync as spawnSync15 } from "child_process";
 import { existsSync as existsSync25, readdirSync as readdirSync10, readFileSync as readFileSync23, statSync as statSync8 } from "fs";
 import { basename as basename7, dirname as dirname15, join as join29 } from "path";
 function createRuntimeClient(cwd = process.cwd()) {
@@ -47217,7 +47569,7 @@ class LocalRuntimeClient {
     const location = getGlobalUserConfigPath2();
     const editor = process.env.EDITOR?.trim() || process.env.VISUAL?.trim() || "vi";
     try {
-      const result = spawnSync14(editor, [location.path], { stdio: "inherit" });
+      const result = spawnSync15(editor, [location.path], { stdio: "inherit" });
       if (result.error) {
         return { ok: false, errorClass: result.error.code ?? "editor_failed" };
       }
@@ -47327,7 +47679,7 @@ function kvRow(key, value) {
 function resolveDiffBase(worktreePath, branch) {
   const candidates = ["origin/HEAD", "origin/main", "origin/master", "main", "master"];
   for (const ref of candidates) {
-    const result = spawnSync14("git", ["-C", worktreePath, "merge-base", "HEAD", ref], {
+    const result = spawnSync15("git", ["-C", worktreePath, "merge-base", "HEAD", ref], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 1500
@@ -47336,7 +47688,7 @@ function resolveDiffBase(worktreePath, branch) {
       return result.stdout.trim();
   }
   if (branch) {
-    const result = spawnSync14("git", ["-C", worktreePath, "rev-parse", `${branch}@{u}`], {
+    const result = spawnSync15("git", ["-C", worktreePath, "rev-parse", `${branch}@{u}`], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 1500
@@ -47344,7 +47696,7 @@ function resolveDiffBase(worktreePath, branch) {
     if (result.status === 0 && result.stdout)
       return result.stdout.trim();
   }
-  const fallback = spawnSync14("git", ["-C", worktreePath, "rev-parse", "HEAD^"], {
+  const fallback = spawnSync15("git", ["-C", worktreePath, "rev-parse", "HEAD^"], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"],
     timeout: 1500
@@ -47375,7 +47727,7 @@ function buildDiffFileResult(file, raw, meta) {
 }
 function runGit(args, cwd, op) {
   const started = Date.now();
-  const result = spawnSync14("git", ["-C", cwd, ...args], {
+  const result = spawnSync15("git", ["-C", cwd, ...args], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: 1e4,
@@ -47404,7 +47756,7 @@ function fetchBeadDoc(beadId) {
   if (cached2 && now - cached2.at < BEAD_DOC_TTL_MS)
     return cached2.doc;
   const started = now;
-  const result = spawnSync14("bd", ["show", beadId, "--json"], {
+  const result = spawnSync15("bd", ["show", beadId, "--json"], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: 3000
@@ -49803,7 +50155,7 @@ var init_console = __esm(() => {
 // src/specialist/worktree.ts
 import { existsSync as existsSync26, symlinkSync as symlinkSync2, mkdirSync as mkdirSync13, rmSync as rmSync5 } from "fs";
 import { join as join30, resolve as resolve9 } from "path";
-import { spawnSync as spawnSync15, execFileSync as execFileSync3 } from "child_process";
+import { spawnSync as spawnSync16, execFileSync as execFileSync3 } from "child_process";
 function deriveBranchName(beadId, specialistName) {
   return `feature/${beadId}-${slugify(specialistName)}`;
 }
@@ -49817,7 +50169,7 @@ function resolveCommonRoot(cwd) {
   return resolveCommonGitRoot(cwd) ?? cwd;
 }
 function listWorktrees(cwd = process.cwd()) {
-  const result = spawnSync15("git", ["worktree", "list", "--porcelain"], {
+  const result = spawnSync16("git", ["worktree", "list", "--porcelain"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -49851,7 +50203,7 @@ function provisionWorktree(options2) {
 }
 function normalizeParentHooksPath(mainRepoRoot) {
   try {
-    const result = spawnSync15("git", ["-C", mainRepoRoot, "config", "--get", "core.hooksPath"], {
+    const result = spawnSync16("git", ["-C", mainRepoRoot, "config", "--get", "core.hooksPath"], {
       stdio: "pipe",
       encoding: "utf8"
     });
@@ -49865,12 +50217,12 @@ function normalizeParentHooksPath(mainRepoRoot) {
     if (current !== ".beads/hooks" && current !== "./.beads/hooks")
       return;
     const absolute = join30(mainRepoRoot, ".beads", "hooks");
-    spawnSync15("git", ["-C", mainRepoRoot, "config", "core.hooksPath", absolute], { stdio: "pipe" });
+    spawnSync16("git", ["-C", mainRepoRoot, "config", "core.hooksPath", absolute], { stdio: "pipe" });
   } catch {}
 }
 function markBeadsSkipWorktree(worktreePath) {
   try {
-    const trackedResult = spawnSync15("git", ["-C", worktreePath, "ls-files", "--", ".beads"], {
+    const trackedResult = spawnSync16("git", ["-C", worktreePath, "ls-files", "--", ".beads"], {
       cwd: worktreePath,
       stdio: "pipe",
       encoding: "utf8"
@@ -49880,7 +50232,7 @@ function markBeadsSkipWorktree(worktreePath) {
     const trackedPaths = (trackedResult.stdout ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     if (trackedPaths.length === 0)
       return;
-    spawnSync15("git", ["-C", worktreePath, "update-index", "--skip-worktree", "--", ...trackedPaths], {
+    spawnSync16("git", ["-C", worktreePath, "update-index", "--skip-worktree", "--", ...trackedPaths], {
       cwd: worktreePath,
       stdio: "pipe",
       encoding: "utf8"
@@ -50167,7 +50519,7 @@ __export(exports_merge, {
   checkEpicUnresolvedGuard: () => checkEpicUnresolvedGuard,
   assertMainRepoCleanForMerge: () => assertMainRepoCleanForMerge
 });
-import { spawnSync as spawnSync16 } from "child_process";
+import { spawnSync as spawnSync17 } from "child_process";
 import { existsSync as existsSync27, readFileSync as readFileSync25, readdirSync as readdirSync11 } from "fs";
 import { join as join32 } from "path";
 function parseOptions(argv) {
@@ -50206,7 +50558,7 @@ function parseOptions(argv) {
   return { target, rebuild, targetBranch: targetBranch ? validateTargetBranchRef(targetBranch) : undefined };
 }
 function runCommand(command, args, cwd = process.cwd()) {
-  return spawnSync16(command, args, {
+  return spawnSync17(command, args, {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -51702,6 +52054,8 @@ async function run17() {
       }
     }
   }
+  const propagatedOrigin = decodePropagatedOrigin(process.env);
+  const ambientRuntimeOrigin = propagatedOrigin ?? await captureRuntimeOrigin();
   if (args.background) {
     const jobsDir2 = resolveJobsDir();
     const latestPath = join33(jobsDir2, "latest");
@@ -51721,6 +52075,7 @@ async function run17() {
     let childExitPromise;
     let handoffPath;
     let tmuxSessionName;
+    const propagatedEnv = ambientRuntimeOrigin ? { [SPECIALISTS_RUNTIME_ORIGIN_V1]: encodePropagatedOrigin(ambientRuntimeOrigin) } : {};
     if (isTmuxAvailable()) {
       const suffix = randomBytes(3).toString("hex");
       const sessionName = buildSessionName(args.name, suffix);
@@ -51733,13 +52088,13 @@ async function run17() {
         handoffPath,
         feedCommandPrefix
       });
-      createTmuxSession(sessionName, cwd, tmuxCmd, { [JOB_ID_HANDOFF_PATH_ENV]: handoffPath });
+      createTmuxSession(sessionName, cwd, tmuxCmd, { [JOB_ID_HANDOFF_PATH_ENV]: handoffPath, ...propagatedEnv });
     } else {
       const child = cpSpawn(process.execPath, [process.argv[1], ...innerArgs], {
         detached: true,
         stdio: ["ignore", "ignore", "pipe"],
         cwd,
-        env: process.env
+        env: { ...process.env, ...propagatedEnv }
       });
       const childStderr = child.stderr;
       if (childStderr) {
@@ -51894,7 +52249,8 @@ async function run17() {
     perm,
     jobsDir,
     startEventTailer: (jobId, jobsDirArg) => startEventTailer(jobId, jobsDirArg, args.outputMode === "raw" ? "human" : args.outputMode, args.name, effectiveBeadId),
-    formatFooterModel: formatFooterModel2
+    formatFooterModel: formatFooterModel2,
+    ambientRuntimeOrigin
   });
 }
 var dim11 = (s) => `\x1B[2m${s}\x1B[0m`, JOB_ID_HANDOFF_PATH_ENV = "SPECIALISTS_BG_JOB_ID_PATH", BLOCKED_JOB_REUSE_STATUSES;
@@ -51911,6 +52267,7 @@ var init_run = __esm(() => {
   init_merge();
   init_format_helpers();
   init_tmux_utils();
+  init_runtime_origin();
   init_launch();
   BLOCKED_JOB_REUSE_STATUSES = new Set(["starting", "running"]);
 });
@@ -51988,6 +52345,9 @@ class JobControl {
     });
   }
   async startJob(opts) {
+    if (opts.explicitParentJobId) {
+      console.warn(`[specialists] component=launch event=child-dispatch parent_job_id=${opts.explicitParentJobId} node_id=${opts.nodeId} member_id=${opts.memberId} outcome=ok`);
+    }
     const runOptions = {
       ...this.baseRunOptions,
       variables: {
@@ -51995,7 +52355,8 @@ class JobControl {
         node_id: opts.nodeId,
         SPECIALISTS_NODE_ID: opts.nodeId,
         member_id: opts.memberId
-      }
+      },
+      ...opts.explicitParentJobId ? { explicitParentJobId: opts.explicitParentJobId } : {}
     };
     let resolveJobId;
     const jobIdPromise = new Promise((resolve10) => {
@@ -52235,7 +52596,7 @@ __export(exports_node_supervisor, {
   NodeSupervisor: () => NodeSupervisor
 });
 import { createHash as createHash5 } from "crypto";
-import { spawnSync as spawnSync17 } from "child_process";
+import { spawnSync as spawnSync18 } from "child_process";
 function hashOutput(output2, salt) {
   if (!output2)
     return null;
@@ -52280,7 +52641,7 @@ function parseCreatedBeadId(stdout) {
   return match[1];
 }
 function runCommandOrThrow(command, args, cwd = process.cwd()) {
-  const result = spawnSync17(command, args, {
+  const result = spawnSync18(command, args, {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -52888,7 +53249,11 @@ class NodeSupervisor {
       });
       const previousGeneration = member.generation;
       const previousJobId = member.jobId;
-      const jobId = await controller.startJob({ nodeId: this.opts.nodeId, memberId: member.memberId });
+      const jobId = await controller.startJob({
+        nodeId: this.opts.nodeId,
+        memberId: member.memberId,
+        ...this.coordinatorJobId ? { explicitParentJobId: this.coordinatorJobId } : {}
+      });
       member.jobId = jobId;
       member.status = "starting";
       member.generation += 1;
@@ -53349,7 +53714,7 @@ class NodeSupervisor {
     if (!this.opts.sourceBeadId)
       return;
     const notes = this.buildCompletionSummary(options2);
-    const result = spawnSync17("bd", ["update", this.opts.sourceBeadId, "--notes", notes], {
+    const result = spawnSync18("bd", ["update", this.opts.sourceBeadId, "--notes", notes], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -53362,7 +53727,7 @@ class NodeSupervisor {
     }
   }
   runCommand(command, args, cwd) {
-    const result = spawnSync17(command, args, {
+    const result = spawnSync18(command, args, {
       cwd,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -53517,7 +53882,11 @@ class NodeSupervisor {
       runOptions,
       jobsDir: this.opts.jobsDir
     });
-    const jobId = await controller.startJob({ nodeId: this.opts.nodeId, memberId: member.memberId });
+    const jobId = await controller.startJob({
+      nodeId: this.opts.nodeId,
+      memberId: member.memberId,
+      ...this.coordinatorJobId ? { explicitParentJobId: this.coordinatorJobId } : {}
+    });
     member.jobId = jobId;
     member.status = "starting";
     member.generation = nextGeneration;
@@ -53562,8 +53931,8 @@ class NodeSupervisor {
     }
   }
   runFinalQualityGates(cwd) {
-    const lintPass = spawnSync17("npm", ["run", "lint"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
-    const tscPass = spawnSync17("npx", ["tsc", "--noEmit"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
+    const lintPass = spawnSync18("npm", ["run", "lint"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
+    const tscPass = spawnSync18("npx", ["tsc", "--noEmit"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
     return {
       lint: lintPass ? "pass" : "fail",
       tsc: tscPass ? "pass" : "fail"
@@ -55021,9 +55390,9 @@ __export(exports_epic, {
   handleEpicCommand: () => handleEpicCommand,
   handleEpicAbandonCommand: () => handleEpicAbandonCommand
 });
-import { spawnSync as spawnSync18 } from "child_process";
+import { spawnSync as spawnSync19 } from "child_process";
 function runCommand2(command, args, cwd = process.cwd()) {
-  return spawnSync18(command, args, {
+  return spawnSync19(command, args, {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -55748,7 +56117,7 @@ __export(exports_status, {
   run: () => run18,
   detectJobOutputMode: () => detectJobOutputMode
 });
-import { spawnSync as spawnSync19 } from "child_process";
+import { spawnSync as spawnSync20 } from "child_process";
 import { existsSync as existsSync31, readFileSync as readFileSync29 } from "fs";
 import { join as join36 } from "path";
 function ok2(msg) {
@@ -55769,7 +56138,7 @@ function section(label) {
 ${bold11(`\u2500\u2500 ${label} ${line}`)}`);
 }
 function cmd(bin, args) {
-  const r = spawnSync19(bin, args, {
+  const r = spawnSync20(bin, args, {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 5000
@@ -55777,7 +56146,7 @@ function cmd(bin, args) {
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled2(bin) {
-  return spawnSync19("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync20("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function formatElapsed2(s) {
   if (s.elapsed_s === undefined)
@@ -56161,13 +56530,14 @@ var init_status2 = __esm(() => {
 // src/cli/ps.ts
 var exports_ps = {};
 __export(exports_ps, {
-  run: () => run19
+  run: () => run19,
+  formatSpawnedByLine: () => formatSpawnedByLine
 });
-import { spawnSync as spawnSync20 } from "child_process";
+import { spawnSync as spawnSync21 } from "child_process";
 function loadBeadIdsForCurrentUser() {
   const ids = new Set;
   try {
-    const result = spawnSync20("bd", ["query", "assignee=me", "--json"], {
+    const result = spawnSync21("bd", ["query", "assignee=me", "--json"], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 5000
@@ -56537,7 +56907,7 @@ function formatPayloadStats2(payloadJson) {
   }
 }
 function getBeadTitleFromBd(beadId) {
-  const result = spawnSync20("bd", ["show", beadId, "--json"], {
+  const result = spawnSync21("bd", ["show", beadId, "--json"], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"],
     timeout: 1500
@@ -56903,6 +57273,23 @@ function synthesizeStatusFromEvents(jobId) {
     sqliteClient?.close();
   }
 }
+function formatSpawnedByLine(job) {
+  const spawn6 = job.spawn_origin;
+  if (!spawn6)
+    return;
+  if (spawn6.kind === "specialist.job") {
+    const parent = spawn6.parent_job_id.slice(0, 8);
+    return `spawned-by specialist.job ${parent}`;
+  }
+  if (spawn6.kind === "xtmux.agent_instance") {
+    const ro = spawn6.runtime_origin;
+    const host = ro.host_id.replace(/^host-/, "").slice(0, 8);
+    const paneRef = `${ro.tmux_session_id}:${ro.tmux_pane_id}`;
+    const agent = ro.agent_instance_id ? ` / agent ${ro.agent_instance_id.slice(0, 8)}` : "";
+    return `spawned-by host-${host} / ${paneRef}${agent}`;
+  }
+  return;
+}
 function renderInspectJson(job) {
   console.log(JSON.stringify({
     job: {
@@ -56917,7 +57304,10 @@ function renderInspectJson(job) {
       started_at_ms: job.started_at_ms,
       elapsed_s: job.elapsed_s ?? null,
       metrics: job.metrics ?? null,
-      recovered_from_events: Boolean(job.recovered_from_events)
+      recovered_from_events: Boolean(job.recovered_from_events),
+      ...job.spawn_origin ? { spawn_origin: job.spawn_origin } : {},
+      ...job.parent_job_id ? { parent_job_id: job.parent_job_id } : {},
+      ...job.root_runtime_origin ? { root_runtime_origin: job.root_runtime_origin } : {}
     }
   }, null, 2));
 }
@@ -56964,6 +57354,9 @@ ${job.id}  ${job.specialist}  ${getStatusIcon(toJobNode(job))} ${statusLabel(job
   const chainIdentity = job.chain_kind === "chain" ? job.chain_id ?? job.worktree_owner_job_id ?? "--" : "--";
   console.log(`  role      ${chainRole}`);
   console.log(`  chain_id  ${chainIdentity}`);
+  const spawnedByLine = formatSpawnedByLine(job);
+  if (spawnedByLine)
+    console.log(`  ${spawnedByLine}`);
   if (chainJobs.length > 1)
     console.log(`  chain     ${chainStr}`);
   console.log(`  elapsed   ${formatElapsed3(job.elapsed_s)}${job.metrics ? ` \xB7 ${job.metrics.turns ?? 0} turns \xB7 ${job.metrics.tool_calls ?? 0} tools` : ""}`);
@@ -57027,7 +57420,10 @@ function renderJson(jobs, nodes, trees, _all, epicReadiness, args, health) {
       payload_tokens: formatPayloadStats2(job.startup_payload_json).payload_tokens,
       attention_reasons: [
         ...job.pr_classification && job.pr_classification !== "clean" ? [`pr_drift:${job.pr_classification}`] : []
-      ]
+      ],
+      ...job.spawn_origin ? { spawn_origin: job.spawn_origin } : {},
+      ...job.parent_job_id ? { parent_job_id: job.parent_job_id } : {},
+      ...job.root_runtime_origin ? { root_runtime_origin: job.root_runtime_origin } : {}
     })),
     nodes,
     trees,
@@ -60219,7 +60615,7 @@ async function run27() {
 // src/specialist/worktree-gc.ts
 import { existsSync as existsSync36, readdirSync as readdirSync17, readFileSync as readFileSync33 } from "fs";
 import { join as join41 } from "path";
-import { spawnSync as spawnSync21 } from "child_process";
+import { spawnSync as spawnSync22 } from "child_process";
 function readJobStatus2(jobDir) {
   const statusPath = join41(jobDir, "status.json");
   if (!existsSync36(statusPath))
@@ -60287,7 +60683,7 @@ function collectWorktreeGcCandidates(jobsDir) {
   return candidates;
 }
 function removeWorktreeDirectory(worktreePath) {
-  const result = spawnSync21("git", ["worktree", "remove", "--force", worktreePath], {
+  const result = spawnSync22("git", ["worktree", "remove", "--force", worktreePath], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -60938,7 +61334,7 @@ var exports_end = {};
 __export(exports_end, {
   run: () => run29
 });
-import { spawnSync as spawnSync22 } from "child_process";
+import { spawnSync as spawnSync23 } from "child_process";
 function parseOptions3(argv) {
   let beadId;
   let epicId;
@@ -60973,7 +61369,7 @@ function parseOptions3(argv) {
   return { beadId, epicId, rebuild, pr };
 }
 function runCommand3(command, args) {
-  const result = spawnSync22(command, args, { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  const result = spawnSync23(command, args, { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
   return {
     status: result.status,
     stdout: result.stdout ?? "",
@@ -61991,7 +62387,7 @@ __export(exports_doctor, {
   cleanupProcesses: () => cleanupProcesses
 });
 import { createHash as createHash7 } from "crypto";
-import { spawnSync as spawnSync23 } from "child_process";
+import { spawnSync as spawnSync24 } from "child_process";
 import { existsSync as existsSync39, lstatSync as lstatSync2, mkdirSync as mkdirSync15, readdirSync as readdirSync20, readFileSync as readFileSync36, readlinkSync as readlinkSync3, writeFileSync as writeFileSync19 } from "fs";
 import { dirname as dirname16, join as join44, relative as relative4, resolve as resolve13 } from "path";
 function ok3(msg) {
@@ -62015,11 +62411,11 @@ function section3(label) {
 ${bold13(`\u2500\u2500 ${label} ${line}`)}`);
 }
 function sp(bin, args) {
-  const r = spawnSync23(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
+  const r = spawnSync24(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled3(bin) {
-  return spawnSync23("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync24("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function loadJson2(path3) {
   if (!existsSync39(path3))
@@ -62458,7 +62854,7 @@ function checkClaudeMdFragments() {
     hint("install xtrm-tools to enable: xt claude-sync --check");
     return true;
   }
-  const result = spawnSync23("xt", ["claude-sync", "--check", "--json", "--cwd", projectRoot], {
+  const result = spawnSync24("xt", ["claude-sync", "--check", "--json", "--cwd", projectRoot], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -63333,7 +63729,7 @@ __export(exports_setup, {
   runApply: () => runApply,
   run: () => run37
 });
-import { spawnSync as spawnSync24 } from "child_process";
+import { spawnSync as spawnSync25 } from "child_process";
 import { readFileSync as readFileSync39 } from "fs";
 function usage3() {
   return [
@@ -63501,7 +63897,7 @@ async function collectDiscoveryState() {
   };
 }
 function parsePiModels2() {
-  const result = spawnSync24("pi", ["--list-models"], { encoding: "utf8", stdio: "pipe", timeout: 8000 });
+  const result = spawnSync25("pi", ["--list-models"], { encoding: "utf8", stdio: "pipe", timeout: 8000 });
   if (result.status !== 0 || result.error)
     return [];
   return result.stdout.split(`
@@ -63652,7 +64048,7 @@ function collectPlannedChanges(writes) {
   return changes;
 }
 function readGlobalField(key) {
-  const getResult = spawnSync24("sp", ["edit", "--global", "--get", key], {
+  const getResult = spawnSync25("sp", ["edit", "--global", "--get", key], {
     encoding: "utf8",
     stdio: "pipe"
   });
@@ -63686,7 +64082,7 @@ function rollbackChanges(applied) {
   return failed;
 }
 function setGlobalField(key, value) {
-  return spawnSync24("sp", ["edit", "--global", "--set", key, value], {
+  return spawnSync25("sp", ["edit", "--global", "--set", key, value], {
     encoding: "utf8",
     stdio: "pipe"
   });
@@ -63944,7 +64340,7 @@ __export(exports_serve, {
 import { createServer } from "http";
 import { randomUUID as randomUUID7 } from "crypto";
 import { once } from "events";
-import { spawnSync as spawnSync25 } from "child_process";
+import { spawnSync as spawnSync26 } from "child_process";
 import { access, readdir as readdir2, readFile as readFile4, constants } from "fs/promises";
 import { existsSync as existsSync42 } from "fs";
 import { homedir as homedir12 } from "os";
@@ -64084,7 +64480,7 @@ function parseArgs18(argv) {
   return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, dbPath, fallbackModel, auditFailureThreshold, allowSkills, allowSkillsRoots, reloadPollMs, readinessCanaryMode, readinessRequiredPiFlags, readinessCanarySpecialist, readinessCanaryTimeoutMs, logLevel };
 }
 function checkPiHelpForFlags(flags = DEFAULT_REQUIRED_PI_FLAGS) {
-  const result = spawnSync25("pi", ["--help"], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  const result = spawnSync26("pi", ["--help"], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
   if (result.error || result.status === 127)
     return "pi_binary_missing";
   const help = `${result.stdout ?? ""}
@@ -64364,7 +64760,7 @@ __export(exports_script, {
   parseArgs: () => parseArgs19,
   mapExitCode: () => mapExitCode
 });
-import { spawnSync as spawnSync26 } from "child_process";
+import { spawnSync as spawnSync27 } from "child_process";
 function parseVar(entry) {
   const index = entry.indexOf("=");
   if (index <= 0)
@@ -64494,7 +64890,7 @@ function printResult(result, json) {
   console.error(result.error);
 }
 function runUnderLock(lockPath, argv) {
-  const flock = spawnSync26("flock", ["-n", lockPath, "env", "SP_SCRIPT_NO_LOCK=1", process.execPath, process.argv[1], "script", ...argv], {
+  const flock = spawnSync27("flock", ["-n", lockPath, "env", "SP_SCRIPT_NO_LOCK=1", process.execPath, process.argv[1], "script", ...argv], {
     encoding: "utf-8",
     stdio: "inherit"
   });
@@ -64716,7 +65112,7 @@ var init_help = __esm(() => {
 });
 
 // src/index.ts
-import { spawnSync as spawnSync27 } from "child_process";
+import { spawnSync as spawnSync28 } from "child_process";
 
 // ../../../node_modules/zod/v4/core/core.js
 var NEVER2 = Object.freeze({
@@ -73487,7 +73883,7 @@ async function run41() {
   }
   if (sub === "release") {
     console.error("Deprecated. Use `xt release prepare/publish`. This alias will be removed in v4.0.");
-    const result = spawnSync27("xt", ["release", ...process.argv.slice(3)], { stdio: "inherit" });
+    const result = spawnSync28("xt", ["release", ...process.argv.slice(3)], { stdio: "inherit" });
     if (result.error) {
       console.error(`Failed to run xt release: ${result.error.message}`);
       process.exit(1);

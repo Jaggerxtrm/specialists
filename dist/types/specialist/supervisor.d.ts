@@ -1,4 +1,5 @@
 import type { SpecialistRunner, RunOptions } from './runner.js';
+import { type RuntimeOriginV1, type SpecialistSpawnOriginV1 } from './runtime-origin.js';
 import type { BeadsClient } from './beads.js';
 import { type TimelineEvent, type TimelineEventControlSignal } from './timeline-events.js';
 import type { SessionRunMetrics, SessionTokenUsage } from '../pi/session.js';
@@ -74,6 +75,10 @@ export interface SupervisorStatus {
             count: number;
             activated: string[];
         };
+        spawn_origin_kind?: 'xtmux.agent_instance' | 'specialist.job' | 'unknown';
+        parent_job_id?: string;
+        root_pane_id?: string;
+        root_agent_instance_id?: string;
     };
     metrics?: SessionRunMetrics;
     context_pct?: number;
@@ -92,6 +97,9 @@ export interface SupervisorStatus {
     pr_drift_checked_at_ms?: number;
     base_sha_pinned?: string;
     base_sha_pinned_at_ms?: number;
+    spawn_origin?: SpecialistSpawnOriginV1;
+    parent_job_id?: string;
+    root_runtime_origin?: RuntimeOriginV1;
 }
 export type SupervisorStatusView = SupervisorStatus & {
     is_dead: boolean;

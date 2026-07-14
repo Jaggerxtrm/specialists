@@ -1,13 +1,3 @@
-
-## [Unreleased]
-
-### Project maintenance
-
-- **Add git-cliff config and changelog** ([081ebc2](https://github.com/xtrm-dev/specialists/commit/081ebc2f5c6cef1324506d745f18b96ac12fcf0f))
-
-  Generic type-based parsers; repo-specific scopes to be tuned (see P0 bead).
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file.
@@ -18,6 +8,278 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## [Unreleased]
+
+## [v3.20.0] — 2026-07-14
+
+### Other changes
+
+- **PR E — runtime-origin: direct spawn binding (E1..E6, epic unitAI-z8uli) (#185)
+
+* chore(changelog): add git-cliff config and changelog
+
+Generic type-based parsers; repo-specific scopes to be tuned (see P0 bead).
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+* feat(runtime-origin): add RuntimeOriginV1 module (E1)
+
+Adds src/specialist/runtime-origin.ts: the leaf module the whole runtime-origin
+integration builds on (spec /home/dawid/dev/xtmux docs/xtmux-gaps.md §11, §13.1-4).
+
+- RuntimeOriginV1 type verbatim from spec §11.
+- SpecialistSpawnOriginV1 discriminated union (§13.3) — consumed by E4.
+- SPECIALISTS_RUNTIME_ORIGIN_V1 env var name constant.
+- validateRuntimeOrigin: strict schema check with unknown-field rejection.
+  Forward-compat via schema_version bump, not silent pass-through.
+- captureRuntimeOrigin: DI-injectable subprocess runner, 500ms timeout,
+  never throws. Returns undefined on outside-tmux / ENOENT / non-zero /
+  parse-fail / schema-fail / oversize / runner-throw.
+- decodePropagatedOrigin: auto-detects raw JSON vs base64url from leading
+  char; preserves `verified`; rewrites capture_source='propagated'.
+- encodePropagatedOrigin: base64url canonical encoding.
+
+Log surface: single-line `[specialists] component=runtime-origin
+event={capture,propagate,reject} outcome=... reason=... duration_ms=...`
+via console.warn. Never logs raw JSON payload. 16KiB payload cap.
+
+Failure behavior non-negotiable per spec §15: NEVER fails a Specialists
+run; NEVER fabricates a binding.
+
+Bead: unitAI-z8uli.1 (epic unitAI-z8uli PR E direct spawn binding).
+33 tests pass, tsc clean.
+
+* feat(runtime-origin): capture at sp run boundary + background propagation (E2+E3)
+
+E2 (unitAI-z8uli.2) — capture BEFORE --background branch (spec §13.1):
+The invoking pane's identity must be resolved here. The detached child's
+TMUX_PANE resolves to the sp-* feed pane, so capture MUST precede the
+detach. A propagated origin in the environment (background re-invocation)
+wins over ambient capture — the child rediscovering its own sp-* pane is
+the exact bug the propagation exists to prevent.
+
+E3 (unitAI-z8uli.3) — SPECIALISTS_RUNTIME_ORIGIN_V1 through detach (§13.2):
+When ambientRuntimeOrigin is present, encodePropagatedOrigin (base64url)
+injects it into the child env via BOTH branches — createTmuxSession's
+extraEnv and cpSpawn's env — so the child's `sp run` decode step recovers
+the original pane's origin instead of ambient-capturing its own sp-* pane.
+
+No child env noise when no origin exists — empty {} spread.
+
+Downstream: launchSpecialist call still receives no origin — E4 threads
+it through RunOptions → SupervisorStatus → run_start.
+
+Smoke: `bun run src/index.ts run --help` exit 0.
+Tests: 33/33 in tests/unit/specialist/runtime-origin.test.ts pass.
+tsc clean for run.ts.
+
+* feat(runtime-origin): thread SupervisorStatus + RunOptions + run_start (E4)
+
+Types added:
+- RunOptions (runner.ts): ambientRuntimeOrigin, explicitParentJobId.
+- LaunchSpecialistOptions (launch.ts): same two fields, forwarded into
+  the RunOptions constructed for Supervisor.
+- SupervisorStatus (supervisor.ts): spawn_origin, parent_job_id,
+  root_runtime_origin (all optional; no schema migration — persisted into
+  status_json blob per spec §13.6).
+- SupervisorStatus.startup_context: compact projection —
+  spawn_origin_kind, parent_job_id, root_pane_id, root_agent_instance_id.
+- TimelineEventRunStart.startup_snapshot: same compact projection.
+
+Precedence codified per spec §13.4:
+- resolveSpawnOrigin() helper in runtime-origin.ts encapsulates the
+  explicit parent > ambient > unknown decision. Kept in the leaf module
+  so precedence is unit-testable in isolation. F2 (unitAI-z8uli.8)
+  refines the specialist.job case by looking up the parent's stored
+  root_runtime_origin so the whole chain shares one root.
+
+Wiring:
+- cli/run.ts launchSpecialist call passes ambientRuntimeOrigin captured
+  in E2.
+- launch.ts forwards both fields into Supervisor's RunOptions.
+- supervisor.ts:1274 initialStatus construction runs resolveSpawnOrigin
+  once and populates status + startup_context together.
+- observability-sqlite.ts readForensicContext surfaces the persisted
+  origin fields verbatim from status_json (E5 tightens types when it
+  builds the ForensicSpawnedByLink shape).
+
+Non-regression check:
+- runtime-origin.test.ts 38/38 pass (+5 for resolveSpawnOrigin).
+- Baseline supervisor.test.ts pre-existing failures verified equal
+  with/without this change (37 fail, 3 errors — events.jsonl ENOENT
+  in test env, not runtime-origin-related).
+- tsc clean.
+
+Bead: unitAI-z8uli.4.
+
+* feat(forensic): enrich job.started with typed origin links + labels guard (E5)
+
+Adds the durable pane→job / job→job forensic link surface (spec
+docs/xtmux-gaps.md §13.5, §16).
+
+Types:
+- ForensicCorrelation.parent_job_id typed field (was catch-all).
+- ForensicSpawnedByLink discriminated union — pane form
+  (xtmux.agent_instance + host_id + full tmux ID triple + optional
+  agent_instance_id) or child form (specialist.job + job_id).
+- ForensicRootRuntimeOrigin — compact projection (host_id + tmux_pane_id
+  + optional agent_instance_id). Only fields needed to reconnect a job to
+  its root pane; captured_at_ms / capture_source / verified / bead_id
+  stay in status_json, not in the durable forensic link.
+
+Emission:
+- forensicEventFromTimelineEvent(run_start, ...) attaches typed
+  `links.spawned_by` + `links.root_runtime_origin`. Only run_start.
+- bodyForTimelineEvent gained a 2nd context param and a 'run_start' case:
+  body.origin_source ∈ {xtmux-context, propagated, child-of-specialist,
+  none}; body.origin_verified; body.launch_mode ∈ {foreground, background,
+  unknown} — derived from origin_source (propagated ⇒ background).
+- correlation.parent_job_id populated for child jobs only.
+
+Whitelist projection:
+- projectSpawnedByLink / projectRootRuntimeOrigin exported. Both strip
+  unknown fields — defence against future RuntimeOriginV1 additions
+  bleeding into the immutable event surface. Adding a field to the link
+  requires an explicit whitelist change here.
+
+Prometheus label guard:
+- FORBIDDEN_PROMETHEUS_LABELS gains parent_job_id, agent_instance_id,
+  host_id, tmux_session_id, tmux_window_id, tmux_pane_id (spec §16).
+  Test asserts each. High-cardinality identifiers stay in
+  forensic-correlation / links / Console read models — never labels.
+
+Reader contract:
+- No links.spawned_by is emitted for kind:'unknown' — reader assumes
+  missing = no known binding.
+- No links entry on non-run_start events.
+
+Observability wiring:
+- observability-sqlite.ts writeForensicEventRow threads parentJobId,
+  spawnOrigin, rootRuntimeOrigin (read from status_json by
+  readForensicContext in E4) into the emitter context.
+
+Tests: 21 new (forensic-run-start-origin.test.ts) + 26 pre-existing
+forensic-events.test.ts all green. tsc clean.
+
+Bead: unitAI-z8uli.5.
+
+* feat(ps): expose spawn_origin / parent_job_id / root_runtime_origin (E6)
+
+sp ps --json (both --inspect and flat list) and human --inspect now expose
+the runtime-origin fields recorded on SupervisorStatus (spec §13.7).
+
+- renderInspectJson: additive spread of spawn_origin, parent_job_id,
+  root_runtime_origin — absent for legacy rows to keep --json output
+  byte-stable.
+- renderJson flat list: same three fields per row.
+- renderInspect human: one compact line, only when origin is present:
+    spawned-by host-<8> / <session>:<pane> / agent <8>
+    spawned-by specialist.job <parent-8>
+  Never a misleading "unknown" line — kind:'unknown' renders nothing.
+
+Exported formatSpawnedByLine for isolated unit-testing. 5 formatter
+tests cover pane origin, agent-optional path, specialist.job form,
+absent origin, kind:'unknown'. tsc clean; sp ps --help smoke green.
+
+Bead: unitAI-z8uli.6.
+
+---------
+
+Co-authored-by: jaggerxtrm <dawid.jgg@gmail.com>
+Co-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>** ([5f3dfc4](https://github.com/xtrm-dev/specialists/commit/5f3dfc414dbcdd1169d1096a512d9d46beb7bfa1))
+
+- **PR F — runtime-origin: descendant lineage + E2E reconstruction (F1..F4, epic unitAI-z8uli) (#186)
+
+* feat(launch): explicit parent_job_id on internal member spawns (F1)
+
+Threads explicitParentJobId through the only two internal sites that create
+a separate SupervisorStatus from inside a running specialist context:
+
+- job-control.ts:startJob signature accepts optional explicitParentJobId
+  and merges it into RunOptions. E4's resolveSpawnOrigin already consumes
+  this as the top-precedence gate — a populated value flips the child's
+  SupervisorStatus.spawn_origin.kind to 'specialist.job'.
+
+- node-supervisor.ts member-spawn call sites (primary spawn + replacement
+  respawn) now pass explicitParentJobId: this.coordinatorJobId when the
+  coordinator id is known.
+
+Every internal dispatch emits:
+
+    [specialists] component=launch event=child-dispatch
+      parent_job_id=... node_id=... member_id=... outcome=ok
+
+Sites deliberately NOT touched:
+- Coordinator spawns — ROOT of node execution, no parent.
+- spawnDynamicMember — public API without owner context in scope.
+- use_specialist.tool — runner.run() directly, no separate SupervisorStatus.
+- cli/chat.ts + cli/node.ts — user-invoked, not specialist-invoked;
+  ambient-origin capture at those entry points is an E2 gap, follow-up.
+- script-runner.ts — READ_ONLY sp script, no job lifecycle.
+
+tsc clean; runtime-origin / forensic / ps unit tests still 64/64 green.
+
+Bead: unitAI-z8uli.7.
+
+* feat(supervisor): inherit root_runtime_origin from parent job (F2)
+
+When an initial SupervisorStatus is being constructed for a child job
+(runOptions.explicitParentJobId set), the supervisor reads the parent's
+persisted SupervisorStatus via sqliteClient.readStatus and inherits its
+root_runtime_origin into the child's own status.
+
+E4's resolveSpawnOrigin helper accepts inheritedRootRuntimeOrigin as its
+third input; F2 just wires the value. The whole chain A → J1 → J2 → ... → Jn
+now shares one root pane binding.
+
+Failure behavior:
+- Missing parent status (parent already terminal / never persisted):
+  root_runtime_origin stays undefined. NEVER fabricated.
+- Sqlite lookup throws: caught, logged, no fabrication. Child allocation
+  still succeeds — the epic's failure-behavior invariant holds.
+
+Log surface:
+  [specialists] component=launch event=inherit
+    parent_job_id=... outcome={ok, parent-missing, lookup-failed}
+
+The precedence rule (explicit parent > ambient > unknown) is unchanged.
+
+Bead: unitAI-z8uli.8. tsc clean; 64 tests still green.
+
+* feat(runtime-origin): forensic lineage reconstruction + redaction sweep (F4)
+
+Adds the F4 acceptance surface for spec §18 end-to-end fixture and §16
+redaction rules.
+
+New module: src/specialist/runtime-origin-reconstruct.ts
+- reconstructLineage(events) → Map<job_id, ReconstructedJobNode>. Pure
+  functional over ForensicEvent[]; no live sqliteClient, no jobRegistry,
+  no tmux. This is exactly the Console (§14) read model at the forensic
+  level.
+- redactionSweep(events) → { forbidden_label_hits, payload_leaks }.
+  Scans event.resource for any of the 6 forbidden runtime-origin
+  identifiers (spec §16) and event.body for prompt/raw_command/raw_diff/
+  model_output/raw_error leaks. Regression guard for future emission
+  changes.
+
+Integration test: tests/integration/specialist/lineage-e2e.test.ts
+- A (pane %17) → J1 (background, propagated origin) → J2 (child of J1):
+  reconstruction proves J1<->A, J2<->J1, J2<->A all resolvable from the
+  event stream alone.
+- Outside-tmux negative control: no spawned_by, no root_runtime_origin.
+- Purity: reconstruction is idempotent over independent calls (no
+  hidden runtime state).
+- Clean sweep: zero forbidden-label hits, zero payload leaks on the
+  fixture stream.
+- Synthetic regressions: forbidden label promoted onto resource, and
+  prompt leak in body, are both caught.
+
+Live-with-real-xtmux gate: deferred until xtmux-j46.2 lands on xtmux
+main. The reconstruction CONTRACT is verified today.
+
+Total: 70 tests pass across 4 files (runtime-origin, forensic-run-start-
+origin, ps-spawned-by-line, lineage-e2e). tsc clean.
+
+Bead: unitAI-z8uli.10.** ([62af1ee](https://github.com/xtrm-dev/specialists/commit/62af1ee60501b46d7a51aea5f0b9f231b3d738a1))
 
 ## [v3.19.0] — 2026-07-14
 

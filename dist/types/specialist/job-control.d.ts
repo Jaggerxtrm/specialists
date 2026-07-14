@@ -16,6 +16,7 @@ export declare class JobControl {
     startJob(opts: {
         nodeId: string;
         memberId: string;
+        explicitParentJobId?: string;
     }): Promise<string>;
     resumeJob(jobId: string, prompt: string): Promise<void>;
     steerJob(jobId: string, message: string): Promise<void>;

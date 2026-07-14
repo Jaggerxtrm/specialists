@@ -110,6 +110,10 @@ export interface TimelineEventRunStart extends TimelineEventBase {
             count: number;
             activated: string[];
         };
+        spawn_origin_kind?: 'xtmux.agent_instance' | 'specialist.job' | 'unknown';
+        parent_job_id?: string;
+        root_pane_id?: string;
+        root_agent_instance_id?: string;
     };
 }
 /**

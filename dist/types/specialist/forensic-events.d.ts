@@ -42,7 +42,43 @@ export interface ForensicCorrelation {
     policy_decision_id?: string;
     identity_request_id?: string;
     commit_sha?: string;
+    /**
+     * xtmux runtime-origin: parent specialist job id (spec §13.5).
+     * Set only for child jobs whose spawn_origin.kind === 'specialist.job'.
+     * Never promoted to a Prometheus label — see FORBIDDEN_PROMETHEUS_LABELS.
+     */
+    parent_job_id?: string;
     [key: string]: unknown;
+}
+/**
+ * Typed spawn-lineage link on `job.started` (spec §13.5).
+ *
+ * A direct spawn from a pane emits `xtmux.agent_instance`. A child spawned
+ * by another specialist emits `specialist.job`. The reader sees at most one
+ * `links.spawned_by` entry — never a `kind:'unknown'` placeholder.
+ */
+export type ForensicSpawnedByLink = {
+    kind: 'xtmux.agent_instance';
+    host_id: string;
+    tmux_session_id: string;
+    tmux_window_id: string;
+    tmux_pane_id: string;
+    agent_instance_id?: string;
+} | {
+    kind: 'specialist.job';
+    job_id: string;
+};
+/**
+ * Compact projection of the root pane origin (spec §13.5). Only the fields
+ * needed to reconnect a job to its originating pane; no bead_id / server_id /
+ * captured_at_ms / capture_source / verified — those live on the source
+ * RuntimeOriginV1 in status_json and are not part of the durable forensic link.
+ */
+export interface ForensicRootRuntimeOrigin {
+    kind: 'xtmux.agent_instance';
+    host_id: string;
+    tmux_pane_id: string;
+    agent_instance_id?: string;
 }
 export interface ForensicRedaction {
     status: RedactionStatus;
@@ -127,7 +163,24 @@ export interface TimelineForensicContext {
     traceId?: string;
     spanId?: string;
     parentSpanId?: string;
+    parentJobId?: string;
+    spawnOrigin?: unknown;
+    rootRuntimeOrigin?: unknown;
 }
+/** Origin-source enum for `run_start` body (spec §13.5). */
+export type ForensicOriginSource = 'xtmux-context' | 'propagated' | 'child-of-specialist' | 'none';
+/**
+ * Project the persisted spawn_origin into a strictly-shaped
+ * `links.spawned_by` payload. Whitelists exact keys — future extra fields on
+ * RuntimeOriginV1 require a deliberate change here, not silent pass-through.
+ * Returns undefined if the input is unset, malformed, or `kind:'unknown'`.
+ */
+export declare function projectSpawnedByLink(spawnOrigin: unknown): ForensicSpawnedByLink | undefined;
+/**
+ * Project the persisted root_runtime_origin into a compact
+ * `links.root_runtime_origin` payload. Same whitelist rules as above.
+ */
+export declare function projectRootRuntimeOrigin(rootRuntimeOrigin: unknown): ForensicRootRuntimeOrigin | undefined;
 export declare function forensicEventFromTimelineEvent(event: {
     t: number;
     seq?: number;

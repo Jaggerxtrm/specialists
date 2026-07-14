@@ -23,17 +23,27 @@ const CONFIG = 'changelog/cliff.toml';
 const UNRELEASED = '## [Unreleased]';
 const check = process.argv.includes('--check');
 
-const generated = execFileSync('git-cliff', ['--config', CONFIG, '--unreleased'], {
-  encoding: 'utf8',
-  maxBuffer: 32 * 1024 * 1024,
-}).trim();
-
 const current = readFileSync(CHANGELOG, 'utf8');
 
 // The header is everything before the first section heading (title + preamble + rule).
 const firstSection = current.search(/^## \[/m);
 if (firstSection === -1) throw new Error(`${CHANGELOG}: no "## [" section found — refusing to guess its shape.`);
 const header = current.slice(0, firstSection).trimEnd();
+
+// A file already corrupted by `git-cliff --prepend` has its "# Changelog" title BELOW the
+// injected [Unreleased] block, so "everything above the first section" is empty and the title
+// would be dropped along with that block. Refuse rather than silently delete it.
+if (!/^# /m.test(header)) {
+  throw new Error(
+    `${CHANGELOG}: no "# " title above the first section — the file looks --prepend-corrupted.\n` +
+    `Restore the title/preamble to the top of the file, then re-run.`,
+  );
+}
+
+const generated = execFileSync('git-cliff', ['--config', CONFIG, '--unreleased'], {
+  encoding: 'utf8',
+  maxBuffer: 32 * 1024 * 1024,
+}).trim();
 
 // Released sections = everything from the first "## [" that is NOT [Unreleased].
 // Dropping any existing [Unreleased] block is what makes this idempotent.

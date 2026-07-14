@@ -12108,7 +12108,13 @@ var FORBIDDEN_PROMETHEUS_LABELS = new Set([
   "user_id",
   "email",
   "token",
-  "credential"
+  "credential",
+  "parent_job_id",
+  "agent_instance_id",
+  "host_id",
+  "tmux_session_id",
+  "tmux_window_id",
+  "tmux_pane_id"
 ]);
 var DEFAULT_LABEL_ALLOWLIST = new Set([
   "service_namespace",
@@ -12310,6 +12316,73 @@ function assertKnownTopLevelFields(event) {
     }
   }
 }
+function projectSpawnedByLink(spawnOrigin) {
+  if (!spawnOrigin || typeof spawnOrigin !== "object")
+    return;
+  const o = spawnOrigin;
+  if (o.kind === "xtmux.agent_instance") {
+    const ro = o.runtime_origin;
+    if (!ro || typeof ro !== "object")
+      return;
+    if (typeof ro.host_id !== "string" || typeof ro.tmux_session_id !== "string" || typeof ro.tmux_window_id !== "string" || typeof ro.tmux_pane_id !== "string") {
+      return;
+    }
+    return {
+      kind: "xtmux.agent_instance",
+      host_id: ro.host_id,
+      tmux_session_id: ro.tmux_session_id,
+      tmux_window_id: ro.tmux_window_id,
+      tmux_pane_id: ro.tmux_pane_id,
+      ...typeof ro.agent_instance_id === "string" ? { agent_instance_id: ro.agent_instance_id } : {}
+    };
+  }
+  if (o.kind === "specialist.job" && typeof o.parent_job_id === "string") {
+    return { kind: "specialist.job", job_id: o.parent_job_id };
+  }
+  return;
+}
+function projectRootRuntimeOrigin(rootRuntimeOrigin) {
+  if (!rootRuntimeOrigin || typeof rootRuntimeOrigin !== "object")
+    return;
+  const ro = rootRuntimeOrigin;
+  if (typeof ro.host_id !== "string" || typeof ro.tmux_pane_id !== "string")
+    return;
+  return {
+    kind: "xtmux.agent_instance",
+    host_id: ro.host_id,
+    tmux_pane_id: ro.tmux_pane_id,
+    ...typeof ro.agent_instance_id === "string" ? { agent_instance_id: ro.agent_instance_id } : {}
+  };
+}
+function deriveOriginSource(spawnOrigin, rootRuntimeOrigin) {
+  if (!spawnOrigin || typeof spawnOrigin !== "object")
+    return "none";
+  const o = spawnOrigin;
+  if (o.kind === "specialist.job")
+    return "child-of-specialist";
+  if (o.kind === "xtmux.agent_instance") {
+    const ro = o.runtime_origin ?? rootRuntimeOrigin;
+    if (ro && ro.capture_source === "propagated")
+      return "propagated";
+    return "xtmux-context";
+  }
+  return "none";
+}
+function deriveOriginVerified(rootRuntimeOrigin) {
+  if (!rootRuntimeOrigin || typeof rootRuntimeOrigin !== "object")
+    return false;
+  return rootRuntimeOrigin.verified === true;
+}
+function deriveOriginSourceFromRoot(rootRuntimeOrigin) {
+  if (!rootRuntimeOrigin || typeof rootRuntimeOrigin !== "object")
+    return "unknown";
+  const capture = rootRuntimeOrigin.capture_source;
+  if (capture === "propagated")
+    return "propagated";
+  if (capture === "xtmux-context")
+    return "xtmux-context";
+  return "unknown";
+}
 function forensicEventFromTimelineEvent(event, context) {
   const participantRole = context.specialist;
   const participantKind = context.nodeId ? "node_member" : "specialist";
@@ -12352,13 +12425,15 @@ function forensicEventFromTimelineEvent(event, context) {
       mcp_session_id: stringField(event, "mcp_session_id") ?? metaStringField(event, "mcp_session_id") ?? metaStringField(event, "mcp.session.id"),
       jsonrpc_request_id: stringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc.request.id"),
       tool_call_id: typeof event.tool_call_id === "string" ? event.tool_call_id : undefined,
-      commit_sha: typeof event.commit_sha === "string" ? event.commit_sha : undefined
+      commit_sha: typeof event.commit_sha === "string" ? event.commit_sha : undefined,
+      ...context.parentJobId ? { parent_job_id: context.parentJobId } : {}
     },
-    body: bodyForTimelineEvent(event),
+    body: bodyForTimelineEvent(event, context),
     otel: otelForTimelineEvent(event),
     redaction: { status: redactionStatusForTimelineEvent(event) },
     t_unix_ms: event.t,
-    seq: event.seq
+    seq: event.seq,
+    ...event.type === "run_start" ? buildRunStartLinks(context) : {}
   });
 }
 function stringField(source, key) {
@@ -12379,7 +12454,31 @@ function booleanField(source, key) {
   const value = source[key];
   return typeof value === "boolean" ? value : undefined;
 }
-function bodyForTimelineEvent(event) {
+function buildRunStartLinks(context) {
+  const spawnedBy = projectSpawnedByLink(context.spawnOrigin);
+  const rootOrigin = projectRootRuntimeOrigin(context.rootRuntimeOrigin);
+  if (!spawnedBy && !rootOrigin)
+    return {};
+  return {
+    links: {
+      ...spawnedBy ? { spawned_by: spawnedBy } : {},
+      ...rootOrigin ? { root_runtime_origin: rootOrigin } : {}
+    }
+  };
+}
+function bodyForTimelineEvent(event, context) {
+  if (event.type === "run_start") {
+    const originSource = deriveOriginSource(context?.spawnOrigin, context?.rootRuntimeOrigin);
+    const originVerified = deriveOriginVerified(context?.rootRuntimeOrigin);
+    return {
+      legacy_timeline_event: event,
+      specialist: stringField(event, "specialist"),
+      bead_id: stringField(event, "bead_id"),
+      launch_mode: originSource === "propagated" ? "background" : originSource === "xtmux-context" ? "foreground" : originSource === "child-of-specialist" ? deriveOriginSourceFromRoot(context?.rootRuntimeOrigin) === "propagated" ? "background" : "foreground" : "unknown",
+      origin_source: originSource,
+      origin_verified: originVerified
+    };
+  }
   if (event.type === "mcp") {
     return {
       legacy_timeline_event: event,
@@ -13450,7 +13549,10 @@ class SqliteClient {
       conversationId: context.conversationId,
       traceId: context.traceId,
       spanId: context.spanId,
-      parentSpanId: context.parentSpanId
+      parentSpanId: context.parentSpanId,
+      parentJobId: context.parentJobId,
+      spawnOrigin: context.spawnOrigin,
+      rootRuntimeOrigin: context.rootRuntimeOrigin
     });
     this.insertForensicEventRow(jobId, event.seq, forensicEvent);
   }
@@ -13477,7 +13579,10 @@ class SqliteClient {
       conversationId: typeof statusJson.conversation_id === "string" ? statusJson.conversation_id : undefined,
       traceId: typeof statusJson.trace_id === "string" ? statusJson.trace_id : undefined,
       spanId: typeof statusJson.span_id === "string" ? statusJson.span_id : undefined,
-      parentSpanId: typeof statusJson.parent_span_id === "string" ? statusJson.parent_span_id : undefined
+      parentSpanId: typeof statusJson.parent_span_id === "string" ? statusJson.parent_span_id : undefined,
+      parentJobId: typeof statusJson.parent_job_id === "string" ? statusJson.parent_job_id : undefined,
+      spawnOrigin: statusJson.spawn_origin,
+      rootRuntimeOrigin: statusJson.root_runtime_origin
     };
   }
   insertForensicEventRow(jobId, seq, forensicEvent) {
