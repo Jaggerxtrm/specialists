@@ -38,11 +38,11 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
             serena: z.ZodNullable<z.ZodBoolean>;
             gitnexus: z.ZodNullable<z.ZodBoolean>;
         }, "strict", z.ZodTypeAny, {
-            gitnexus: boolean | null;
             serena: boolean | null;
+            gitnexus: boolean | null;
         }, {
-            gitnexus: boolean | null;
             serena: boolean | null;
+            gitnexus: boolean | null;
         }>>;
     }, "strict", z.ZodTypeAny, {
         model: string | null;
@@ -51,14 +51,14 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         stall_timeout_ms: number | null;
         max_retries: number | null;
         thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena: boolean | null;
-        } | undefined;
         fallback_models?: string[] | null | undefined;
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
+        extensions?: {
+            serena: boolean | null;
+            gitnexus: boolean | null;
+        } | undefined;
     }, {
         model: string | null;
         fallback_model: string | null;
@@ -66,14 +66,14 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         stall_timeout_ms: number | null;
         max_retries: number | null;
         thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena: boolean | null;
-        } | undefined;
         fallback_models?: string[] | null | undefined;
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
+        extensions?: {
+            serena: boolean | null;
+            gitnexus: boolean | null;
+        } | undefined;
     }>;
     prompt: z.ZodOptional<z.ZodObject<{
         system_prompt_mode: z.ZodNullable<z.ZodEnum<["append", "replace"]>>;
@@ -107,14 +107,14 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         stall_timeout_ms: number | null;
         max_retries: number | null;
         thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena: boolean | null;
-        } | undefined;
         fallback_models?: string[] | null | undefined;
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
+        extensions?: {
+            serena: boolean | null;
+            gitnexus: boolean | null;
+        } | undefined;
     };
     skills: {
         paths: string[];
@@ -136,14 +136,14 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         stall_timeout_ms: number | null;
         max_retries: number | null;
         thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena: boolean | null;
-        } | undefined;
         fallback_models?: string[] | null | undefined;
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
+        extensions?: {
+            serena: boolean | null;
+            gitnexus: boolean | null;
+        } | undefined;
     };
     skills: {
         paths: string[];
@@ -177,11 +177,11 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
             serena: z.ZodNullable<z.ZodBoolean>;
             gitnexus: z.ZodNullable<z.ZodBoolean>;
         }, "strict", z.ZodTypeAny, {
-            gitnexus: boolean | null;
             serena: boolean | null;
+            gitnexus: boolean | null;
         }, {
-            gitnexus: boolean | null;
             serena: boolean | null;
+            gitnexus: boolean | null;
         }>>;
     }, "strict", z.ZodTypeAny, {
         model: string | null;
@@ -190,14 +190,14 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         stall_timeout_ms: number | null;
         max_retries: number | null;
         thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena: boolean | null;
-        } | undefined;
         fallback_models?: string[] | null | undefined;
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
+        extensions?: {
+            serena: boolean | null;
+            gitnexus: boolean | null;
+        } | undefined;
     }, {
         model: string | null;
         fallback_model: string | null;
@@ -205,14 +205,14 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         stall_timeout_ms: number | null;
         max_retries: number | null;
         thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena: boolean | null;
-        } | undefined;
         fallback_models?: string[] | null | undefined;
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
+        extensions?: {
+            serena: boolean | null;
+            gitnexus: boolean | null;
+        } | undefined;
     }>;
     prompt: z.ZodOptional<z.ZodObject<{
         system_prompt_mode: z.ZodNullable<z.ZodEnum<["append", "replace"]>>;
@@ -246,14 +246,14 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         stall_timeout_ms: number | null;
         max_retries: number | null;
         thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena: boolean | null;
-        } | undefined;
         fallback_models?: string[] | null | undefined;
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
+        extensions?: {
+            serena: boolean | null;
+            gitnexus: boolean | null;
+        } | undefined;
     };
     skills: {
         paths: string[];
@@ -275,14 +275,14 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         stall_timeout_ms: number | null;
         max_retries: number | null;
         thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena: boolean | null;
-        } | undefined;
         fallback_models?: string[] | null | undefined;
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
+        extensions?: {
+            serena: boolean | null;
+            gitnexus: boolean | null;
+        } | undefined;
     };
     skills: {
         paths: string[];
@@ -304,14 +304,14 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         stall_timeout_ms: number | null;
         max_retries: number | null;
         thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena: boolean | null;
-        } | undefined;
         fallback_models?: string[] | null | undefined;
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
+        extensions?: {
+            serena: boolean | null;
+            gitnexus: boolean | null;
+        } | undefined;
     };
     skills: {
         paths: string[];

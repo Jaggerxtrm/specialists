@@ -1,7 +1,7 @@
 // src/specialist/runner.ts
-import { createHash } from 'node:crypto';
 import { writeJobFileOutput } from './job-file-output.js';
 import { renderTemplate } from './templateEngine.js';
+import { buildBeadBoundaryInstruction, renderTaskPrompt } from './task-prompt.js';
 import {
   PiAgentSession,
   SessionKilledError,
@@ -13,7 +13,6 @@ import type { SpecialistLoader } from './loader.js';
 import type { HookEmitter } from './hooks.js';
 import { isAuthError, isTransientError, type CircuitBreaker } from '../utils/circuitBreaker.js';
 import { stripJsonFences } from './json-output.js';
-import { buildMandatoryRulesInjection } from './mandatory-rules.js';
 import { createObservabilitySqliteClient } from './observability-sqlite.js';
 import type { TimelineEvent, TimelineEventRunComplete } from './timeline-events.js';
 import { resolveModelChain } from './model-chain.js';
@@ -321,20 +320,6 @@ function sanitizeBeadIdForPrompt(beadId: string): string {
   const withoutControlChars = beadId.replace(/[\x00-\x1F\x7F]/g, '');
   const withoutBackticks = withoutControlChars.replace(/`/g, '');
   return withoutBackticks.replace(/[^A-Za-z0-9-]/g, '');
-}
-
-function buildBeadBoundaryInstruction(cwd: string, worktreeBoundary?: string): string {
-  const boundary = worktreeBoundary?.trim() || cwd;
-  return [
-    '## Runtime Boundary Rules',
-    `- Current cwd: ${cwd}`,
-    `- Assigned worktree boundary: ${boundary}`,
-    '- Stay inside current cwd / assigned worktree unless the task explicitly says otherwise.',
-    '- Do NOT run `cd` outside the current cwd / assigned worktree.',
-    '- Do NOT use absolute paths outside the current cwd / assigned worktree.',
-    '- Do NOT broad-search /home, repo root, or unrelated paths when evidence is missing.',
-    '- If required evidence is missing inside the current scope, STOP immediately, report exactly what is missing, and ask for the artifact or clarification instead of widening search.',
-  ].join('\n');
 }
 
 type ResponseFormat = 'text' | 'json' | 'markdown';
@@ -1034,24 +1019,7 @@ export class SpecialistRunner {
     const completedBlockers = options.inputBeadId && Math.max(0, Math.trunc(options.contextDepth ?? 3)) > 0
       ? beadReader.getCompletedBlockers(options.inputBeadId, Math.max(0, Math.trunc(options.contextDepth ?? 3)))
       : [];
-    const beadContextText = bead ? buildBeadContext(bead, completedBlockers) : '';
-    const beadContextOwn = beadContextText ? measurePayloadComponent('bead_context', 'own', beadContextText) : null;
-    const beadContextParent = bead?.parent?.trim()
-      ? measurePayloadComponent('bead_context', 'parent', bead.parent.trim())
-      : null;
-    const beadContextBlockers = completedBlockers.map((blocker) => measurePayloadComponent('bead_context', blocker.id, buildBeadContext(blocker, [])));
 
-    // Render task template (pre_script_output is '' when no scripts ran)
-    const resolvedPrompt = options.inputBeadId && beadContextText
-      ? `${beadContextText}\n\n${buildBeadBoundaryInstruction(runCwd, options.worktreeBoundary)}`.trim()
-      : this.resolvePromptWithBeadContext(options, runCwd, beadsClient);
-    const beadVariables: Record<string, string> = options.inputBeadId
-      ? { bead_context: resolvedPrompt, bead_id: options.inputBeadId }
-      : {};
-    const lineageVariables: Record<string, string> = {
-      ...(options.reusedFromJobId ? { reused_from_job_id: options.reusedFromJobId } : {}),
-      ...(options.worktreeOwnerJobId ? { worktree_owner_job_id: options.worktreeOwnerJobId } : {}),
-    };
     // Pre-inject the executor's gitnexus_summary (files_touched / symbols_analyzed /
     // highest_risk / tool_invocations) so the reviewer task template can render it
     // directly. Falls back to empty string when the reviewed job had no run_complete
@@ -1061,58 +1029,47 @@ export class SpecialistRunner {
       reusedFromJobId: options.reusedFromJobId,
       cwd: runCwd,
     });
-    if (gitnexusSummary) {
-      lineageVariables.gitnexus_summary = gitnexusSummary;
-    }
-    const beadTemplateVariables: Record<string, string> = {
-      prompt: resolvedPrompt,
-      bead_id: options.inputBeadId ?? '',
-      ...lineageVariables,
-    };
-    const variables: Record<string, string> = {
-      prompt: resolvedPrompt,
+
+    // Task-side assembly is shared verbatim with `sp render-task` (unitAI-6639v.4).
+    // Reviewer diff context is execution-only, so it enters through the hook rather
+    // than the pure seam — it must still land before the hash, as it always has.
+    const rendered = renderTaskPrompt({
+      specialist: spec.specialist,
       cwd: runCwd,
-      pre_script_output: preScriptOutput,
-      bead_id: options.inputBeadId ?? '',
-      ...lineageVariables,
-      ...(options.variables ?? {}),
-      ...beadVariables,
-    };
-    const taskTemplate = options.inputBeadId
-      ? renderTemplate(prompt.task_template, beadTemplateVariables)
-      : prompt.task_template;
-    payloadComponents.push(measurePayloadComponent('task_template', 'task_template', renderTemplate(taskTemplate, variables)));
-    let renderedTask = renderTemplate(taskTemplate, variables);
+      beadId: options.inputBeadId,
+      bead,
+      completedBlockers,
+      fallbackPrompt: () => this.resolvePromptWithBeadContext(options, runCwd, beadsClient),
+      preScriptOutput,
+      variables: options.variables,
+      reusedFromJobId: options.reusedFromJobId,
+      worktreeOwnerJobId: options.worktreeOwnerJobId,
+      gitnexusSummary: gitnexusSummary || undefined,
+      worktreeBoundary: options.worktreeBoundary,
+      appendExecutionContext: metadata.name === 'reviewer'
+        ? (task, cwd, variables) => {
+            try {
+              return `${task}${buildReviewerDiffInstruction(buildReviewerDiffContext(cwd, variables))}`;
+            } catch (error) {
+              console.warn(`[specialist runner] Reviewer diff context unavailable: ${String(error)}`);
+              return task;
+            }
+          }
+        : undefined,
+    });
 
-    let mandatoryRulesBlock = '';
-    let mandatoryRulesInjection = null as null | ReturnType<typeof buildMandatoryRulesInjection>;
-    try {
-      mandatoryRulesInjection = buildMandatoryRulesInjection({ cwd: runCwd, specialist: spec.specialist });
-      mandatoryRulesBlock = mandatoryRulesInjection.block;
-      if (!execution.bare && mandatoryRulesBlock.trim()) {
-        const rulesTokens = Math.ceil(mandatoryRulesBlock.length / 4);
-        if (rulesTokens <= 2000) {
-          renderedTask = `${renderedTask}
-
-${mandatoryRulesBlock}`;
-        } else {
-          console.warn(`[specialist runner] Skipping MANDATORY_RULES injection: rules block too large (${rulesTokens} tokens, limit 2000)`);
-        }
-      }
-    } catch (error) {
-      console.warn(`[specialist runner] Skipping MANDATORY_RULES injection: ${String(error)}`);
-    }
-
-    if (!execution.bare && metadata.name === 'reviewer') {
-      try {
-        const diffContext = buildReviewerDiffContext(runCwd, variables);
-        renderedTask = `${renderedTask}${buildReviewerDiffInstruction(diffContext)}`;
-      } catch (error) {
-        console.warn(`[specialist runner] Reviewer diff context unavailable: ${String(error)}`);
-      }
-    }
-
-    const promptHash = createHash('sha256').update(renderedTask).digest('hex').slice(0, 16);
+    const {
+      beadContextOwn,
+      beadContextParent,
+      beadContextBlockers,
+      beadContextText,
+      beadTemplateVariables,
+      mandatoryRulesBlock,
+    } = rendered;
+    const mandatoryRulesInjection = rendered.mandatoryRules;
+    const renderedTask = rendered.initial_prompt;
+    const promptHash = rendered.prompt_hash;
+    payloadComponents.push(rendered.taskTemplateComponent);
 
     await hooks.emit('post_render', invocationId, metadata.name, metadata.version, {
       prompt_hash: promptHash,

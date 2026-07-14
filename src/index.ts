@@ -108,6 +108,36 @@ async function run() {
     return handler();
   }
 
+  if (sub === 'render-task') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists render-task <name> --bead <id> [options]',
+        '',
+        'Render the initial interactive-role user prompt for a specialist + bead.',
+        'Read-only: creates no job, worktree, session, bead, or status row, and',
+        'never emits prompt.system (the launcher owns that via `view --raw`).',
+        '',
+        'Options:',
+        '  --bead <id>            Bead whose context is rendered (required)',
+        '  --cwd <path>           Project cwd for boundary rules (default: cwd)',
+        '  --context-depth <n>    Completed-blocker depth (default: 3)',
+        '  --surface pi|claude    Interactive surface being launched (default: pi)',
+        '',
+        'Output: JSON with initial_prompt, prompt_hash, and bounded component metadata.',
+        'Errors: JSON { ok: false, error: { code, message } } with exit 1.',
+        '',
+        'Examples:',
+        '  specialists render-task chain-coordinator --bead unitAI-6639v',
+        '  specialists render-task chain-coordinator --bead unitAI-6639v --surface claude',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/render-task.js');
+    return handler();
+  }
+
   if (sub === 'view') {
     if (wantsHelp()) {
       console.log([
