@@ -30,6 +30,7 @@ These EXTEND the canonical skill's Non-Negotiable Rules + Escalation Matrix — 
 3. **Rebuild + smoke after each P0 (and after every chain touching `src/`).** Skipping breaks the next chain's baseline silently.
 4. **One rebuttal per reviewer, then escalate.** the canonical skill documents the rebuttal pattern — auto-mode just caps the loop count.
 5. **Session-close report is non-optional.** Operator returning to a clean tree but no report = blind cold-start next session. Follow `/session-close-report` skill at session end.
+6. **Keep coordination correlated.** A beaded xtmux escalation is reply-required unless explicitly FYI. Read and preserve its SQLite `messageKey`, ack receipt, then answer with `message-reply --in-reply-to` or successful `safe-send-pointer --reply-to`; target/bead matching never fulfils it. SQLite obligations and requester-owned waits survive restarts, so recover with `obligations list` / `monitor-list` / `message-status`, never marker files. See canonical `using-specialists` → `monitoring.md` for the complete path.
 
 ## Per-item loop shape
 

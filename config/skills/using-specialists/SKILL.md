@@ -213,7 +213,7 @@ Cross-ref: [`docs/design/chain-templates.md` §2.2](../../../docs/design/chain-t
 | Dependency bump | Auto for security-patch bumps | Major/minor bumps escalate |
 | Config file schema-changing edit | Never | Always |
 | Dispatch against `contract:draft` bead | Never (rule #15) | Always — promote first: explore + rewrite full 7-section contract + `bd set-state <id> contract=ready --reason "..."` |
-| Interactive coordinator escalation to orchestrator (merge decisions, reviewer PARTIAL/FAIL, sensitive-surface findings) | Coordinator sends via `xtmux message-send --to $@agent_parent_session --bead <id> --text "..."` — orchestrator replies via `safe-send-pointer` to coordinator's `pane_id` with a `/tmp/reply.md` pointer | Any human-judgment call the coordinator's system prompt flags (see `/multiplexing` Pattern 7 Escalation Contract) |
+| Interactive coordinator escalation to orchestrator (merge decisions, reviewer PARTIAL/FAIL, sensitive-surface findings) | Coordinator sends a beaded reply-required `xtmux message-send`; orchestrator preserves its SQLite `messageKey`, acknowledges receipt, and answers with `message-reply --in-reply-to`, or confirmed `safe-send-pointer --reply-to` when pane injection is also required | Any human-judgment call the coordinator's system prompt flags (see `/multiplexing` Pattern 7 and [monitoring.md](references/monitoring.md)) |
 
 ## What Stays Out
 

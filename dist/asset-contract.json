@@ -52,7 +52,7 @@
     },
     {
       "path": "config/skills/using-specialists-auto/SKILL.md",
-      "sha256": "932f4248cd4a8bcece747bcc08c6e0dc775126cbb83aab5318e1ea82dde09686"
+      "sha256": "0668f03dc701d3895defc1e3f3973fa41976355db5a1c38278b6272c95f145c4"
     },
     {
       "path": "config/skills/using-specialists/references/bead-contracts.md",
@@ -76,7 +76,7 @@
     },
     {
       "path": "config/skills/using-specialists/references/monitoring.md",
-      "sha256": "16ea4ee2b9bc868c7b8acd034d0156e803b344b757aa449b1b5559ebb3199a13"
+      "sha256": "7b1aa2cec42756fb752467da14552d1e7233c892232abbc24d563abeb19cd537"
     },
     {
       "path": "config/skills/using-specialists/references/registry-and-locations.md",
@@ -84,7 +84,7 @@
     },
     {
       "path": "config/skills/using-specialists/SKILL.md",
-      "sha256": "11169f562bdba74c261850afb6110b91c393aa956152d1e22b8d275c24c0a9b7"
+      "sha256": "af5725c1e034dd9181452704abdaf5eaa0e0476e2f1c54d9734e3a50e49fbdb7"
     }
   ],
   "shipped_specialists": [
