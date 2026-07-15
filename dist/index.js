@@ -62463,8 +62463,9 @@ __export(exports_doctor, {
 });
 import { createHash as createHash7 } from "crypto";
 import { spawnSync as spawnSync24 } from "child_process";
-import { existsSync as existsSync39, lstatSync as lstatSync2, mkdirSync as mkdirSync15, readdirSync as readdirSync20, readFileSync as readFileSync36, readlinkSync as readlinkSync3, writeFileSync as writeFileSync19 } from "fs";
-import { dirname as dirname17, join as join44, relative as relative4, resolve as resolve13 } from "path";
+import { existsSync as existsSync39, mkdirSync as mkdirSync15, readdirSync as readdirSync20, readFileSync as readFileSync36, writeFileSync as writeFileSync19 } from "fs";
+import { homedir as homedir10 } from "os";
+import { join as join44, relative as relative4, resolve as resolve13 } from "path";
 function ok3(msg) {
   console.log(`  ${green14("\u2713")} ${msg}`);
 }
@@ -62556,69 +62557,19 @@ function checkXt() {
   return true;
 }
 function checkHooks() {
-  section3("Claude Code hooks  (2 expected)");
+  section3(`Claude Code hooks  (global ${relative4(homedir10(), GLOBAL_HOOKS_DIR)})`);
   let allPresent = true;
   for (const name of HOOK_NAMES) {
-    const canonicalPath = join44(HOOKS_DIR, name);
-    if (!existsSync39(canonicalPath)) {
-      fail6(`${relative4(CWD, canonicalPath)}  ${red7("missing")}`);
-      fix("specialists init");
+    const hookPath = join44(GLOBAL_HOOKS_DIR, name);
+    if (!existsSync39(hookPath)) {
+      fail6(`${hookPath} ${red7("missing")}`);
+      fix("reinstall xtrm-tools (hooks are vendored globally)");
       allPresent = false;
     } else {
-      ok3(relative4(CWD, canonicalPath));
-    }
-    const claudeHookPath = join44(CLAUDE_HOOKS_DIR, name);
-    const symlinkState = isSymlinkTo(claudeHookPath, canonicalPath);
-    if (symlinkState.ok) {
-      ok3(`${relative4(CWD, claudeHookPath)} -> ${relative4(dirname17(claudeHookPath), canonicalPath)}`);
-      continue;
-    }
-    allPresent = false;
-    const relHookPath = relative4(CWD, claudeHookPath);
-    if (symlinkState.reason === "missing") {
-      fail6(`${relHookPath} missing`);
-    } else if (symlinkState.reason === "not-symlink") {
-      fail6(`${relHookPath} is not a symlink`);
-    } else if (symlinkState.reason === "wrong-target") {
-      fail6(`${relHookPath} points to ${symlinkState.target ?? "unknown target"}`);
-    } else {
-      fail6(`${relHookPath} is broken`);
-    }
-    fix("specialists init");
-  }
-  const settings = loadJson2(SETTINGS_FILE);
-  if (!settings) {
-    warn3(`Could not read ${SETTINGS_FILE}`);
-    fix("specialists init");
-    return false;
-  }
-  const hooksObj = settings.hooks ?? {};
-  const hookEntries = Object.values(hooksObj).flat();
-  const legacyEntries = Object.entries(settings).filter(([key, value]) => key !== "hooks" && Array.isArray(value)).flatMap(([, value]) => value);
-  const wiredCommands = new Set([...hookEntries, ...legacyEntries].flatMap((entry) => (entry.hooks ?? []).map((hook) => hook.command ?? "")));
-  for (const name of HOOK_NAMES) {
-    const expectedRelative = `node .claude/hooks/${name}`;
-    if (!wiredCommands.has(expectedRelative)) {
-      warn3(`${name} not wired in settings.json`);
-      fix("specialists init");
-      allPresent = false;
+      ok3(relative4(homedir10(), hookPath));
     }
   }
-  if (allPresent)
-    hint(`Hooks wired in ${SETTINGS_FILE}`);
   return allPresent;
-}
-function checkMCP() {
-  section3("MCP registration");
-  const mcp = loadJson2(MCP_FILE2);
-  const spec = mcp?.mcpServers?.specialists;
-  if (!spec || spec.command !== "specialists") {
-    fail6(`MCP server 'specialists' not registered in .mcp.json`);
-    fix("specialists init");
-    return false;
-  }
-  ok3(`MCP server 'specialists' registered in ${MCP_FILE2}`);
-  return true;
 }
 function checkVersion() {
   section3("Version check");
@@ -62664,187 +62615,49 @@ function collectFileHashes(rootDir) {
     visit2(rootDir);
   return hashes;
 }
-function isSymlinkTo(linkPath, expectedTargetPath) {
-  if (!existsSync39(linkPath))
-    return { ok: false, reason: "missing" };
-  let stats;
-  try {
-    stats = lstatSync2(linkPath);
-  } catch {
-    return { ok: false, reason: "broken" };
-  }
-  if (!stats.isSymbolicLink())
-    return { ok: false, reason: "not-symlink" };
-  try {
-    const rawTarget = readlinkSync3(linkPath);
-    const resolvedTarget = resolve13(dirname17(linkPath), rawTarget);
-    const resolvedExpected = resolve13(expectedTargetPath);
-    if (resolvedTarget !== resolvedExpected) {
-      return { ok: false, reason: "wrong-target", target: rawTarget };
-    }
-    return { ok: true };
-  } catch {
-    return { ok: false, reason: "broken" };
-  }
-}
 function resolvePackageAssetDir(relativePath) {
   return resolveCanonicalAssetDir(relativePath) ?? (existsSync39(join44(CWD, "config", relativePath)) ? join44(CWD, "config", relativePath) : null);
 }
 function checkSkillDrift() {
-  section3("Category A  package-live skill sync");
+  section3(`Skills \u2014 global default pool  (~/${relative4(homedir10(), GLOBAL_DEFAULT_SKILLS_DIR)})`);
   const canonicalSkillsDir = resolvePackageAssetDir("skills");
   if (!canonicalSkillsDir) {
     fail6("package canonical skills source missing");
     fix("restore config/skills/ or install package assets");
     return false;
   }
-  if (!existsSync39(XTRM_DEFAULT_SKILLS_DIR)) {
-    fail6(".xtrm/skills/default/ missing");
-    fix("specialists init --sync-skills");
+  if (!existsSync39(GLOBAL_DEFAULT_SKILLS_DIR)) {
+    fail6(`${GLOBAL_DEFAULT_SKILLS_DIR} missing`);
+    fix("reinstall xtrm-tools (skills are vendored globally)");
     return false;
   }
   const canonicalHashes = collectFileHashes(canonicalSkillsDir);
-  const defaultHashes = collectFileHashes(XTRM_DEFAULT_SKILLS_DIR);
+  const defaultHashes = collectFileHashes(GLOBAL_DEFAULT_SKILLS_DIR);
   const drifted = [];
-  const missingInDefault = [];
-  const extraInDefault = [];
+  const missing = [];
   for (const [relPath2, canonicalHash] of canonicalHashes) {
-    const defaultHash = defaultHashes.get(relPath2);
-    if (!defaultHash) {
-      missingInDefault.push(relPath2);
+    const globalHash = defaultHashes.get(relPath2);
+    if (!globalHash) {
+      missing.push(relPath2);
       continue;
     }
-    if (canonicalHash !== defaultHash)
+    if (canonicalHash !== globalHash)
       drifted.push(relPath2);
   }
-  for (const relPath2 of defaultHashes.keys()) {
-    if (!canonicalHashes.has(relPath2))
-      extraInDefault.push(relPath2);
-  }
-  if (drifted.length === 0 && missingInDefault.length === 0 && extraInDefault.length === 0) {
-    ok3(`${relative4(CWD, canonicalSkillsDir)} and .xtrm/skills/default/ are in sync`);
-  } else {
-    if (drifted.length > 0) {
-      fail6(`${drifted.length} drifted file${drifted.length === 1 ? "" : "s"} between ${relative4(CWD, canonicalSkillsDir)} and .xtrm/skills/default`);
-      hint(`example: ${drifted.slice(0, 3).join(", ")}${drifted.length > 3 ? ", ..." : ""}`);
-    }
-    if (missingInDefault.length > 0) {
-      fail6(`${missingInDefault.length} file${missingInDefault.length === 1 ? "" : "s"} missing from .xtrm/skills/default`);
-      hint(`example: ${missingInDefault.slice(0, 3).join(", ")}${missingInDefault.length > 3 ? ", ..." : ""}`);
-    }
-    if (extraInDefault.length > 0) {
-      warn3(`${extraInDefault.length} extra file${extraInDefault.length === 1 ? "" : "s"} found only in .xtrm/skills/default`);
-      hint(`example: ${extraInDefault.slice(0, 3).join(", ")}${extraInDefault.length > 3 ? ", ..." : ""}`);
-    }
-    fix("specialists init --sync-skills");
-  }
-  const defaultSkills = readdirSync20(XTRM_DEFAULT_SKILLS_DIR, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
-  let linksOk = true;
-  for (const skillName of defaultSkills) {
-    const activeLinkPath = join44(XTRM_ACTIVE_SKILLS_DIR, skillName);
-    const expectedTarget = join44(XTRM_DEFAULT_SKILLS_DIR, skillName);
-    const state = isSymlinkTo(activeLinkPath, expectedTarget);
-    if (state.ok)
-      continue;
-    linksOk = false;
-    const relLink = relative4(CWD, activeLinkPath);
-    if (state.reason === "missing") {
-      fail6(`${relLink} missing`);
-    } else if (state.reason === "not-symlink") {
-      fail6(`${relLink} is not a symlink`);
-    } else if (state.reason === "wrong-target") {
-      fail6(`${relLink} points to ${state.target ?? "unknown target"}`);
-    } else {
-      fail6(`${relLink} is broken`);
-    }
-    fix("specialists init --sync-skills");
-  }
-  const legacyActiveRoots = [
-    { scope: "claude", root: join44(XTRM_ACTIVE_SKILLS_DIR, "claude") },
-    { scope: "pi", root: join44(XTRM_ACTIVE_SKILLS_DIR, "pi") }
-  ];
-  for (const { root } of legacyActiveRoots) {
-    if (!existsSync39(root))
-      continue;
-    if (isSymlinkTo(root, XTRM_ACTIVE_SKILLS_DIR).ok)
-      continue;
-    const relRoot = relative4(CWD, root);
-    if (lstatSync2(root).isDirectory()) {
-      warn3(`${relRoot}/ legacy scoped layout found`);
-    } else {
-      warn3(`${relRoot} legacy scoped layout found`);
-    }
-    fix("specialists init --sync-skills");
-  }
-  const skillRootChecks = [
-    { root: join44(CLAUDE_DIR, "skills"), expected: XTRM_ACTIVE_SKILLS_DIR },
-    { root: join44(PI_DIR, "skills"), expected: XTRM_ACTIVE_SKILLS_DIR }
-  ];
-  let rootLinksOk = true;
-  for (const check2 of skillRootChecks) {
-    const state = isSymlinkTo(check2.root, check2.expected);
-    if (state.ok) {
-      ok3(`${relative4(CWD, check2.root)} -> ${relative4(dirname17(check2.root), check2.expected)}`);
-      continue;
-    }
-    rootLinksOk = false;
-    const relRoot = relative4(CWD, check2.root);
-    if (state.reason === "missing") {
-      fail6(`${relRoot} missing`);
-    } else if (state.reason === "not-symlink") {
-      fail6(`${relRoot} is not a symlink`);
-    } else if (state.reason === "wrong-target") {
-      fail6(`${relRoot} points to ${state.target ?? "unknown target"}`);
-    } else {
-      fail6(`${relRoot} is broken`);
-    }
-    fix("specialists init --sync-skills");
-  }
-  return drifted.length === 0 && missingInDefault.length === 0 && linksOk && rootLinksOk;
-}
-function checkManagedMirror(label, canonicalRelativePath, mirrorDir, fixHint) {
-  const sourceDir = resolvePackageAssetDir(canonicalRelativePath);
-  const sourceLabel = sourceDir ? relative4(CWD, sourceDir) : `package canonical ${canonicalRelativePath}`;
-  if (!sourceDir) {
-    warn3(`${label} source missing: package canonical ${canonicalRelativePath}`);
-    fix(fixHint);
-    return false;
-  }
-  if (!existsSync39(mirrorDir)) {
-    fail6(`${label} mirror missing: ${relative4(CWD, mirrorDir)}`);
-    fix(fixHint);
-    return false;
-  }
-  const sourceHashes = collectFileHashes(sourceDir);
-  const mirrorHashes = collectFileHashes(mirrorDir);
-  const drifted = [...sourceHashes.keys()].filter((relPath2) => mirrorHashes.get(relPath2) !== sourceHashes.get(relPath2));
-  const missing = [...sourceHashes.keys()].filter((relPath2) => !mirrorHashes.has(relPath2));
-  const extra = [...mirrorHashes.keys()].filter((relPath2) => !sourceHashes.has(relPath2));
-  if (drifted.length === 0 && missing.length === 0 && extra.length === 0) {
-    ok3(`${label} mirror in sync against ${sourceLabel}`);
+  if (drifted.length === 0 && missing.length === 0) {
+    ok3(`${relative4(CWD, canonicalSkillsDir)} matches global default pool`);
     return true;
   }
   if (drifted.length > 0) {
-    fail6(`${label}: ${drifted.length} safe prune candidate${drifted.length === 1 ? "" : "s"}`);
+    fail6(`${drifted.length} drifted file${drifted.length === 1 ? "" : "s"} between package and global default pool`);
     hint(`example: ${drifted.slice(0, 3).join(", ")}${drifted.length > 3 ? ", ..." : ""}`);
   }
   if (missing.length > 0) {
-    fail6(`${label}: ${missing.length} missing mirror file${missing.length === 1 ? "" : "s"}`);
+    fail6(`${missing.length} file${missing.length === 1 ? "" : "s"} missing from global default pool`);
     hint(`example: ${missing.slice(0, 3).join(", ")}${missing.length > 3 ? ", ..." : ""}`);
   }
-  if (extra.length > 0) {
-    warn3(`${label}: ${extra.length} extra mirror file${extra.length === 1 ? "" : "s"}`);
-    hint(`example: ${extra.slice(0, 3).join(", ")}${extra.length > 3 ? ", ..." : ""}`);
-  }
-  fix(fixHint);
+  fix("reinstall xtrm-tools (skills are vendored globally)");
   return false;
-}
-function checkManagedAssetMirrors() {
-  section3("Category B  xtrm-managed asset mirrors");
-  const specialistsOk = checkManagedMirror("specialists", "specialists", DEFAULT_SPECIALISTS_DIR, "sp prune-stale-defaults --apply");
-  const rulesOk = checkManagedMirror("mandatory-rules", "mandatory-rules", join44(DEFAULT_SPECIALISTS_DIR, "mandatory-rules"), "sp prune-stale-defaults --apply");
-  const nodesOk = checkManagedMirror("nodes", "nodes", join44(DEFAULT_SPECIALISTS_DIR, "nodes"), "sp prune-stale-defaults --apply");
-  return specialistsOk && rulesOk && nodesOk;
 }
 function checkUserOverlayDrift() {
   section3("User specialist overlays");
@@ -62857,17 +62670,18 @@ function checkUserOverlayDrift() {
     ok3("no user overlays present");
     return true;
   }
+  const packageSpecialistsDir = resolvePackageAssetDir("specialists");
   let allOk = true;
   for (const name of overlays) {
     const userPath = join44(USER_SPECIALISTS_DIR, name);
-    const defaultPath = join44(DEFAULT_SPECIALISTS_DIR, name);
+    const defaultPath = packageSpecialistsDir ? join44(packageSpecialistsDir, name) : "";
     const userSpec = loadJson2(userPath);
     if (!userSpec) {
       warn3(`${name}: failed to parse \u2014 skipping drift check`);
       continue;
     }
-    if (!existsSync39(defaultPath)) {
-      ok3(`${name}: user-only overlay (no default to drift from)`);
+    if (!defaultPath || !existsSync39(defaultPath)) {
+      ok3(`${name}: user-only overlay (no package default to drift from)`);
       continue;
     }
     const defaultSpec = loadJson2(defaultPath);
@@ -63466,26 +63280,24 @@ ${bold13("specialists doctor")}
   const bdOk = checkBd();
   const xtOk = checkXt();
   const hooksOk = checkHooks();
-  const mcpOk = checkMCP();
   const versionOk = checkVersion();
   const skillDriftOk = checkSkillDrift();
-  const mirrorOk = checkManagedAssetMirrors();
   const userOverlayOk = checkUserOverlayDrift();
   const dirsOk = checkRuntimeDirs();
   const jobsOk = checkZombieJobs();
   const fragmentsOk = checkClaudeMdFragments();
   const overridesOk = await checkSpecialistOverrides();
-  const allOk = piOk && spOk && bdOk && xtOk && hooksOk && mcpOk && versionOk && skillDriftOk && mirrorOk && userOverlayOk && dirsOk && jobsOk && fragmentsOk && overridesOk;
+  const allOk = piOk && spOk && bdOk && xtOk && hooksOk && versionOk && skillDriftOk && userOverlayOk && dirsOk && jobsOk && fragmentsOk && overridesOk;
   console.log("");
   if (allOk) {
     console.log(`  ${green14("\u2713")} ${bold13("All checks passed")}  \u2014 specialists is healthy`);
   } else {
     console.log(`  ${yellow12("\u25CB")} ${bold13("Some checks failed")}  \u2014 follow the fix hints above`);
-    console.log(`  ${dim14("specialists init fixes hook + MCP registration; specialists init --sync-skills fixes skill drift/symlink issues; sp prune-stale-defaults --apply removes stale default mirrors; --sync-defaults is deprecated.")}`);
+    console.log(`  ${dim14("Hooks + default skill pool are vendored globally by xtrm-tools; reinstall if drift or missing files appear.")}`);
   }
   console.log("");
 }
-var bold13 = (s) => `\x1B[1m${s}\x1B[0m`, dim14 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow12 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, PI_DIR, XTRM_SKILLS_DIR, XTRM_DEFAULT_SKILLS_DIR, XTRM_ACTIVE_SKILLS_DIR, SPECIALISTS_DIR, DEFAULT_SPECIALISTS_DIR, USER_SPECIALISTS_DIR, HOOKS_DIR, CLAUDE_HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
+var bold13 = (s) => `\x1B[1m${s}\x1B[0m`, dim14 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow12 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, SPECIALISTS_DIR, USER_SPECIALISTS_DIR, XTRM_HOME, GLOBAL_HOOKS_DIR, GLOBAL_DEFAULT_SKILLS_DIR, HOOK_NAMES;
 var init_doctor = __esm(() => {
   init_observability_sqlite();
   init_pr_drift_refresh();
@@ -63495,18 +63307,11 @@ var init_doctor = __esm(() => {
   init_loader();
   init_version_check();
   CWD = process.cwd();
-  CLAUDE_DIR = join44(CWD, ".claude");
-  PI_DIR = join44(CWD, ".pi");
-  XTRM_SKILLS_DIR = join44(CWD, ".xtrm", "skills");
-  XTRM_DEFAULT_SKILLS_DIR = join44(XTRM_SKILLS_DIR, "default");
-  XTRM_ACTIVE_SKILLS_DIR = join44(XTRM_SKILLS_DIR, "active");
   SPECIALISTS_DIR = join44(CWD, ".specialists");
-  DEFAULT_SPECIALISTS_DIR = join44(SPECIALISTS_DIR, "default");
   USER_SPECIALISTS_DIR = join44(SPECIALISTS_DIR, "user");
-  HOOKS_DIR = join44(CWD, ".xtrm", "hooks", "specialists");
-  CLAUDE_HOOKS_DIR = join44(CLAUDE_DIR, "hooks");
-  SETTINGS_FILE = join44(CLAUDE_DIR, "settings.json");
-  MCP_FILE2 = join44(CWD, ".mcp.json");
+  XTRM_HOME = join44(homedir10(), ".xtrm");
+  GLOBAL_HOOKS_DIR = join44(XTRM_HOME, "hooks", "specialists");
+  GLOBAL_DEFAULT_SKILLS_DIR = join44(XTRM_HOME, "skills", "default");
   HOOK_NAMES = [
     "specialists-complete.mjs",
     "specialists-session-start.mjs"
@@ -63516,8 +63321,8 @@ var init_doctor = __esm(() => {
 // src/specialist/benchmarks.ts
 import { randomUUID as randomUUID5 } from "crypto";
 import { closeSync as closeSync3, existsSync as existsSync40, fsyncSync as fsyncSync2, mkdirSync as mkdirSync16, openSync as openSync4, readFileSync as readFileSync37, renameSync as renameSync5, writeFileSync as writeFileSync20 } from "fs";
-import { homedir as homedir10 } from "os";
-import { dirname as dirname18, join as join45 } from "path";
+import { homedir as homedir11 } from "os";
+import { dirname as dirname17, join as join45 } from "path";
 async function loadBenchmarkSnapshot(options2 = {}) {
   const warnings = [];
   const warn4 = (warning) => {
@@ -63633,11 +63438,11 @@ function toSnapshot(cache) {
 function isOffline(options2) {
   return options2.offline === true || process.env.SPECIALISTS_OFFLINE === "1";
 }
-function getBenchmarkCachePath(source, cacheDir = join45(homedir10(), ".cache", "specialists", "benchmarks")) {
+function getBenchmarkCachePath(source, cacheDir = join45(homedir11(), ".cache", "specialists", "benchmarks")) {
   return join45(cacheDir, `${source}.json`);
 }
 function writeCache2(path3, snapshot) {
-  mkdirSync16(dirname18(path3), { recursive: true, mode: 448 });
+  mkdirSync16(dirname17(path3), { recursive: true, mode: 448 });
   const tmpPath = `${path3}.${process.pid}.${randomUUID5()}.tmp`;
   writeFileSync20(tmpPath, `${JSON.stringify(snapshot, null, 2)}
 `, { mode: 384 });
@@ -63648,7 +63453,7 @@ function writeCache2(path3, snapshot) {
     closeSync3(fd);
   }
   renameSync5(tmpPath, path3);
-  fsyncDirectory(dirname18(path3));
+  fsyncDirectory(dirname17(path3));
 }
 function fsyncDirectory(path3) {
   try {
@@ -63672,8 +63477,8 @@ var init_benchmarks = __esm(() => {
 // src/specialist/model-probes.ts
 import { createHash as createHash8, randomUUID as randomUUID6 } from "crypto";
 import { mkdirSync as mkdirSync17, readdirSync as readdirSync21, readFileSync as readFileSync38, writeFileSync as writeFileSync21 } from "fs";
-import { homedir as homedir11 } from "os";
-import { dirname as dirname19, join as join46, resolve as resolve14 } from "path";
+import { homedir as homedir12 } from "os";
+import { dirname as dirname18, join as join46, resolve as resolve14 } from "path";
 async function runAgenticFollowthroughProbe(model, specName, opts = {}) {
   const probeDir = getProbeRunDir(model, specName, opts.cacheDir);
   mkdirSync17(probeDir, { recursive: true, mode: 448 });
@@ -63699,7 +63504,7 @@ async function runAgenticFollowthroughProbe(model, specName, opts = {}) {
   const summaryJson = `${JSON.stringify({ verdict, metrics, sample_output: output2, transcript_path: transcriptPath }, null, 2)}
 `;
   writeFileSync21(summaryPath, summaryJson, { mode: 384 });
-  mkdirSync17(dirname19(canonicalPath), { recursive: true, mode: 448 });
+  mkdirSync17(dirname18(canonicalPath), { recursive: true, mode: 448 });
   writeFileSync21(canonicalPath, summaryJson, { mode: 384 });
   return { verdict, metrics, sample_output: output2, transcript_path: transcriptPath };
 }
@@ -63776,10 +63581,10 @@ function withTimeout(promise2, timeoutMs) {
   });
   return Promise.race([promise2, timeoutPromise]).finally(() => clearTimeout(timeout));
 }
-function getProbeRunDir(model, specName, cacheDir = join46(homedir11(), ".cache", "specialists", "probes")) {
+function getProbeRunDir(model, specName, cacheDir = join46(homedir12(), ".cache", "specialists", "probes")) {
   return resolve14(getProbeCanonicalPath(model, specName, cacheDir).replace(/\.json$/u, ""), randomUUID6());
 }
-function getProbeCanonicalPath(model, specName, cacheDir = join46(homedir11(), ".cache", "specialists", "probes")) {
+function getProbeCanonicalPath(model, specName, cacheDir = join46(homedir12(), ".cache", "specialists", "probes")) {
   const probeId = createHash8("sha256").update(`${model}\x00${specName}\x00${PROBE_TEMPLATE}`).digest("hex").slice(0, 12);
   return join46(cacheDir, `${sanitizePathSegment(model)}-${sanitizePathSegment(specName)}-${probeId}.json`);
 }
@@ -64427,7 +64232,7 @@ import { once } from "events";
 import { spawnSync as spawnSync26 } from "child_process";
 import { access, readdir as readdir2, readFile as readFile4, constants } from "fs/promises";
 import { existsSync as existsSync42 } from "fs";
-import { homedir as homedir12 } from "os";
+import { homedir as homedir13 } from "os";
 import { join as join48 } from "path";
 function createReadinessState() {
   return { shuttingDown: false, auditFailures: [], dbWriteFailuresTotal: 0 };
@@ -64471,7 +64276,7 @@ async function evaluateReadiness2(opts) {
   if (opts.state.auditFailures.length > opts.auditFailureThreshold) {
     return { ready: false, reason: "degraded:audit" };
   }
-  const piConfigPath = opts.piConfigPath ?? join48(homedir12(), ".pi", "agent", "auth.json");
+  const piConfigPath = opts.piConfigPath ?? join48(homedir13(), ".pi", "agent", "auth.json");
   try {
     await access(piConfigPath, constants.R_OK);
   } catch {
