@@ -2,6 +2,20 @@ import { buildMandatoryRulesInjection } from './mandatory-rules.js';
 import { type BeadRecord } from './beads.js';
 import { type PayloadComponentMeasurement } from './payload-measure.js';
 import type { Specialist } from './schema.js';
+export type Surface = 'pi' | 'claude';
+/**
+ * Derive a skill's invocation name from its declared path.
+ *   `.../<name>/SKILL.md` → `<name>` (folder-based skill)
+ *   `.../<name>.md`       → `<name>` (bare-file skill)
+ *   anything else         → basename verbatim
+ */
+export declare function deriveSkillName(path: string): string;
+/**
+ * Turn-1 deterministic skill-load block (unitAI-qeguh).
+ * Empty string when the specialist declares no skills — caller must NOT prepend anything.
+ * Dedup by derived name, preserving skills.paths JSON declaration order.
+ */
+export declare function buildSkillPrefix(specialist: Specialist['specialist'], surface: Surface): string;
 export declare function buildBeadBoundaryInstruction(cwd: string, worktreeBoundary?: string): string;
 export interface TaskPromptInput {
     /** Effective specialist config (post loader precedence + preset resolution). */
@@ -29,6 +43,11 @@ export interface TaskPromptInput {
      * difference between the two surfaces.
      */
     appendExecutionContext?: (task: string, cwd: string, variables: Record<string, string>) => string;
+    /**
+     * Turn-1 skill-load surface (unitAI-qeguh). Defaults to 'pi' — sp run is pi-only;
+     * xt claude --role passes 'claude' via `sp render-task --surface claude`.
+     */
+    surface?: Surface;
 }
 export interface TaskPromptResult {
     initial_prompt: string;
@@ -53,6 +72,8 @@ export interface TaskPromptResult {
     /** Raw bead context, before the boundary instruction is appended. */
     beadContextText: string;
     resolvedPrompt: string;
+    /** Turn-1 skill-load prefix; empty string when specialist declares no skills. */
+    skillPrefix: string;
 }
 /**
  * The single task-side prompt assembly used by BOTH `sp run` and the read-only
