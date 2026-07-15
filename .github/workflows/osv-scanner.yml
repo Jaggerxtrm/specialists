@@ -180,6 +180,13 @@ jobs:
           osv-scanner scan source --recursive --no-resolve --format json . > /tmp/osv-scan.json
           status=$?
           set -e
+          case "$status" in
+            0|1) ;;
+            *)
+              echo "osv-scanner exited with non-scan status $status" >&2
+              exit "$status"
+              ;;
+          esac
           if [[ ! -s /tmp/osv-scan.json ]]; then
             echo "osv-scanner did not emit JSON output" >&2
             exit 1

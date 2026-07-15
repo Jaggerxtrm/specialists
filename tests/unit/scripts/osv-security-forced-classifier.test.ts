@@ -192,6 +192,13 @@ describe('protected OSV workflow gate', () => {
     expect(runProtectedScan(report).status).not.toBe(0);
   });
 
+  it('blocks scanner operational errors even when the classifier would pass', () => {
+    const result = runProtectedScan('{"results":[]}', { scannerStatus: 128 });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('non-scan status 128');
+  });
+
   it('blocks classifier process failure', () => {
     expect(runProtectedScan('{"results":[]}', { classifierFailure: true }).status).not.toBe(0);
   });
