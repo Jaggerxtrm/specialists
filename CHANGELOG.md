@@ -9,6 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Wire verified-audit skill into reviewer.specialist.json** ([0a6895c](https://github.com/xtrm-dev/specialists/commit/0a6895c95dac898f97ca6af9d94265c2c52246e5))
+
+  Adds ~/.xtrm/skills/default/verified-audit/SKILL.md to reviewer's
+  skills.paths. Complements reviewer's existing inline "Simplification
+  Findings" section with a whole-file / cross-file audit methodology
+  (four legs: line-count reduction, GitNexus impact verification,
+  config/usage grep for enum branches, efficiency signals hunt) plus
+  methodology gotchas the inline block doesn't cover: closures inside
+  methods report zero callers in the impact graph, dead-data branches
+  evade GitNexus entirely, and file size is not a proxy for slop density.
+
+  Skill source lives in xtrm-dev/core (see companion PR). Requires an
+  xt update / skills reconcile on the host before this merges, or
+  reviewer's pre-run validator will hard-fail on the missing skill file.
+
+### Project maintenance
+
+- **Record the post-release launcher smoke** ([670d213](https://github.com/xtrm-dev/specialists/commit/670d2134ee6fff2ab12158c49b460e0c76bd3555))
+
+  The progressive-disclosure benchmark listed "xt --role was not smoked through
+  the launcher" as its one open limitation, because the launcher refuses to run
+  from a worktree and would have resolved the old spec from master. With v3.20.0
+  released and installed, the smoke runs for real: the coordinator session loads
+  using-specialists v3.8 from the global root, opens only the 257-line router, and
+  answers the merge question from it without pulling any reference.
+
+  Also harden scripts/changelog-update.mjs: refuse to write when the file has no
+  "# " title above the first section. A CHANGELOG already corrupted by an earlier
+  `git-cliff --prepend` has its title buried inside the injected block, so
+  "everything above the first section" is empty and the title would be silently
+  deleted. This happened on the origin/master merge and is now a hard error.
+
+- **Correlate xtmux coordination replies (#188)** ([a575696](https://github.com/xtrm-dev/specialists/commit/a575696f32862c9d548fd4b09f5a3cf42c0254c1))
+
+  * docs(skills): correlate xtmux coordination replies
+
+  * docs(coordinator): require correlated escalations
+
 ## [v3.20.0] — 2026-07-14
 
 ### Other changes
