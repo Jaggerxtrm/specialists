@@ -235,4 +235,56 @@ describe('manifest resolver', () => {
     expect(resolved.tools).toContain('gitnexus_query');
     expect(resolved.tools).not.toContain('find_file');
   });
+
+  // Regression: unitAI-7edw1. A specialist that declares execution.extensions.serena=false
+  // (e.g. explorer, seconder) used to ship pi with serena tool names in --tools (no provider
+  // loaded) AND with natives hard-denied (probeExtensionHealth checked disk presence only),
+  // leaving the specialist effectively blind — only gitnexus tools worked.
+  // Fix: when the spawn skips `-e pi-serena-tools`, treat serena as { enabled:false, health:'disabled' }
+  // AND list 'serena' in specialistExclusions.disabledExtensions. The resolver then drops serena
+  // tool names AND restores natives because hardDeny can no longer be enforced.
+  it('serena-excluded specialist restores natives and drops serena tool names', async () => {
+    const catalogs = await loadCatalogs();
+    const defaults = await loadCatalogDefaults();
+    const resolved = resolveManifestTools({
+      tier: 'READ_ONLY',
+      catalogs,
+      catalogDefaultOverrides: defaults,
+      specialistExclusions: { disabledExtensions: ['serena'] },
+      extensionState: {
+        gitnexus: { enabled: true, health: 'loaded_healthy' },
+        serena: { enabled: false, health: 'disabled' },
+      },
+    });
+    expect(resolved.toolsList).toContain('read');
+    expect(resolved.toolsList).toContain('grep');
+    expect(resolved.toolsList).toContain('find');
+    expect(resolved.toolsList).toContain('ls');
+    expect(resolved.toolsList).toContain('gitnexus_query');
+    expect(resolved.toolsList).not.toContain('find_symbol');
+    expect(resolved.toolsList).not.toContain('read_file');
+    expect(resolved.toolsList).not.toContain('search_for_pattern');
+  });
+
+  // Counter-test: a specialist that does NOT exclude serena (e.g. memory-processor, executor)
+  // must still hard-deny natives so the LLM is steered toward serena's read_file / search_for_pattern
+  // instead of the lower-quality native read. Fix must not over-correct.
+  it('serena-enabled specialist still hard-denies natives in favor of serena', async () => {
+    const catalogs = await loadCatalogs();
+    const defaults = await loadCatalogDefaults();
+    const resolved = resolveManifestTools({
+      tier: 'READ_ONLY',
+      catalogs,
+      catalogDefaultOverrides: defaults,
+      extensionState: {
+        gitnexus: { enabled: true, health: 'loaded_healthy' },
+        serena: { enabled: true, health: 'loaded_healthy' },
+      },
+    });
+    expect(resolved.toolsList).not.toContain('read');
+    expect(resolved.toolsList).not.toContain('grep');
+    expect(resolved.toolsList).toContain('read_file');
+    expect(resolved.toolsList).toContain('find_symbol');
+    expect(resolved.deniedNatives).toEqual(['read', 'grep', 'find', 'ls']);
+  });
 });
