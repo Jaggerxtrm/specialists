@@ -111,7 +111,7 @@ export interface PiSessionOptions {
   specialistName?: string;
   /** Specialist manifest permissions for resolver overrides. */
   specialistPermissions?: ManifestPolicy['permissions'];
-  /** Skill files loaded via pi --skill (injected into system prompt natively) */
+  /** Skill files declared via pi --skill (native flag; force-loaded at turn-1 via /skill:name). */
   skillPaths?: string[];
   /** Thinking level passed as pi --thinking <level> */
   thinkingLevel?: string;
@@ -638,6 +638,7 @@ export class PiAgentSession {
     const args = [
       '--mode', 'rpc',
       '--no-extensions',   // disable ALL auto-discovered xtrm Pi extensions (beads, session-flow, etc.)
+      '--no-skills',       // isolate: discovery pool == declared skills.paths only (re-added below via --skill)
       ...providerArgs,
       '--no-session',
       '--offline',
@@ -660,7 +661,7 @@ export class PiAgentSession {
       args.push('--thinking', this.options.thinkingLevel);
     }
 
-    // Skill files injected natively via pi --skill
+    // Skill files declared via pi --skill (native flag; body force-loads at turn-1 via /skill:name).
     for (const skillPath of this.options.skillPaths ?? []) {
       args.push('--skill', skillPath);
     }
