@@ -440,12 +440,15 @@ async function checkSpecialistOverrides(): Promise<boolean> {
     return false;
   }
 
+  // Templates (category:'template') are copy-source specialists that are never
+  // dispatched, so a missing model is not a real gap.
+  const dispatchable = summaries.filter(s => s.category !== 'template');
   const missing: string[] = [];
-  for (const summary of summaries) {
+  for (const summary of dispatchable) {
     if (!summary.model || summary.model === '') missing.push(summary.name);
   }
 
-  const total = summaries.length;
+  const total = dispatchable.length;
   const present = total - missing.length;
 
   if (missing.length === 0) {
@@ -569,6 +572,10 @@ export function cleanupProcesses(jobsDir: string, dryRun: boolean): CleanupProce
     const statuses = sqliteClient.listStatuses();
     for (const status of statuses) {
       if (status.status !== 'running' && status.status !== 'starting') continue;
+      // Skip rows whose job_id was written NULL/empty — they can't be actioned by
+      // the user (no path to open, no id to name) and rendering them as "undefined"
+      // was misleading. The upstream write that produced them is a separate bug.
+      if (!status.id) continue;
       result.total += 1;
       // process.kill(pid, 0) THROWS ESRCH when the pid is dead — it does not return false.
       // Mirror the file-path branch below (try/catch → zombie on ESRCH).

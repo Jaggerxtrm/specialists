@@ -62859,12 +62859,13 @@ async function checkSpecialistOverrides() {
     fail6(`SpecialistLoader.list() threw: ${msg}`);
     return false;
   }
+  const dispatchable = summaries.filter((s) => s.category !== "template");
   const missing = [];
-  for (const summary of summaries) {
+  for (const summary of dispatchable) {
     if (!summary.model || summary.model === "")
       missing.push(summary.name);
   }
-  const total = summaries.length;
+  const total = dispatchable.length;
   const present = total - missing.length;
   if (missing.length === 0) {
     ok3(`${present}/${total} specialists have a model configured`);
@@ -62971,6 +62972,8 @@ function cleanupProcesses(jobsDir, dryRun) {
     const statuses = sqliteClient.listStatuses();
     for (const status of statuses) {
       if (status.status !== "running" && status.status !== "starting")
+        continue;
+      if (!status.id)
         continue;
       result2.total += 1;
       let alive = false;
