@@ -63159,7 +63159,16 @@ function cleanupProcesses(jobsDir, dryRun) {
       if (status.status !== "running" && status.status !== "starting")
         continue;
       result2.total += 1;
-      if (status.pid && process.kill(status.pid, 0)) {
+      let alive = false;
+      if (status.pid) {
+        try {
+          process.kill(status.pid, 0);
+          alive = true;
+        } catch {
+          alive = false;
+        }
+      }
+      if (alive) {
         result2.running += 1;
         continue;
       }

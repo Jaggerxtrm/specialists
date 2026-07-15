@@ -793,7 +793,13 @@ export function cleanupProcesses(jobsDir: string, dryRun: boolean): CleanupProce
     for (const status of statuses) {
       if (status.status !== 'running' && status.status !== 'starting') continue;
       result.total += 1;
-      if (status.pid && process.kill(status.pid, 0)) {
+      // process.kill(pid, 0) THROWS ESRCH when the pid is dead — it does not return false.
+      // Mirror the file-path branch below (try/catch → zombie on ESRCH).
+      let alive = false;
+      if (status.pid) {
+        try { process.kill(status.pid, 0); alive = true; } catch { alive = false; }
+      }
+      if (alive) {
         result.running += 1;
         continue;
       }
