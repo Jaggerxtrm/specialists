@@ -43,7 +43,9 @@
       "system_prompt_mode": "append"
     },
     "skills": {
-      "paths": [],
+      "paths": [
+        "~/.xtrm/skills/default/verified-audit/SKILL.md"
+      ],
       "scripts": []
     },
     "validation": {
