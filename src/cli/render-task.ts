@@ -86,6 +86,7 @@ export async function run(): Promise<void> {
       beadId: args.beadId,
       bead,
       completedBlockers,
+      surface: args.surface,
       // Execution-only inputs are absent by construction: no pre-scripts are run
       // and no reviewer git diff is taken. Both are classified execution-only in
       // the unitAI-6639v.1 parity decision.
@@ -122,6 +123,7 @@ export async function run(): Promise<void> {
     context_depth: args.contextDepth,
     initial_prompt: rendered.initial_prompt,
     prompt_hash: rendered.prompt_hash,
+    skill_prefix: rendered.skillPrefix,
     // Bounded metadata only — never full prompt bodies (unitAI-6639v.4 constraint).
     components,
     mandatory_rules: rendered.mandatoryRules

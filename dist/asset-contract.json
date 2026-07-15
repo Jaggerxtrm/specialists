@@ -11,10 +11,6 @@
       "sha256": "3b16310b507a94cc1c531670cd7e61af7696298a340246591d4b65bbb287e137"
     },
     {
-      "path": "config/skills/releasing/SKILL.md",
-      "sha256": "f91a79873fe0234237cc949dfd0622a0f9d9c8f302fe41e268cdcfb69b2aaa44"
-    },
-    {
       "path": "config/skills/setup-specialists/SKILL.md",
       "sha256": "63dc55a2b942d4ac038834ba75d2c6d99aadcd3759b8998387e7315cd0496a63"
     },
@@ -32,7 +28,7 @@
     },
     {
       "path": "config/skills/specialists-creator/SKILL.md",
-      "sha256": "223ab14dbd1c2443f147600691819408faed9f13524d485c0b99394fa84e0981"
+      "sha256": "f825f500e531e3a04b252c0f9a22b8acaa396f9d093368338d13e21ac43c30d4"
     },
     {
       "path": "config/skills/update-specialists/SKILL.md",

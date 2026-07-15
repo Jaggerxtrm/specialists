@@ -798,9 +798,17 @@ These are **always available** in `task_template` — no configuration needed:
 
 ---
 
-## Skills Injection (`skills.paths`)
+## Skills Declaration (`skills.paths`)
 
-Files listed under `skills.paths` are read and appended to the system prompt at runtime:
+**Declared skills.paths define your discovery pool; nothing else is reachable.** The sp/xt
+runtime spawns pi/claude with `--no-skills` (isolating the ambient global pool) and re-adds
+each declared skill via `--skill <path>`. Declared skills are then force-loaded at turn-1
+via the `/skill:name` prefix baked into the initial user prompt (deterministic body load,
+not merely made available). Same contract on `sp run` and `xt --role` — the prefix is
+emitted by `sp render-skill-prefix` (or baked into `sp render-task` output) and consumed
+verbatim by `xt --role` so the two entry points diverge nowhere.
+
+Files listed under `skills.paths` are forwarded to pi/claude as native `--skill` flags:
 
 ```json
 {
@@ -1038,10 +1046,10 @@ Two runtime classes exist:
 - **Package-class**: `sp run` → `runner.ts` → `session.ts`
 - **Script-class**: `sp script` / `sp serve` → `script-runner.ts`
 
-| Runner | Injected into system prompt |
+| Runner | System-prompt composition (skills declared separately via `--skill`) |
 |--------|----------------------------|
-| Package-class | `prompt.system` + Specialist Run Context + caveman output style + GitNexus mandate (if `.gitnexus` exists) + `STATIC_WORKFLOW_RULES_BLOCK` + memory injection + mandatory rules + skills inheritance + output contract + reviewer patch retrieval (reviewer reuse only) |
-| Script-class | `prompt.system` only |
+| Package-class | `prompt.system` + Specialist Run Context + caveman output style + GitNexus mandate (if `.gitnexus` exists) + `STATIC_WORKFLOW_RULES_BLOCK` + memory injection + mandatory rules + output contract + reviewer patch retrieval (reviewer reuse only). Declared skills go through pi `--skill`, not into the system prompt. |
+| Script-class | `prompt.system` only. Declared skills go through pi `--skill`, not into the system prompt. |
 
 Pi flags:
 

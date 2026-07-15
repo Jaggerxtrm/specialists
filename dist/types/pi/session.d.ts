@@ -84,7 +84,7 @@ export interface PiSessionOptions {
     specialistName?: string;
     /** Specialist manifest permissions for resolver overrides. */
     specialistPermissions?: ManifestPolicy['permissions'];
-    /** Skill files loaded via pi --skill (injected into system prompt natively) */
+    /** Skill files declared via pi --skill (native flag; force-loaded at turn-1 via /skill:name). */
     skillPaths?: string[];
     /** Thinking level passed as pi --thinking <level> */
     thinkingLevel?: string;

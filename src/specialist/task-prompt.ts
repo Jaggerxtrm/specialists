@@ -1,3 +1,4 @@
+import { basename, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { renderTemplate } from './templateEngine.js';
 import { buildMandatoryRulesInjection } from './mandatory-rules.js';
@@ -7,6 +8,41 @@ import type { Specialist } from './schema.js';
 
 /** MANDATORY_RULES are dropped above this budget rather than truncated (sp run contract). */
 const MANDATORY_RULES_TOKEN_LIMIT = 2000;
+
+export type Surface = 'pi' | 'claude';
+
+/**
+ * Derive a skill's invocation name from its declared path.
+ *   `.../<name>/SKILL.md` → `<name>` (folder-based skill)
+ *   `.../<name>.md`       → `<name>` (bare-file skill)
+ *   anything else         → basename verbatim
+ */
+export function deriveSkillName(path: string): string {
+  const base = basename(path);
+  if (base === 'SKILL.md') return basename(dirname(path));
+  return base.endsWith('.md') ? base.slice(0, -3) : base;
+}
+
+/**
+ * Turn-1 deterministic skill-load block (unitAI-qeguh).
+ * Empty string when the specialist declares no skills — caller must NOT prepend anything.
+ * Dedup by derived name, preserving skills.paths JSON declaration order.
+ */
+export function buildSkillPrefix(specialist: Specialist['specialist'], surface: Surface): string {
+  const paths = specialist.skills?.paths ?? [];
+  if (paths.length === 0) return '';
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const p of paths) {
+    const n = deriveSkillName(p);
+    if (seen.has(n)) continue;
+    seen.add(n);
+    names.push(n);
+  }
+  if (names.length === 0) return '';
+  const sep = surface === 'claude' ? '-' : ':';
+  return `${names.map((n) => `/skill${sep}${n}`).join(' ')}\n\n`;
+}
 
 export function buildBeadBoundaryInstruction(cwd: string, worktreeBoundary?: string): string {
   const boundary = worktreeBoundary?.trim() || cwd;
@@ -48,6 +84,11 @@ export interface TaskPromptInput {
    * difference between the two surfaces.
    */
   appendExecutionContext?: (task: string, cwd: string, variables: Record<string, string>) => string;
+  /**
+   * Turn-1 skill-load surface (unitAI-qeguh). Defaults to 'pi' — sp run is pi-only;
+   * xt claude --role passes 'claude' via `sp render-task --surface claude`.
+   */
+  surface?: Surface;
 }
 
 export interface TaskPromptResult {
@@ -73,6 +114,8 @@ export interface TaskPromptResult {
   /** Raw bead context, before the boundary instruction is appended. */
   beadContextText: string;
   resolvedPrompt: string;
+  /** Turn-1 skill-load prefix; empty string when specialist declares no skills. */
+  skillPrefix: string;
 }
 
 /**
@@ -158,9 +201,16 @@ export function renderTaskPrompt(input: TaskPromptInput): TaskPromptResult {
     renderedTask = input.appendExecutionContext(renderedTask, cwd, variables);
   }
 
+  // unitAI-qeguh: prepend the turn-1 /skill: block so declared skills load
+  // deterministically. Empty when no declared skills — core relies on that
+  // absence to trigger its position-0 body-safety fallback.
+  const skillPrefix = buildSkillPrefix(specialist, input.surface ?? 'pi');
+  if (skillPrefix) renderedTask = `${skillPrefix}${renderedTask}`;
+
   return {
     initial_prompt: renderedTask,
     prompt_hash: createHash('sha256').update(renderedTask).digest('hex').slice(0, 16),
+    skillPrefix,
     taskTemplateComponent,
     beadContextOwn,
     beadContextParent,

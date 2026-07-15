@@ -1102,7 +1102,8 @@ export class SpecialistRunner {
     });
 
     // Build system prompt from prompt.system only.
-    // skill_inherit and skills.paths are injected via pi --skill (native).
+    // skill_inherit and skills.paths are declared via pi --skill (native flag)
+    // and force-loaded at turn-1 via the /skill:name prefix baked into the user prompt.
     let agentsMd = renderTemplate(prompt.system ?? '', beadTemplateVariables);
 
     // Always inject a Specialist Run Context block to override project-level CLAUDE.md/AGENTS.md

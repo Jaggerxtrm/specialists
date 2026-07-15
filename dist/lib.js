@@ -11409,6 +11409,7 @@ class PiAgentSession {
       "--mode",
       "rpc",
       "--no-extensions",
+      "--no-skills",
       ...providerArgs,
       "--no-session",
       "--offline",
@@ -16751,12 +16752,10 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
     }
   }
   return await new Promise((resolve5, reject) => {
-    const args = ["--mode", "json", "--no-session", "--no-extensions", "--offline", "--no-context-files", "--no-prompt-templates", "--no-themes"];
+    const args = ["--mode", "json", "--no-session", "--no-extensions", "--no-skills", "--offline", "--no-context-files", "--no-prompt-templates", "--no-themes"];
     const toolsFlag = resolvePermissionTools({ level: spec.specialist.execution.permission_required });
     if (toolsFlag)
       args.push("--tools", toolsFlag);
-    if (skillPaths.length === 0)
-      args.push("--no-skills");
     for (const skillPath of skillPaths)
       args.push("--skill", skillPath);
     args.push("--model", model);
