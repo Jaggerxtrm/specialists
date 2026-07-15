@@ -626,6 +626,7 @@ function bodyForTimelineEvent(
   if (event.type === 'run_start') {
     const originSource = deriveOriginSource(context?.spawnOrigin, context?.rootRuntimeOrigin);
     const originVerified = deriveOriginVerified(context?.rootRuntimeOrigin);
+    const rootOriginSource = deriveOriginSourceFromRoot(context?.rootRuntimeOrigin);
     return {
       legacy_timeline_event: event,
       specialist: stringField(event, 'specialist'),
@@ -639,12 +640,11 @@ function bodyForTimelineEvent(
           : originSource === 'xtmux-context'
             ? 'foreground'
             : originSource === 'child-of-specialist'
-              // Approximate: if the root origin was propagated, we came from a
-              // background chain; otherwise treat as foreground. F4 fixture
-              // verifies this against the A → J1 (background) → J2 case.
-              ? (deriveOriginSourceFromRoot(context?.rootRuntimeOrigin) === 'propagated'
-                  ? 'background'
-                  : 'foreground')
+              ? rootOriginSource === 'propagated'
+                ? 'background'
+                : rootOriginSource === 'xtmux-context'
+                  ? 'foreground'
+                  : 'unknown'
               : 'unknown',
       origin_source: originSource,
       origin_verified: originVerified,

@@ -12470,11 +12470,12 @@ function bodyForTimelineEvent(event, context) {
   if (event.type === "run_start") {
     const originSource = deriveOriginSource(context?.spawnOrigin, context?.rootRuntimeOrigin);
     const originVerified = deriveOriginVerified(context?.rootRuntimeOrigin);
+    const rootOriginSource = deriveOriginSourceFromRoot(context?.rootRuntimeOrigin);
     return {
       legacy_timeline_event: event,
       specialist: stringField(event, "specialist"),
       bead_id: stringField(event, "bead_id"),
-      launch_mode: originSource === "propagated" ? "background" : originSource === "xtmux-context" ? "foreground" : originSource === "child-of-specialist" ? deriveOriginSourceFromRoot(context?.rootRuntimeOrigin) === "propagated" ? "background" : "foreground" : "unknown",
+      launch_mode: originSource === "propagated" ? "background" : originSource === "xtmux-context" ? "foreground" : originSource === "child-of-specialist" ? rootOriginSource === "propagated" ? "background" : rootOriginSource === "xtmux-context" ? "foreground" : "unknown" : "unknown",
       origin_source: originSource,
       origin_verified: originVerified
     };
