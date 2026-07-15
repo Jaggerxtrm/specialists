@@ -190,4 +190,22 @@ describe('renderTaskPrompt — /skill: prefix baked into initial_prompt', () => 
       expect(out.initial_prompt.startsWith(helper)).toBe(true);
     }
   });
+
+  it('reviewer path: prefix wraps task body, execution hook still appended before hash', () => {
+    // Reviewer sets appendExecutionContext (diff context) AND has declared skills.
+    // Order must be: [skill_prefix][task_body][exec_context] — hash covers all three.
+    const s = spec('$prompt', {
+      execution: { bare: false, interactive: true },
+      skills: { paths: ['x/using-specialists/SKILL.md'] },
+    });
+    const out = renderTaskPrompt({
+      ...base,
+      specialist: s,
+      surface: 'pi',
+      appendExecutionContext: (task) => `${task}\n\nDIFF CONTEXT`,
+    });
+    expect(out.initial_prompt.startsWith('/skill:using-specialists\n\n')).toBe(true);
+    expect(out.initial_prompt.endsWith('DIFF CONTEXT')).toBe(true);
+    expect(out.prompt_hash).toBe(createHash('sha256').update(out.initial_prompt).digest('hex').slice(0, 16));
+  });
 });
