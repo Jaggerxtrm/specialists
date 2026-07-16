@@ -156,6 +156,29 @@ describe('buildSkillPrefix', () => {
     expect(buildSkillPrefix(s, 'claude')).toBe('/using-specialists\n/pi-quick\n\n');
   });
 
+  it('accepts skill-creator on both surfaces', () => {
+    const s = spec('$prompt', { skills: { paths: ['a/skill-creator/SKILL.md'] } });
+    expect(buildSkillPrefix(s, 'claude')).toBe('/skill-creator\n\n');
+    expect(buildSkillPrefix(s, 'pi')).toBe('/skill:skill-creator\n\n');
+  });
+
+  it('rejects newline, control, and leading-punctuation skill names without reflecting them', () => {
+    const paths = [
+      'a/evil\nname/SKILL.md',
+      'a/evil\nname.md',
+      'a/evil\u0000name.md',
+      'a/-bad.md',
+      'a/.bad.md',
+      'a/_bad.md',
+    ];
+    for (const path of paths) {
+      for (const surface of ['claude', 'pi'] as const) {
+        expect(() => buildSkillPrefix(spec('$prompt', { skills: { paths: [path] } }), surface))
+          .toThrow('Invalid skill name derived from skills.paths');
+      }
+    }
+  });
+
   it('preserves skills.paths declaration order and dedups by derived name', () => {
     const s = spec('$prompt', {
       skills: { paths: ['x/foo/SKILL.md', 'y/bar.md', 'z/foo/SKILL.md'] },

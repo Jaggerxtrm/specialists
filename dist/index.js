@@ -22507,6 +22507,9 @@ function buildSkillPrefix(specialist, surface) {
   const names = [];
   for (const p of paths) {
     const n = deriveSkillName(p);
+    if (!SKILL_NAME_PATTERN.test(n)) {
+      throw new Error("Invalid skill name derived from skills.paths");
+    }
     if (seen.has(n))
       continue;
     seen.add(n);
@@ -22614,10 +22617,11 @@ ${mandatoryRulesBlock}`;
     resolvedPrompt
   };
 }
-var MANDATORY_RULES_TOKEN_LIMIT = 2000;
+var MANDATORY_RULES_TOKEN_LIMIT = 2000, SKILL_NAME_PATTERN;
 var init_task_prompt = __esm(() => {
   init_mandatory_rules();
   init_beads();
+  SKILL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 });
 
 // src/pi/backendMap.ts

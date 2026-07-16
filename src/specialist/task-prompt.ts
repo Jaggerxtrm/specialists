@@ -8,6 +8,7 @@ import type { Specialist } from './schema.js';
 
 /** MANDATORY_RULES are dropped above this budget rather than truncated (sp run contract). */
 const MANDATORY_RULES_TOKEN_LIMIT = 2000;
+const SKILL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export type Surface = 'pi' | 'claude';
 
@@ -37,6 +38,9 @@ export function buildSkillPrefix(specialist: Specialist['specialist'], surface: 
   const names: string[] = [];
   for (const p of paths) {
     const n = deriveSkillName(p);
+    if (!SKILL_NAME_PATTERN.test(n)) {
+      throw new Error('Invalid skill name derived from skills.paths');
+    }
     if (seen.has(n)) continue;
     seen.add(n);
     names.push(n);
