@@ -35,7 +35,10 @@ jobs:
       - name: Install semgrep
         run: |
           SEMGREP_VERSION=1.99.0
+          SETUPTOOLS_VERSION=80.9.0
           python3 -m venv /tmp/semgrep-venv
+          # Semgrep 1.99 imports pkg_resources; setuptools 81+ no longer ships it.
+          /tmp/semgrep-venv/bin/pip install --quiet "setuptools==${SETUPTOOLS_VERSION}"
           /tmp/semgrep-venv/bin/pip install --quiet "semgrep==${SEMGREP_VERSION}"
           /tmp/semgrep-venv/bin/semgrep --version
 

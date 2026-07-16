@@ -188,6 +188,11 @@ describe('pull_request workflow trust boundary', () => {
     expect(findTrustViolations(workflow)).toContain('fixture/check: pull_request runner cannot be resolved safely');
   });
 
+  it('allows read-only pull request permission', () => {
+    const workflow = fixtureWith((source) => source.replace('  contents: read\n', '  contents: read\n  pull-requests: read\n'));
+    expect(findTrustViolations(workflow)).toEqual([]);
+  });
+
   it.each([
     ['workflow write permission', (source: string) => source.replace('contents: read', 'contents: write'), 'workflow grants write permission'],
     ['job write permission', (source: string) => source.replace('    runs-on: ubuntu-latest', '    permissions:\n      contents: write\n    runs-on: ubuntu-latest'), 'job grants write permission'],
