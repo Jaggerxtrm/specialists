@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { parse as parseYaml } from 'yaml';
 
 const require = createRequire(import.meta.url);
 const {
@@ -27,6 +32,47 @@ function buildReport(vulnerability: Record<string, unknown>) {
       },
     ],
   };
+}
+
+function protectedScanScript(): string {
+  const workflow = parseYaml(readFileSync('.github/workflows/osv-scanner.yml', 'utf8')) as {
+    jobs: { 'protected-scan': { steps: Array<{ name: string; run?: string }> } };
+  };
+  const script = workflow.jobs['protected-scan'].steps
+    .find((step) => step.name === 'Scan protected branches / schedule')?.run;
+  if (!script) throw new Error('protected OSV scan script not found');
+  return script;
+}
+
+function runProtectedScan(report: string, options: { scannerStatus?: number; classifierFailure?: boolean } = {}) {
+  const fixtureDir = mkdtempSync(join(tmpdir(), 'osv-workflow-gate-'));
+  const binDir = join(fixtureDir, 'bin');
+  const fixture = join(fixtureDir, 'report.json');
+  const scanner = join(binDir, 'osv-scanner');
+  const node = join(binDir, 'node');
+
+  try {
+    mkdirSync(binDir);
+    writeFileSync(fixture, report);
+    writeFileSync(scanner, '#!/bin/sh\ncat "$OSV_FIXTURE"\nexit "${OSV_STATUS:-0}"\n');
+    writeFileSync(node, `#!/bin/sh\nif [ "\${FORCE_CLASSIFIER_FAILURE:-0}" = 1 ]; then exit 42; fi\nexec ${JSON.stringify(process.execPath)} "$@"\n`);
+    chmodSync(scanner, 0o755);
+    chmodSync(node, 0o755);
+
+    return spawnSync('bash', ['-c', protectedScanScript()], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        FORCE_CLASSIFIER_FAILURE: options.classifierFailure ? '1' : '0',
+        OSV_FIXTURE: fixture,
+        OSV_STATUS: String(options.scannerStatus ?? 0),
+        PATH: `${binDir}:${process.env.PATH ?? ''}`,
+      },
+    });
+  } finally {
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }
 }
 
 describe('osv security forced classifier', () => {
@@ -115,5 +161,45 @@ describe('osv security forced classifier', () => {
     expect(findings[0]?.packageName).toBe('vite');
     expect(findings[0]?.ecosystem).toBe('npm');
     expect(extractMaxCvssScore(findings[0]!.vulnerability)).toBe(9.1);
+  });
+});
+
+describe('protected OSV workflow gate', () => {
+  it('does not let advisory scanner status override PASS_WITH_NOTES', () => {
+    const result = runProtectedScan(JSON.stringify(buildReport({
+      id: 'GHSA-advisory',
+      severity: [{ type: 'CVSS_V3', score: '7.2' }],
+    })), { scannerStatus: 1 });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('"verdict":"PASS_WITH_NOTES"');
+  });
+
+  it('blocks SECURITY_FORCED findings', () => {
+    const result = runProtectedScan(JSON.stringify(buildReport({
+      id: 'GHSA-critical',
+      severity: [{ type: 'CVSS_V3', score: '9.8' }],
+    })), { scannerStatus: 1 });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toContain('"verdict":"SECURITY_FORCED"');
+  });
+
+  it.each([
+    ['malformed JSON', '{'],
+    ['empty scanner output', ''],
+  ])('blocks %s', (_case, report) => {
+    expect(runProtectedScan(report).status).not.toBe(0);
+  });
+
+  it('blocks scanner operational errors even when the classifier would pass', () => {
+    const result = runProtectedScan('{"results":[]}', { scannerStatus: 128 });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('non-scan status 128');
+  });
+
+  it('blocks classifier process failure', () => {
+    expect(runProtectedScan('{"results":[]}', { classifierFailure: true }).status).not.toBe(0);
   });
 });

@@ -161,6 +161,23 @@ describe('forensicEventFromTimelineEvent — run_start enrichment', () => {
     expect(ev.correlation.parent_job_id).toBe('j1');
   });
 
+  it.each([
+    ['propagated', { ...VALID_ORIGIN, capture_source: 'propagated' }, 'background'],
+    ['xtmux-context', VALID_ORIGIN, 'foreground'],
+    ['missing', undefined, 'unknown'],
+    ['unknown', { ...VALID_ORIGIN, capture_source: 'future-source' }, 'unknown'],
+  ] as const)('maps a child with %s root origin to the expected launch mode', (_rootState, rootRuntimeOrigin, launchMode) => {
+    const ev = forensicEventFromTimelineEvent(RUN_START, {
+      ...BASE_CONTEXT,
+      jobId: 'j2',
+      parentJobId: 'j1',
+      spawnOrigin: { kind: 'specialist.job', parent_job_id: 'j1' },
+      rootRuntimeOrigin,
+    });
+
+    expect(ev.body.launch_mode).toBe(launchMode);
+  });
+
   it('omits links entirely when no origin present', () => {
     const ev = forensicEventFromTimelineEvent(RUN_START, BASE_CONTEXT);
     expect(ev.links).toBeUndefined();

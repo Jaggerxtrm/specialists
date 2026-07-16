@@ -104,7 +104,7 @@ jobs:
             `- total findings: **${details.totalFindings}**`,
             `- SECURITY_FORCED findings: **${details.securityForcedCount}**`,
             '- PR policy: advisory unless a SECURITY_FORCED finding is present.',
-            '- Push to main/master and the weekly schedule remain hard gates on any finding.',
+            '- Push to main/master and the weekly schedule block SECURITY_FORCED or invalid classifier results.',
             '',
             `Approximation note: ${details.approximation}`,
             '',
@@ -180,9 +180,30 @@ jobs:
           osv-scanner scan source --recursive --no-resolve --format json . > /tmp/osv-scan.json
           status=$?
           set -e
+          case "$status" in
+            0|1) ;;
+            *)
+              echo "osv-scanner exited with non-scan status $status" >&2
+              exit "$status"
+              ;;
+          esac
           if [[ ! -s /tmp/osv-scan.json ]]; then
             echo "osv-scanner did not emit JSON output" >&2
             exit 1
           fi
-          node scripts/osv-security-forced-classifier.cjs --input /tmp/osv-scan.json
-          exit "$status"
+          summary="$(node scripts/osv-security-forced-classifier.cjs --input /tmp/osv-scan.json)"
+          echo "$summary"
+          verdict="$(jq -er '.verdict' <<< "$summary")"
+          case "$verdict" in
+            PASS|PASS_WITH_NOTES)
+              echo "osv-scanner exit code $status accepted by classifier verdict $verdict"
+              ;;
+            SECURITY_FORCED)
+              echo "SECURITY_FORCED findings detected; blocking protected branch." >&2
+              exit 1
+              ;;
+            *)
+              echo "Unexpected OSV classifier verdict: $verdict" >&2
+              exit 1
+              ;;
+          esac
