@@ -1,5 +1,8 @@
 name: package-payload
 
+permissions:
+  contents: read
+
 on:
   pull_request:
     paths:
@@ -12,11 +15,16 @@ on:
 
 jobs:
   changes:
-    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["self-hosted","linux","mercury-lite","specialists"]') }}
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
     outputs:
       package_payload: ${{ steps.filter.outputs.package_payload }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: dorny/paths-filter@v4
         id: filter
         with:
@@ -32,9 +40,11 @@ jobs:
   payload-contract:
     needs: changes
     if: needs.changes.outputs.package_payload == 'true'
-    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["self-hosted","linux","mercury-lite","specialists"]') }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: '24'
@@ -84,9 +94,11 @@ jobs:
   packed-smoke:
     needs: changes
     if: needs.changes.outputs.package_payload == 'true'
-    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["self-hosted","linux","mercury-lite","specialists"]') }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: '24'
