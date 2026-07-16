@@ -259,7 +259,7 @@ Reference schema and examples: [`docs/authoring.md`](authoring.md)
 - same fallback-model behavior
 - same thinking-level forwarding
 - `prompt.system` becomes `--system-prompt` on `pi` (full override, not append)
-- trusted `skills.paths` and `prompt.skill_inherit` are forwarded as `--skill`; if none are allowed, child gets `--no-skills`
+- child always gets `--no-skills` (isolates ambient global pool); trusted `skills.paths` and `prompt.skill_inherit` are then re-added via `--skill` — the declared list defines the discovery pool exactly
 - same output-schema validation behavior
 - stdout cap defaults to 32MB; override with `SPECIALISTS_SCRIPT_STDOUT_LIMIT_BYTES` or `execution.stdout_limit_bytes`
 - `template_variable_missing` if template references missing `$var`

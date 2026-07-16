@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
-import { renderTaskPrompt } from '../../src/specialist/task-prompt.js';
+import { renderTaskPrompt, buildSkillPrefix, deriveSkillName } from '../../src/specialist/task-prompt.js';
 import { buildBeadContext, type BeadRecord } from '../../src/specialist/beads.js';
 import type { Specialist } from '../../src/specialist/schema.js';
 
@@ -125,5 +125,87 @@ describe('renderTaskPrompt', () => {
       fallbackPrompt: () => 'ad-hoc task',
     });
     expect(out.initial_prompt).toBe('ad-hoc task');
+  });
+});
+
+// unitAI-qeguh — turn-1 /skill: composition, sp/xt parity (unitAI-6639v.1).
+describe('buildSkillPrefix', () => {
+  it('derives folder name for /SKILL.md and stem for bare .md', () => {
+    expect(deriveSkillName('config/skills/using-specialists/SKILL.md')).toBe('using-specialists');
+    expect(deriveSkillName('config/skills/pi-quick.md')).toBe('pi-quick');
+  });
+
+  it('emits empty string when specialist declares no skills', () => {
+    const s = spec('$prompt');
+    expect(buildSkillPrefix(s, 'pi')).toBe('');
+    expect(buildSkillPrefix(s, 'claude')).toBe('');
+  });
+
+  it('uses / delimiters per surface: pi=/skill: claude=/skill-', () => {
+    const s = spec('$prompt', { skills: { paths: ['a/b/using-specialists/SKILL.md', 'a/b/pi-quick.md'] } });
+    expect(buildSkillPrefix(s, 'pi')).toBe('/skill:using-specialists /skill:pi-quick\n\n');
+    expect(buildSkillPrefix(s, 'claude')).toBe('/skill-using-specialists /skill-pi-quick\n\n');
+  });
+
+  it('preserves skills.paths declaration order and dedups by derived name', () => {
+    const s = spec('$prompt', {
+      skills: { paths: ['x/foo/SKILL.md', 'y/bar.md', 'z/foo/SKILL.md'] },
+    });
+    expect(buildSkillPrefix(s, 'pi')).toBe('/skill:foo /skill:bar\n\n');
+  });
+});
+
+describe('renderTaskPrompt — /skill: prefix baked into initial_prompt', () => {
+  it('bakes prefix at position 0, then the prior task body', () => {
+    const s = spec('$prompt', { skills: { paths: ['x/using-specialists/SKILL.md'] } });
+    const out = renderTaskPrompt({ ...base, specialist: s, surface: 'pi' });
+    expect(out.skillPrefix).toBe('/skill:using-specialists\n\n');
+    expect(out.initial_prompt.startsWith('/skill:using-specialists\n\n')).toBe(true);
+    expect(out.initial_prompt).toContain(BEAD.title);
+  });
+
+  it('emits no prefix (position-0 fallback surface) when no declared skills', () => {
+    const out = renderTaskPrompt({ ...base, specialist: spec('$prompt'), surface: 'pi' });
+    expect(out.skillPrefix).toBe('');
+    // Position 0 is the bead body, as before qeguh — core's position-0 fallback owns it.
+    expect(out.initial_prompt.indexOf(BEAD.title)).toBeGreaterThanOrEqual(0);
+    expect(out.initial_prompt.startsWith('/skill')).toBe(false);
+  });
+
+  it('is idempotent: repeated renders produce byte-identical output', () => {
+    const s = spec('$prompt', { skills: { paths: ['x/foo/SKILL.md', 'y/bar.md'] } });
+    const a = renderTaskPrompt({ ...base, specialist: s, surface: 'claude' });
+    const b = renderTaskPrompt({ ...base, specialist: s, surface: 'claude' });
+    expect(a.initial_prompt).toBe(b.initial_prompt);
+    expect(a.prompt_hash).toBe(b.prompt_hash);
+    expect(a.skillPrefix).toBe(b.skillPrefix);
+  });
+
+  it('parity: buildSkillPrefix output === prefix baked into initial_prompt', () => {
+    const s = spec('$prompt', { skills: { paths: ['x/foo/SKILL.md', 'y/bar.md'] } });
+    for (const surface of ['pi', 'claude'] as const) {
+      const out = renderTaskPrompt({ ...base, specialist: s, surface });
+      const helper = buildSkillPrefix(s, surface);
+      expect(out.skillPrefix).toBe(helper);
+      expect(out.initial_prompt.startsWith(helper)).toBe(true);
+    }
+  });
+
+  it('reviewer path: prefix wraps task body, execution hook still appended before hash', () => {
+    // Reviewer sets appendExecutionContext (diff context) AND has declared skills.
+    // Order must be: [skill_prefix][task_body][exec_context] — hash covers all three.
+    const s = spec('$prompt', {
+      execution: { bare: false, interactive: true },
+      skills: { paths: ['x/using-specialists/SKILL.md'] },
+    });
+    const out = renderTaskPrompt({
+      ...base,
+      specialist: s,
+      surface: 'pi',
+      appendExecutionContext: (task) => `${task}\n\nDIFF CONTEXT`,
+    });
+    expect(out.initial_prompt.startsWith('/skill:using-specialists\n\n')).toBe(true);
+    expect(out.initial_prompt.endsWith('DIFF CONTEXT')).toBe(true);
+    expect(out.prompt_hash).toBe(createHash('sha256').update(out.initial_prompt).digest('hex').slice(0, 16));
   });
 });

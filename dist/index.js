@@ -22491,7 +22491,34 @@ function summarizePayloadBreakdown(components) {
 }
 
 // src/specialist/task-prompt.ts
+import { basename as basename2, dirname as dirname4 } from "path";
 import { createHash } from "crypto";
+function deriveSkillName(path) {
+  const base = basename2(path);
+  if (base === "SKILL.md")
+    return basename2(dirname4(path));
+  return base.endsWith(".md") ? base.slice(0, -3) : base;
+}
+function buildSkillPrefix(specialist, surface) {
+  const paths = specialist.skills?.paths ?? [];
+  if (paths.length === 0)
+    return "";
+  const seen = new Set;
+  const names = [];
+  for (const p of paths) {
+    const n = deriveSkillName(p);
+    if (seen.has(n))
+      continue;
+    seen.add(n);
+    names.push(n);
+  }
+  if (names.length === 0)
+    return "";
+  const sep2 = surface === "claude" ? "-" : ":";
+  return `${names.map((n) => `/skill${sep2}${n}`).join(" ")}
+
+`;
+}
 function buildBeadBoundaryInstruction(cwd, worktreeBoundary) {
   const boundary = worktreeBoundary?.trim() || cwd;
   return [
@@ -22563,9 +22590,13 @@ ${mandatoryRulesBlock}`;
   if (!bare && input.appendExecutionContext) {
     renderedTask = input.appendExecutionContext(renderedTask, cwd, variables);
   }
+  const skillPrefix = buildSkillPrefix(specialist, input.surface ?? "pi");
+  if (skillPrefix)
+    renderedTask = `${skillPrefix}${renderedTask}`;
   return {
     initial_prompt: renderedTask,
     prompt_hash: createHash("sha256").update(renderedTask).digest("hex").slice(0, 16),
+    skillPrefix,
     taskTemplateComponent,
     beadContextOwn,
     beadContextParent,
@@ -22792,7 +22823,7 @@ import { createHash as createHash2 } from "crypto";
 import { execFileSync, spawn } from "child_process";
 import { existsSync as existsSync8, mkdirSync as mkdirSync4, readFileSync as readFileSync6, writeFileSync as writeFileSync3 } from "fs";
 import { homedir as homedir2, tmpdir } from "os";
-import { isAbsolute, resolve as resolve3, sep as sep2, join as join7, dirname as dirname4 } from "path";
+import { isAbsolute, resolve as resolve3, sep as sep2, join as join7, dirname as dirname5 } from "path";
 import { pathToFileURL } from "url";
 function loadSharedToolCatalogIndex() {
   if (cachedToolCatalogIndex)
@@ -22845,7 +22876,7 @@ function resolveGlobalNodeModulesDir() {
     process.env.PI_NPM_GLOBAL_DIR,
     process.env.NPM_CONFIG_PREFIX ? join7(process.env.NPM_CONFIG_PREFIX, "lib", "node_modules") : undefined,
     process.env.npm_config_prefix ? join7(process.env.npm_config_prefix, "lib", "node_modules") : undefined,
-    process.env.NVM_BIN ? join7(dirname4(process.env.NVM_BIN), "lib", "node_modules") : undefined,
+    process.env.NVM_BIN ? join7(dirname5(process.env.NVM_BIN), "lib", "node_modules") : undefined,
     join7(homedir2(), ".nvm/versions/node", process.version, "lib", "node_modules")
   ].filter((candidate) => Boolean(candidate));
   return candidates.find((candidate) => existsSync8(candidate));
@@ -23200,6 +23231,7 @@ class PiAgentSession {
       "--mode",
       "rpc",
       "--no-extensions",
+      "--no-skills",
       ...providerArgs,
       "--no-session",
       "--offline",
@@ -23943,14 +23975,14 @@ __export(exports_runner, {
 });
 import { execSync as execSync2, spawnSync as spawnSync4 } from "child_process";
 import { existsSync as existsSync9, readFileSync as readFileSync7 } from "fs";
-import { basename as basename2, resolve as resolve4 } from "path";
+import { basename as basename3, resolve as resolve4 } from "path";
 import { homedir as homedir3 } from "os";
 function runScript(command, cwd) {
   const run = (command ?? "").trim();
   if (!run) {
     return { name: "unknown", output: "Missing script command (expected `run` or legacy `path`).", exitCode: 1 };
   }
-  const scriptName = basename2(run.split(" ")[0]);
+  const scriptName = basename3(run.split(" ")[0]);
   try {
     const output = execSync2(run, { encoding: "utf8", timeout: 30000, cwd });
     return { name: scriptName, output, exitCode: 0 };
@@ -25195,7 +25227,7 @@ var init_runner = __esm(() => {
 
 // src/specialist/hooks.ts
 import { appendFile, mkdir } from "fs/promises";
-import { dirname as dirname5 } from "path";
+import { dirname as dirname6 } from "path";
 
 class HookEmitter {
   tracePath;
@@ -25203,7 +25235,7 @@ class HookEmitter {
   ready;
   constructor(options) {
     this.tracePath = options.tracePath;
-    this.ready = mkdir(dirname5(options.tracePath), { recursive: true }).then(() => {});
+    this.ready = mkdir(dirname6(options.tracePath), { recursive: true }).then(() => {});
   }
   async emit(hook, invocationId, specialistName, specialistVersion, payload) {
     await this.ready;
@@ -25257,11 +25289,11 @@ __export(exports_version, {
 });
 import { createRequire } from "module";
 import { fileURLToPath as fileURLToPath2 } from "url";
-import { dirname as dirname6, join as join9 } from "path";
+import { dirname as dirname7, join as join9 } from "path";
 import { existsSync as existsSync10 } from "fs";
 async function run2() {
   const req = createRequire(import.meta.url);
-  const here = dirname6(fileURLToPath2(import.meta.url));
+  const here = dirname7(fileURLToPath2(import.meta.url));
   const bundlePkgPath = join9(here, "..", "package.json");
   const sourcePkgPath = join9(here, "..", "..", "package.json");
   let pkg;
@@ -25283,7 +25315,7 @@ __export(exports_list_rules, {
   run: () => run3
 });
 import { existsSync as existsSync11, readFileSync as readFileSync8, readdirSync } from "fs";
-import { resolve as resolve5, join as join10, basename as basename3 } from "path";
+import { resolve as resolve5, join as join10, basename as basename4 } from "path";
 function resolvePackageDir(asset) {
   return resolveCanonicalAssetDir(asset) ?? null;
 }
@@ -25516,7 +25548,7 @@ Mandatory rule library (${rules.length} sets, ${specs.length} specialists)
     console.log(`
 Orphan rules (defined but not loaded by any specialist):`);
     for (const r of orphans)
-      console.log(`  ${r.id}  (${basename3(r.source_path)}, tier=${r.source_tier})`);
+      console.log(`  ${r.id}  (${basename4(r.source_path)}, tier=${r.source_tier})`);
   }
 }
 var RULE_TIERS, SPEC_TIERS;
@@ -28869,7 +28901,7 @@ var init_supervisor = __esm(() => {
 // src/cli/version-check.ts
 import { spawnSync as spawnSync8 } from "child_process";
 import { existsSync as existsSync13, mkdirSync as mkdirSync7, readFileSync as readFileSync11, writeFileSync as writeFileSync6 } from "fs";
-import { dirname as dirname7, join as join13 } from "path";
+import { dirname as dirname8, join as join13 } from "path";
 import { createRequire as createRequire2 } from "module";
 function readBundledPackageVersion(requireFn = require2) {
   for (const candidate of ["../package.json", "../../package.json"]) {
@@ -28903,7 +28935,7 @@ function readCachedVersionCheck() {
   return readCache();
 }
 function writeCache(cache) {
-  mkdirSync7(dirname7(CACHE_PATH), { recursive: true });
+  mkdirSync7(dirname8(CACHE_PATH), { recursive: true });
   writeFileSync6(CACHE_PATH, `${JSON.stringify(cache, null, 2)}
 `, "utf8");
 }
@@ -29413,7 +29445,8 @@ async function run5() {
       cwd: args.cwd,
       beadId: args.beadId,
       bead,
-      completedBlockers
+      completedBlockers,
+      surface: args.surface
     });
   } catch (error2) {
     fail("template_render_failed", `task_template render failed: ${error2?.message ?? String(error2)}`);
@@ -29442,6 +29475,7 @@ async function run5() {
     context_depth: args.contextDepth,
     initial_prompt: rendered.initial_prompt,
     prompt_hash: rendered.prompt_hash,
+    skill_prefix: rendered.skillPrefix,
     components,
     mandatory_rules: rendered.mandatoryRules ? {
       sets_loaded: rendered.mandatoryRules.setsLoaded,
@@ -29459,10 +29493,53 @@ var init_render_task = __esm(() => {
   init_task_prompt();
 });
 
+// src/cli/render-skill-prefix.ts
+var exports_render_skill_prefix = {};
+__export(exports_render_skill_prefix, {
+  run: () => run6
+});
+function fail2(code, message) {
+  process.stdout.write(`${JSON.stringify({ ok: false, error: { code, message } }, null, 2)}
+`);
+  process.exit(1);
+}
+async function run6() {
+  const argv = process.argv.slice(3);
+  const positional = [];
+  let surface = "pi";
+  for (let i = 0;i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--surface")
+      surface = argv[++i] ?? "pi";
+    else if (!arg.startsWith("-"))
+      positional.push(arg);
+  }
+  const name = positional[0] ?? "";
+  if (!name)
+    fail2("usage", "Usage: specialists render-skill-prefix <name> [--surface pi|claude]");
+  if (surface !== "pi" && surface !== "claude") {
+    fail2("usage", `--surface must be 'pi' or 'claude' (got '${surface}')`);
+  }
+  const spec = await new SpecialistLoader().get(name).catch((error2) => {
+    fail2("specialist_not_found", `specialist '${name}': ${error2?.message ?? String(error2)}`);
+  });
+  process.stdout.write(`${JSON.stringify({
+    ok: true,
+    specialist: spec.specialist.metadata.name,
+    surface,
+    skill_prefix: buildSkillPrefix(spec.specialist, surface)
+  }, null, 2)}
+`);
+}
+var init_render_skill_prefix = __esm(() => {
+  init_loader();
+  init_task_prompt();
+});
+
 // src/cli/view.ts
 var exports_view = {};
 __export(exports_view, {
-  run: () => run6
+  run: () => run7
 });
 import readline2 from "readline/promises";
 import { stdin as input, stdout as output } from "process";
@@ -29636,7 +29713,7 @@ async function printRaw(summary, loader) {
   }
   console.log(JSON.stringify(spec, null, 2));
 }
-async function run6() {
+async function run7() {
   let args;
   try {
     args = parseArgs4(process.argv.slice(3));
@@ -29710,7 +29787,7 @@ var init_view = __esm(() => {
 // src/cli/models.ts
 var exports_models = {};
 __export(exports_models, {
-  run: () => run7
+  run: () => run8
 });
 import { spawnSync as spawnSync10 } from "child_process";
 function parsePiModels() {
@@ -29748,7 +29825,7 @@ function parseArgs5(argv) {
   }
   return out;
 }
-async function run7() {
+async function run8() {
   const args = parseArgs5(process.argv.slice(3));
   const loader = new SpecialistLoader;
   const specialists = await loader.list();
@@ -29816,11 +29893,11 @@ var init_models = __esm(() => {
 var exports_init = {};
 __export(exports_init, {
   runGlobal: () => runGlobal,
-  run: () => run8
+  run: () => run9
 });
 import { copyFileSync, cpSync, existsSync as existsSync15, lstatSync, mkdirSync as mkdirSync8, readdirSync as readdirSync4, readFileSync as readFileSync13, readlinkSync, renameSync as renameSync3, rmSync as rmSync3, symlinkSync, unlinkSync, writeFileSync as writeFileSync7 } from "fs";
 import { spawnSync as spawnSync11 } from "child_process";
-import { basename as basename4, dirname as dirname8, join as join15, relative, resolve as resolve6 } from "path";
+import { basename as basename5, dirname as dirname9, join as join15, relative, resolve as resolve6 } from "path";
 function ok(msg) {
   console.log(`  ${green4("\u2713")} ${msg}`);
 }
@@ -29887,7 +29964,7 @@ function writeGlobalOverridesGuide(configPath) {
     warn("global overrides guide not found in package; see docs/overrides-guide.md on GitHub");
     return null;
   }
-  const targetPath = join15(dirname8(configPath), "overrides-guide.md");
+  const targetPath = join15(dirname9(configPath), "overrides-guide.md");
   copyFileSync(sourcePath, targetPath);
   return targetPath;
 }
@@ -30066,7 +30143,7 @@ function installProjectHooks(cwd) {
         rewiredLinks++;
         continue;
       }
-      const currentTarget = resolve6(dirname8(claudeHookPath), readlinkSync(claudeHookPath));
+      const currentTarget = resolve6(dirname9(claudeHookPath), readlinkSync(claudeHookPath));
       if (currentTarget !== xtrmDest) {
         unlinkSync(claudeHookPath);
         symlinkSync(relativeTarget, claudeHookPath);
@@ -30130,10 +30207,10 @@ function ensureProjectHookWiring(cwd) {
 }
 function ensureRootSymlink(rootPath, expectedTargetPath) {
   if (!existsSync15(rootPath)) {
-    mkdirSync8(dirname8(rootPath), { recursive: true });
-    const relTarget = relative(dirname8(rootPath), expectedTargetPath);
+    mkdirSync8(dirname9(rootPath), { recursive: true });
+    const relTarget = relative(dirname9(rootPath), expectedTargetPath);
     symlinkSync(relTarget, rootPath);
-    ok(`created ${basename4(dirname8(rootPath))}/${basename4(rootPath)} \u2192 ${relTarget}`);
+    ok(`created ${basename5(dirname9(rootPath))}/${basename5(rootPath)} \u2192 ${relTarget}`);
     return;
   }
   const stats = lstatSync(rootPath);
@@ -30141,7 +30218,7 @@ function ensureRootSymlink(rootPath, expectedTargetPath) {
     throw new Error(`${rootPath} must be a symlink to ${expectedTargetPath}. Aborting.`);
   }
   const linkTarget = readlinkSync(rootPath);
-  const resolvedTarget = resolve6(dirname8(rootPath), linkTarget);
+  const resolvedTarget = resolve6(dirname9(rootPath), linkTarget);
   const resolvedExpected = resolve6(expectedTargetPath);
   if (resolvedTarget === resolvedExpected) {
     return;
@@ -30152,9 +30229,9 @@ function ensureRootSymlink(rootPath, expectedTargetPath) {
   ];
   if (legacyTargets.includes(resolvedTarget)) {
     unlinkSync(rootPath);
-    const relTarget = relative(dirname8(rootPath), expectedTargetPath);
+    const relTarget = relative(dirname9(rootPath), expectedTargetPath);
     symlinkSync(relTarget, rootPath);
-    ok(`rewired ${basename4(dirname8(rootPath))}/${basename4(rootPath)} \u2192 ${relTarget}`);
+    ok(`rewired ${basename5(dirname9(rootPath))}/${basename5(rootPath)} \u2192 ${relTarget}`);
     return;
   }
   throw new Error(`${rootPath} points to ${linkTarget}, expected ${expectedTargetPath}. Aborting.`);
@@ -30166,7 +30243,7 @@ function ensureActiveSkillSymlink(defaultSkillPath, activeLinkPath) {
   } catch (error2) {
     const fileError = error2;
     if (fileError.code === "ENOENT") {
-      const relativeTarget = `../default/${basename4(defaultSkillPath)}`;
+      const relativeTarget = `../default/${basename5(defaultSkillPath)}`;
       symlinkSync(relativeTarget, activeLinkPath, "dir");
       return;
     }
@@ -30175,7 +30252,7 @@ function ensureActiveSkillSymlink(defaultSkillPath, activeLinkPath) {
   if (!stats.isSymbolicLink()) {
     throw new Error(`${activeLinkPath} already exists and is not a symlink.`);
   }
-  const currentTarget = resolve6(dirname8(activeLinkPath), readlinkSync(activeLinkPath));
+  const currentTarget = resolve6(dirname9(activeLinkPath), readlinkSync(activeLinkPath));
   if (currentTarget !== resolve6(defaultSkillPath)) {
     throw new Error(`${activeLinkPath} points to an unexpected target.`);
   }
@@ -30212,7 +30289,7 @@ function installProjectSkills(cwd, syncSkills) {
       const retiredDefaultPath = join15(defaultRoot, entry.name);
       const retiredActivePath = join15(activeRoot, entry.name);
       try {
-        if (lstatSync(retiredActivePath).isSymbolicLink() && resolve6(dirname8(retiredActivePath), readlinkSync(retiredActivePath)) === resolve6(retiredDefaultPath)) {
+        if (lstatSync(retiredActivePath).isSymbolicLink() && resolve6(dirname9(retiredActivePath), readlinkSync(retiredActivePath)) === resolve6(retiredDefaultPath)) {
           unlinkSync(retiredActivePath);
         }
       } catch {}
@@ -30426,7 +30503,7 @@ function validateInitPostconditions(cwd) {
       continue;
     }
     const expectedTarget = resolve6(xtrmHooksDir, hookFile);
-    const resolvedTarget = resolve6(dirname8(claudeHookPath), readlinkSync(claudeHookPath));
+    const resolvedTarget = resolve6(dirname9(claudeHookPath), readlinkSync(claudeHookPath));
     if (resolvedTarget !== expectedTarget) {
       warnings.push(`.claude/hooks/${hookFile} points to unexpected target`);
     }
@@ -30480,7 +30557,7 @@ function validateInitPostconditions(cwd) {
       warnings.push(`${relative(cwd, symlink.linkPath)} is not a symlink`);
       continue;
     }
-    const resolvedTarget = resolve6(dirname8(symlink.linkPath), readlinkSync(symlink.linkPath));
+    const resolvedTarget = resolve6(dirname9(symlink.linkPath), readlinkSync(symlink.linkPath));
     if (resolvedTarget !== resolve6(symlink.expectedTarget)) {
       warnings.push(`${relative(cwd, symlink.linkPath)} points to an unexpected target`);
     }
@@ -30538,7 +30615,7 @@ ${bold5("Done!")}
   console.log(`  ${dim5("\u2022 for preset refs, set model/fallback entries to")} ${yellow5("@preset/cheap")} ${dim5("(or medium, power)")}
 `);
 }
-async function run8(opts = {}) {
+async function run9(opts = {}) {
   if (opts.global) {
     return runGlobal();
   }
@@ -30670,7 +30747,7 @@ Add custom specialists to \`.specialists/user/\` to extend defaults.
 // src/cli/memory.ts
 var exports_memory = {};
 __export(exports_memory, {
-  run: () => run9
+  run: () => run10
 });
 function printUsage2() {
   console.log([
@@ -30684,7 +30761,7 @@ function printUsage2() {
   ].join(`
 `));
 }
-async function run9(args = []) {
+async function run10(args = []) {
   const command = args[0] ?? "sync";
   const force = args.includes("--force");
   const asJson = args.includes("--json");
@@ -30714,10 +30791,10 @@ var init_memory = __esm(() => {
 // src/cli/db.ts
 var exports_db = {};
 __export(exports_db, {
-  run: () => run10
+  run: () => run11
 });
 import { existsSync as existsSync16, mkdirSync as mkdirSync9, readdirSync as readdirSync5, readFileSync as readFileSync14, writeFileSync as writeFileSync8 } from "fs";
-import { dirname as dirname9, join as join16, resolve as resolve7 } from "path";
+import { dirname as dirname10, join as join16, resolve as resolve7 } from "path";
 function formatBytes(bytes) {
   if (bytes < 1024)
     return `${bytes} B`;
@@ -31374,7 +31451,7 @@ function runBenchmarkExport(options) {
       });
     }
     rows.sort((a, b) => a.task_id.localeCompare(b.task_id) || a.executor_job_id.localeCompare(b.executor_job_id));
-    const outputDirectory = dirname9(options.outputPath);
+    const outputDirectory = dirname10(options.outputPath);
     mkdirSync9(outputDirectory, { recursive: true });
     const jsonl = rows.map((row) => JSON.stringify(row)).join(`
 `);
@@ -31407,7 +31484,7 @@ function runSetup() {
   const gitignoreResult = ensureGitignoreHasObservabilityDbEntries(location.gitRoot);
   printSetupResult(setupResult.created, gitignoreResult.changed, location);
 }
-async function run10(argv = process.argv.slice(3)) {
+async function run11(argv = process.argv.slice(3)) {
   const subcommand = argv[0];
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     printDbHelp();
@@ -32332,12 +32409,10 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
     }
   }
   return await new Promise((resolve9, reject) => {
-    const args = ["--mode", "json", "--no-session", "--no-extensions", "--offline", "--no-context-files", "--no-prompt-templates", "--no-themes"];
+    const args = ["--mode", "json", "--no-session", "--no-extensions", "--no-skills", "--offline", "--no-context-files", "--no-prompt-templates", "--no-themes"];
     const toolsFlag = resolvePermissionTools({ level: spec.specialist.execution.permission_required });
     if (toolsFlag)
       args.push("--tools", toolsFlag);
-    if (skillPaths.length === 0)
-      args.push("--no-skills");
     for (const skillPath of skillPaths)
       args.push("--skill", skillPath);
     args.push("--model", model);
@@ -32488,7 +32563,7 @@ var init_script_runner = __esm(() => {
 // src/cli/validate.ts
 var exports_validate = {};
 __export(exports_validate, {
-  run: () => run11,
+  run: () => run12,
   parseArgs: () => parseArgs6,
   ArgParseError: () => ArgParseError3
 });
@@ -32530,7 +32605,7 @@ function formatCompatGuardError(message) {
     return "compatGuard: scripts";
   return `compatGuard: ${message}`;
 }
-async function run11() {
+async function run12() {
   let args;
   try {
     args = parseArgs6(process.argv.slice(3));
@@ -32633,7 +32708,7 @@ var init_validate = __esm(() => {
 // src/cli/edit.ts
 var exports_edit = {};
 __export(exports_edit, {
-  run: () => run12
+  run: () => run13
 });
 import { existsSync as existsSync19, mkdirSync as mkdirSync10, readFileSync as readFileSync16, writeFileSync as writeFileSync9 } from "fs";
 import { spawnSync as spawnSync12 } from "child_process";
@@ -32670,7 +32745,7 @@ function usage() {
   ].join(`
 `);
 }
-function fail2(message) {
+function fail3(message) {
   console.error(message);
   process.exit(1);
 }
@@ -32707,7 +32782,7 @@ function parseArgs7(argv) {
     }
     if (token === "--global") {
       if (scope !== undefined) {
-        fail2(`Error: --global cannot be combined with --scope
+        fail3(`Error: --global cannot be combined with --scope
 
 ${usage()}`);
       }
@@ -32716,13 +32791,13 @@ ${usage()}`);
     }
     if (token === "--scope") {
       if (global) {
-        fail2(`Error: --scope cannot be combined with --global
+        fail3(`Error: --scope cannot be combined with --global
 
 ${usage()}`);
       }
       const rawScope = argv[++i];
       if (rawScope !== "default" && rawScope !== "user") {
-        fail2(`Error: --scope must be "default" or "user", got: "${rawScope ?? ""}"`);
+        fail3(`Error: --scope must be "default" or "user", got: "${rawScope ?? ""}"`);
       }
       scope = rawScope;
       continue;
@@ -32738,7 +32813,7 @@ ${usage()}`);
     if (token === "--name") {
       const rawName = argv[++i];
       if (!rawName || rawName.startsWith("--")) {
-        fail2(`Error: --name requires a specialist name
+        fail3(`Error: --name requires a specialist name
 
 ${usage()}`);
       }
@@ -32748,7 +32823,7 @@ ${usage()}`);
     if (token === "--preset") {
       const presetName = argv[++i];
       if (!presetName || presetName.startsWith("--")) {
-        fail2(`Error: --preset requires a preset name
+        fail3(`Error: --preset requires a preset name
 
 ${usage()}`);
       }
@@ -32759,7 +32834,7 @@ ${usage()}`);
     if (token === "--fork-from") {
       const rawForkFrom = argv[++i];
       if (!rawForkFrom || rawForkFrom.startsWith("--")) {
-        fail2(`Error: --fork-from requires a specialist name
+        fail3(`Error: --fork-from requires a specialist name
 
 ${usage()}`);
       }
@@ -32769,7 +32844,7 @@ ${usage()}`);
     if (token === "--file") {
       const rawFilePath = argv[++i];
       if (!rawFilePath || rawFilePath.startsWith("--")) {
-        fail2(`Error: --file requires a path
+        fail3(`Error: --file requires a path
 
 ${usage()}`);
       }
@@ -32780,7 +32855,7 @@ ${usage()}`);
       action = "get";
       const rawPath = argv[++i];
       if (!rawPath || rawPath.startsWith("--")) {
-        fail2(`Error: --get requires a dot-path
+        fail3(`Error: --get requires a dot-path
 
 ${usage()}`);
       }
@@ -32792,7 +32867,7 @@ ${usage()}`);
       const rawPath = argv[++i];
       const rawValue = argv[++i];
       if (!rawPath || rawPath.startsWith("--") || rawValue === undefined || rawValue.startsWith("--")) {
-        fail2(`Error: --set requires <dot.path> and <value>
+        fail3(`Error: --set requires <dot.path> and <value>
 
 ${usage()}`);
       }
@@ -32807,11 +32882,11 @@ ${usage()}`);
       path = aliasPath;
       value = argv[++i];
       if (value === undefined || value === "") {
-        fail2(`Error: --${legacyField} requires a value`);
+        fail3(`Error: --${legacyField} requires a value`);
       }
       continue;
     }
-    fail2(`Error: unknown option: ${token}
+    fail3(`Error: unknown option: ${token}
 
 ${usage()}`);
   }
@@ -32830,21 +32905,21 @@ ${usage()}`);
     action = pendingArrayOp;
   }
   if (action === "get" && value !== undefined) {
-    fail2(`Error: --get does not accept a value
+    fail3(`Error: --get does not accept a value
 
 ${usage()}`);
   }
   if (global) {
     if (all)
-      fail2("Error: --global cannot be combined with --all");
+      fail3("Error: --global cannot be combined with --all");
     if (preset)
-      fail2("Error: --global cannot be combined with --preset");
+      fail3("Error: --global cannot be combined with --preset");
     if (forkFrom)
-      fail2("Error: --global cannot be combined with --fork-from");
+      fail3("Error: --global cannot be combined with --fork-from");
     if (filePath)
-      fail2("Error: --global cannot be combined with --file");
+      fail3("Error: --global cannot be combined with --file");
     if (pendingArrayOp)
-      fail2("Error: --global does not support --append/--remove");
+      fail3("Error: --global does not support --append/--remove");
     if (!path) {
       return { all: false, dryRun, action: "set", global };
     }
@@ -32852,14 +32927,14 @@ ${usage()}`);
       return { all: false, dryRun, action, path, value, global };
     }
     if (value === undefined || value === "") {
-      fail2(`Error: missing value
+      fail3(`Error: missing value
 
 ${usage()}`);
     }
     return { all: false, dryRun, action, path, value, global };
   }
   if (!all && !name) {
-    fail2(`Error: missing specialist name. Use <name> or --all
+    fail3(`Error: missing specialist name. Use <name> or --all
 
 ${usage()}`);
   }
@@ -32867,20 +32942,20 @@ ${usage()}`);
     return { name, all, scope, dryRun, action, path, value, filePath, preset, forkFrom, global };
   }
   if (!path) {
-    fail2(`Error: missing dot-path
+    fail3(`Error: missing dot-path
 
 ${usage()}`);
   }
   if (action !== "get" && !filePath && (value === undefined || value === "")) {
-    fail2(`Error: missing value
+    fail3(`Error: missing value
 
 ${usage()}`);
   }
   if (action === "get" && (pendingArrayOp || filePath)) {
-    fail2("Error: --get cannot be combined with --append/--remove/--file");
+    fail3("Error: --get cannot be combined with --append/--remove/--file");
   }
   if (filePath && !existsSync19(filePath)) {
-    fail2(`Error: file not found: ${filePath}`);
+    fail3(`Error: file not found: ${filePath}`);
   }
   return { name, all, scope, dryRun, action, path, value, filePath, preset, forkFrom, global };
 }
@@ -32903,18 +32978,18 @@ function resolvePath2(path) {
   const normalizedPath = path.startsWith("specialist.") ? path : `specialist.${path}`;
   const segments = normalizedPath.split(".").map((part) => part.trim()).filter(Boolean);
   if (segments.length === 0) {
-    fail2(`Error: invalid path: ${path}`);
+    fail3(`Error: invalid path: ${path}`);
   }
   let schema = SpecialistSchema;
   for (const segment of segments) {
     const unwrapped = unwrapSchema(schema);
     if (!(unwrapped instanceof ZodObject)) {
-      fail2(`Error: invalid path "${path}" ("${segment}" is not nested object field)`);
+      fail3(`Error: invalid path "${path}" ("${segment}" is not nested object field)`);
     }
     const shape = unwrapped.shape;
     if (!(segment in shape)) {
       const available = Object.keys(shape).sort().join(", ");
-      fail2(`Error: invalid path "${path}". Unknown segment "${segment}". Available: ${available}`);
+      fail3(`Error: invalid path "${path}". Unknown segment "${segment}". Available: ${available}`);
     }
     schema = shape[segment];
   }
@@ -32929,7 +33004,7 @@ function parseJsonValue(rawValue) {
     return JSON.parse(rawValue);
   } catch (error2) {
     const message = error2 instanceof Error ? error2.message : String(error2);
-    fail2(`Error: value must be valid JSON: ${message}`);
+    fail3(`Error: value must be valid JSON: ${message}`);
   }
 }
 function parseBoolean(rawValue) {
@@ -32938,13 +33013,13 @@ function parseBoolean(rawValue) {
     return true;
   if (lowered === "false")
     return false;
-  fail2("Error: value must be a boolean (true/false)");
+  fail3("Error: value must be a boolean (true/false)");
 }
 function parseArray(rawValue, elementSchema) {
   if (rawValue.trim().startsWith("[")) {
     const parsed = parseJsonValue(rawValue);
     if (!Array.isArray(parsed)) {
-      fail2("Error: expected JSON array for array field");
+      fail3("Error: expected JSON array for array field");
     }
     return parsed.map((item) => coerceValue(elementSchema, typeof item === "string" ? item : JSON.stringify(item)));
   }
@@ -32956,14 +33031,14 @@ function coerceUnion(schema, rawValue) {
       return coerceValue(option, rawValue);
     } catch {}
   }
-  fail2(`Error: value "${rawValue}" does not match any supported type for this field`);
+  fail3(`Error: value "${rawValue}" does not match any supported type for this field`);
 }
 function coerceValue(schema, rawValue) {
   const unwrapped = unwrapSchema(schema);
   if (unwrapped instanceof ZodNumber) {
     const parsed = Number(rawValue);
     if (!Number.isFinite(parsed)) {
-      fail2(`Error: value must be a number, got: ${rawValue}`);
+      fail3(`Error: value must be a number, got: ${rawValue}`);
     }
     return parsed;
   }
@@ -32973,7 +33048,7 @@ function coerceValue(schema, rawValue) {
   if (unwrapped instanceof ZodEnum) {
     const values = unwrapped.options;
     if (!values.includes(rawValue)) {
-      fail2(`Error: invalid enum value "${rawValue}". Allowed: ${values.join(", ")}`);
+      fail3(`Error: invalid enum value "${rawValue}". Allowed: ${values.join(", ")}`);
     }
     return rawValue;
   }
@@ -32986,7 +33061,7 @@ function coerceValue(schema, rawValue) {
   if (unwrapped instanceof ZodRecord || unwrapped instanceof ZodObject) {
     const parsed = parseJsonValue(rawValue);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      fail2("Error: value must be a JSON object");
+      fail3("Error: value must be a JSON object");
     }
     return parsed;
   }
@@ -32998,7 +33073,7 @@ function coerceValue(schema, rawValue) {
 function normalizeArrayValues(schema, rawValue) {
   const unwrapped = unwrapSchema(schema);
   if (!(unwrapped instanceof ZodArray)) {
-    fail2("Error: --append/--remove can only be used with array fields");
+    fail3("Error: --append/--remove can only be used with array fields");
   }
   return parseArray(rawValue, unwrapped.element);
 }
@@ -33017,7 +33092,7 @@ function getRawValue(args, resolvedPath) {
     return args.value;
   }
   if (!MULTILINE_FILE_PATHS.has(resolvedPath.normalizedPath)) {
-    fail2(`Error: --file is only supported for: ${Array.from(MULTILINE_FILE_PATHS).join(", ")}`);
+    fail3(`Error: --file is only supported for: ${Array.from(MULTILINE_FILE_PATHS).join(", ")}`);
   }
   return readFileSync16(args.filePath, "utf-8");
 }
@@ -33059,7 +33134,7 @@ function applyMutation(jsonDoc, args, resolvedPath) {
   if (ENUM_PATHS.has(resolvedPath.normalizedPath)) {
     const enumSchema = unwrapSchema(resolvedPath.schema);
     if (enumSchema instanceof ZodEnum && !enumSchema.options.includes(String(typedValue))) {
-      fail2(`Error: invalid enum value "${typedValue}". Allowed: ${enumSchema.options.join(", ")}`);
+      fail3(`Error: invalid enum value "${typedValue}". Allowed: ${enumSchema.options.join(", ")}`);
     }
   }
   setAtPath(jsonDoc, resolvedPath.segments, typedValue);
@@ -33089,12 +33164,12 @@ function readJsonFile2(filePath) {
   try {
     const parsed = JSON.parse(readFileSync16(filePath, "utf-8"));
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      fail2(`Error: specialist file must contain a JSON object (${filePath})`);
+      fail3(`Error: specialist file must contain a JSON object (${filePath})`);
     }
     return parsed;
   } catch (error2) {
     const message = error2 instanceof Error ? error2.message : String(error2);
-    fail2(`Error: failed to parse JSON in ${filePath}: ${message}`);
+    fail3(`Error: failed to parse JSON in ${filePath}: ${message}`);
   }
 }
 function createUserFork(source, targetName) {
@@ -33122,7 +33197,7 @@ async function resolveTargets(args) {
   if (!match) {
     const packageMatch = args.scope === undefined ? listedSpecialists.find((specialist) => specialist.name === args.name && specialist.scope === "package") : undefined;
     if (packageMatch) {
-      fail2(`Error: specialist "${args.name}" lives in [package] tier and cannot be edited directly.
+      fail3(`Error: specialist "${args.name}" lives in [package] tier and cannot be edited directly.
 ` + `  Fork to user tier first:
 
 ` + `    ${yellow8(`specialists edit ${args.name} --fork-from ${args.name}`)}
@@ -33130,7 +33205,7 @@ async function resolveTargets(args) {
 ` + `  Then re-run your edit command.`);
     }
     const hint = args.scope ? ` (scope: ${args.scope})` : "";
-    fail2(`Error: specialist "${args.name}" not found${hint}
+    fail3(`Error: specialist "${args.name}" not found${hint}
   Run ${yellow8("specialists list")} to see available specialists`);
   }
   return [match];
@@ -33138,18 +33213,18 @@ async function resolveTargets(args) {
 function resolveGlobalPath(rawPath) {
   const segments = rawPath.split(".").map((part) => part.trim()).filter(Boolean);
   if (segments.length < 2) {
-    fail2(`Error: global path must be <specialist>.<field.path>, got: "${rawPath}"`);
+    fail3(`Error: global path must be <specialist>.<field.path>, got: "${rawPath}"`);
   }
   const [specialistName, ...fieldSegments] = segments;
   let schema = GlobalSpecialistOverrideSchema;
   for (const segment of fieldSegments) {
     const unwrapped = unwrapSchema(schema);
     if (!(unwrapped instanceof ZodObject)) {
-      fail2(`Error: invalid global path "${rawPath}" ("${segment}" is not a nested object field)`);
+      fail3(`Error: invalid global path "${rawPath}" ("${segment}" is not a nested object field)`);
     }
     const shape = unwrapped.shape;
     if (!(segment in shape)) {
-      fail2(`Error: invalid global path "${rawPath}". Unknown segment "${segment}". Available: ${Object.keys(shape).sort().join(", ")}`);
+      fail3(`Error: invalid global path "${rawPath}". Unknown segment "${segment}". Available: ${Object.keys(shape).sort().join(", ")}`);
     }
     schema = shape[segment];
   }
@@ -33166,7 +33241,7 @@ function coerceGlobalValue(schema, rawValue) {
   if (unwrapped instanceof ZodNumber) {
     const parsed = Number(rawValue);
     if (!Number.isFinite(parsed)) {
-      fail2(`Error: value must be a number, got: ${rawValue}`);
+      fail3(`Error: value must be a number, got: ${rawValue}`);
     }
     return parsed;
   }
@@ -33175,7 +33250,7 @@ function coerceGlobalValue(schema, rawValue) {
   }
   if (unwrapped instanceof ZodEnum) {
     if (!unwrapped.options.includes(rawValue)) {
-      fail2(`Error: invalid enum value "${rawValue}". Allowed: ${unwrapped.options.join(", ")}`);
+      fail3(`Error: invalid enum value "${rawValue}". Allowed: ${unwrapped.options.join(", ")}`);
     }
     return rawValue;
   }
@@ -33190,23 +33265,23 @@ function coerceGlobalValue(schema, rawValue) {
 function openInEditor(filePath) {
   if (!process.stdin.isTTY) {
     const setCommand = yellow8("specialists edit --global --set <name>.<field.path> <value>");
-    fail2(`Error: --global without a path requires an interactive terminal.
+    fail3(`Error: --global without a path requires an interactive terminal.
 Run ${setCommand} in scripts.`);
   }
   const editor = process.env.EDITOR?.trim() || process.env.VISUAL?.trim() || "vi";
   const result = spawnSync12(editor, [filePath], { stdio: "inherit" });
   if (result.error) {
-    fail2(`Error: failed to launch $EDITOR (${editor}): ${result.error.message}`);
+    fail3(`Error: failed to launch $EDITOR (${editor}): ${result.error.message}`);
   }
   if (result.status !== 0) {
-    fail2(`Error: $EDITOR (${editor}) exited with status ${result.status}`);
+    fail3(`Error: $EDITOR (${editor}) exited with status ${result.status}`);
   }
 }
 async function runGlobalEdit(args) {
   const location = getGlobalUserConfigPath();
   if (!args.path) {
     if (!location.exists) {
-      fail2(`Error: global config not found at ${location.path}. Run ${yellow8("specialists init --global")} first.`);
+      fail3(`Error: global config not found at ${location.path}. Run ${yellow8("specialists init --global")} first.`);
     }
     openInEditor(location.path);
     const content = readFileSync16(location.path, "utf-8");
@@ -33214,7 +33289,7 @@ async function runGlobalEdit(args) {
     if (!validation2.valid) {
       const errorList = validation2.errors.map((e) => `  \u2022 ${e.path}: ${e.message}`).join(`
 `);
-      fail2(`Error: global config failed validation after $EDITOR exit:
+      fail3(`Error: global config failed validation after $EDITOR exit:
 ${errorList}
   Fix the file and re-run.`);
     }
@@ -33224,12 +33299,12 @@ ${errorList}
   const resolvedPath = resolveGlobalPath(args.path);
   const existing = readGlobalUserConfig(location);
   if (existing === null) {
-    fail2(`Error: global config not found at ${location.path}. Run ${yellow8("specialists init --global")} first.`);
+    fail3(`Error: global config not found at ${location.path}. Run ${yellow8("specialists init --global")} first.`);
   }
   const specialistOverride = existing[resolvedPath.specialistName];
   if (specialistOverride === undefined) {
     const available = Object.keys(existing).sort().join(", ");
-    fail2(`Error: specialist "${resolvedPath.specialistName}" not in global config. Available: ${available || "none"}`);
+    fail3(`Error: specialist "${resolvedPath.specialistName}" not in global config. Available: ${available || "none"}`);
   }
   if (args.action === "get") {
     const value = getAtPath(specialistOverride, resolvedPath.fieldSegments);
@@ -33244,7 +33319,7 @@ ${errorList}
   if (!validation.valid) {
     const errorList = validation.errors.map((e) => `  \u2022 ${e.path}: ${e.message}`).join(`
 `);
-    fail2(`Error: change would make the global config invalid:
+    fail3(`Error: change would make the global config invalid:
 ${errorList}`);
   }
   if (args.dryRun) {
@@ -33255,7 +33330,7 @@ ${errorList}`);
   writeFileSync9(location.path, updatedJson, "utf-8");
   console.log(`${green7("\u2713")} ${bold9(resolvedPath.specialistName)}.${yellow8(resolvedPath.fieldSegments.join("."))} = ${formatOutputValue(nextValue)}` + dim7(` (${location.path})`));
 }
-async function run12() {
+async function run13() {
   const args = parseArgs7(process.argv.slice(3));
   if (args.global) {
     return runGlobalEdit(args);
@@ -33280,7 +33355,7 @@ async function run12() {
     const preset = presets[args.preset];
     if (!preset) {
       const available = Object.keys(presets).join(", ");
-      fail2(`Error: preset "${args.preset}" not found. Available: ${available || "none"}`);
+      fail3(`Error: preset "${args.preset}" not found. Available: ${available || "none"}`);
     }
     const targets2 = await resolveTargets(args);
     for (const target of targets2) {
@@ -33310,13 +33385,13 @@ async function run12() {
     const sourceLoader = new SpecialistLoader;
     const source = (await sourceLoader.list()).find((specialist) => specialist.name === args.forkFrom);
     if (!source)
-      fail2(`Error: fork source not found: ${args.forkFrom}`);
+      fail3(`Error: fork source not found: ${args.forkFrom}`);
     targets = [createUserFork(source, args.name)];
   } else if (targets.length === 1 && targets[0].scope !== "user") {
     targets = [createUserFork(targets[0], args.name)];
   }
   if (targets.length === 0) {
-    fail2("Error: no specialists found");
+    fail3("Error: no specialists found");
   }
   for (const target of targets) {
     const raw = readFileSync16(target.filePath, "utf-8");
@@ -33324,12 +33399,12 @@ async function run12() {
     try {
       const parsed = JSON.parse(raw);
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-        fail2(`Error: specialist file must contain a JSON object (${target.filePath})`);
+        fail3(`Error: specialist file must contain a JSON object (${target.filePath})`);
       }
       doc2 = parsed;
     } catch (error2) {
       const message = error2 instanceof Error ? error2.message : String(error2);
-      fail2(`Error: failed to parse JSON in ${target.filePath}: ${message}`);
+      fail3(`Error: failed to parse JSON in ${target.filePath}: ${message}`);
     }
     if (args.action === "get") {
       const value = getAtPath(doc2, resolvedPath.segments);
@@ -33542,11 +33617,11 @@ var init_resolution_diagnostics = __esm(() => {
 // src/cli/config.ts
 var exports_config = {};
 __export(exports_config, {
-  run: () => run13
+  run: () => run14
 });
 import { readFileSync as readFileSync17 } from "fs";
 import { spawnSync as spawnSync13 } from "child_process";
-import { dirname as dirname10, join as join20 } from "path";
+import { dirname as dirname11, join as join20 } from "path";
 import { fileURLToPath as fileURLToPath3 } from "url";
 function usage2() {
   return [
@@ -33563,7 +33638,7 @@ function usage2() {
   ].join(`
 `);
 }
-function fail3(message) {
+function fail4(message) {
   console.error(message);
   process.exit(1);
 }
@@ -33592,7 +33667,7 @@ function getGitTopLevel(projectDir) {
   return result.stdout.trim() || undefined;
 }
 function getRuntimePackageVersion() {
-  const runtimeDir = dirname10(fileURLToPath3(import.meta.url));
+  const runtimeDir = dirname11(fileURLToPath3(import.meta.url));
   const packageJsonPath = runtimeDir.includes("/dist/") ? join20(runtimeDir, "..", "package.json") : join20(runtimeDir, "..", "..", "package.json");
   return readPackageVersion(packageJsonPath);
 }
@@ -33609,16 +33684,16 @@ function shouldWarnAboutSourceMode(projectDir) {
 }
 function showSourceRuntimeUnavailableError(reason) {
   const detail = reason === "bunx-missing" ? "bunx missing" : "tsx missing or failed";
-  fail3(`Unable to run source mode (${detail}). Need bunx + tsx in PATH. Try: bunx tsx src/index.ts config show <specialist> --resolved --from-source`);
+  fail4(`Unable to run source mode (${detail}). Need bunx + tsx in PATH. Try: bunx tsx src/index.ts config show <specialist> --resolved --from-source`);
 }
 function buildEditArgv(argv) {
   const command = argv[0];
   if (command !== "get" && command !== "set") {
-    fail3(usage2());
+    fail4(usage2());
   }
   const key = argv[1];
   if (!key || key.startsWith("--")) {
-    fail3(`Missing key
+    fail4(`Missing key
 
 ${usage2()}`);
   }
@@ -33627,7 +33702,7 @@ ${usage2()}`);
   if (command === "set") {
     const value = argv[2];
     if (value === undefined || value.startsWith("--")) {
-      fail3(`Missing value for set
+      fail4(`Missing value for set
 
 ${usage2()}`);
     }
@@ -33648,13 +33723,13 @@ ${usage2()}`);
     if (token === "--name") {
       const name = argv[++i];
       if (!name || name.startsWith("--")) {
-        fail3("--name requires a specialist name");
+        fail4("--name requires a specialist name");
       }
       translated.unshift(name);
       hasName = true;
       continue;
     }
-    fail3(`Unknown option: ${token}
+    fail4(`Unknown option: ${token}
 
 ${usage2()}`);
   }
@@ -33666,20 +33741,20 @@ ${usage2()}`);
 async function showResolvedConfig(argv) {
   const specialistName = argv[0];
   if (!specialistName || specialistName.startsWith("--")) {
-    fail3(`Missing specialist name
+    fail4(`Missing specialist name
 
 ${usage2()}`);
   }
   const flags = new Set(argv.slice(1));
   for (const flag of flags) {
     if (flag !== "--resolved" && flag !== "--from-source") {
-      fail3(`Unknown option: ${flag}
+      fail4(`Unknown option: ${flag}
 
 ${usage2()}`);
     }
   }
   if (!flags.has("--resolved")) {
-    fail3(`Unknown option: ${argv.slice(1).join(" ")}
+    fail4(`Unknown option: ${argv.slice(1).join(" ")}
 
 ${usage2()}`);
   }
@@ -33712,7 +33787,7 @@ ${usage2()}`);
   const report = await loadResolvedConfigReport({ specialistName, projectDir, catalogsPath });
   console.log(formatResolvedConfigReport(report));
 }
-async function run13() {
+async function run14() {
   const originalArgs = process.argv.slice(3);
   const command = originalArgs[0];
   if (command === "show") {
@@ -33722,7 +33797,7 @@ async function run13() {
   const editArgs = buildEditArgv(originalArgs);
   console.error(`${yellow9("\u26A0 DEPRECATED")} specialists config is deprecated. Use ${yellow9("specialists edit")} instead.`);
   process.argv = [process.argv[0] ?? "node", process.argv[1] ?? "specialists", "edit", ...editArgs];
-  await run12();
+  await run13();
 }
 var yellow9 = (s) => `\x1B[33m${s}\x1B[0m`;
 var init_config = __esm(() => {
@@ -33957,7 +34032,7 @@ function fuzzyFilter(items, query, getText) {
 import { spawn as spawn4 } from "child_process";
 import { readdirSync as readdirSync6, statSync as statSync3 } from "fs";
 import { homedir as homedir5 } from "os";
-import { basename as basename5, dirname as dirname11, join as join21 } from "path";
+import { basename as basename6, dirname as dirname12, join as join21 } from "path";
 function toDisplayPath(value) {
   return value.replace(/\\/g, "/");
 }
@@ -34365,8 +34440,8 @@ class CombinedAutocompleteProvider {
         }
         searchPrefix = "";
       } else {
-        const dir = dirname11(expandedPrefix);
-        const file = basename5(expandedPrefix);
+        const dir = dirname12(expandedPrefix);
+        const file = basename6(expandedPrefix);
         if (rawPrefix.startsWith("~") || expandedPrefix.startsWith("/")) {
           searchDir = dir;
         } else {
@@ -34395,17 +34470,17 @@ class CombinedAutocompleteProvider {
         } else if (displayPrefix.includes("/") || displayPrefix.includes("\\")) {
           if (displayPrefix.startsWith("~/")) {
             const homeRelativeDir = displayPrefix.slice(2);
-            const dir = dirname11(homeRelativeDir);
+            const dir = dirname12(homeRelativeDir);
             relativePath = `~/${dir === "." ? name : join21(dir, name)}`;
           } else if (displayPrefix.startsWith("/")) {
-            const dir = dirname11(displayPrefix);
+            const dir = dirname12(displayPrefix);
             if (dir === "/") {
               relativePath = `/${name}`;
             } else {
               relativePath = `${dir}/${name}`;
             }
           } else {
-            relativePath = join21(dirname11(displayPrefix), name);
+            relativePath = join21(dirname12(displayPrefix), name);
             if (displayPrefix.startsWith("./") && !relativePath.startsWith("./")) {
               relativePath = `./${relativePath}`;
             }
@@ -34444,7 +34519,7 @@ class CombinedAutocompleteProvider {
     }
   }
   scoreEntry(filePath, query, isDirectory) {
-    const fileName = basename5(filePath);
+    const fileName = basename6(filePath);
     const lowerFileName = fileName.toLowerCase();
     const lowerQuery = query.toLowerCase();
     let score = 0;
@@ -34482,7 +34557,7 @@ class CombinedAutocompleteProvider {
       for (const { path: entryPath, isDirectory } of topEntries) {
         const pathWithoutSlash = isDirectory ? entryPath.slice(0, -1) : entryPath;
         const displayPath = scopedQuery ? this.scopedPathForDisplay(scopedQuery.displayBase, pathWithoutSlash) : pathWithoutSlash;
-        const entryName = basename5(pathWithoutSlash);
+        const entryName = basename6(pathWithoutSlash);
         const completionPath = isDirectory ? `${displayPath}/` : displayPath;
         const value = buildCompletionValue(completionPath, {
           isDirectory,
@@ -44725,7 +44800,7 @@ var exports_chat = {};
 __export(exports_chat, {
   startChatEventTailer: () => startChatEventTailer,
   silenceStderrDuringTui: () => silenceStderrDuringTui,
-  run: () => run14,
+  run: () => run15,
   handleSubmittedInput: () => handleSubmittedInput,
   formatChatShow: () => formatChatShow,
   createCleanup: () => createCleanup
@@ -44741,7 +44816,7 @@ function dbg(msg, extra) {
     appendFileSync4(DEBUG_LOG_PATH, line);
   } catch {}
 }
-async function run14() {
+async function run15() {
   dbg("run() start", { argv: process.argv.slice(3), stdoutTTY: process.stdout.isTTY === true, stdinTTY: process.stdin.isTTY === true });
   const args = parseArgs8(process.argv.slice(3));
   dbg("parsed args", { name: args.name, beadId: args.beadId, hasPrompt: !!args.prompt });
@@ -45575,17 +45650,17 @@ function getWorktreeFromCwd(cwd) {
   const slash = tail.indexOf("/");
   return cwd.slice(0, index + marker.length + (slash < 0 ? tail.length : slash));
 }
-function basename6(command) {
+function basename7(command) {
   return command.split("/").pop() ?? command;
 }
 function isShellWrapper(command) {
-  return ["sh", "bash", "zsh", "fish"].includes(basename6(command));
+  return ["sh", "bash", "zsh", "fish"].includes(basename7(command));
 }
 function isSpecialistRunCommand(cmdline) {
   const tokens = cmdline.split(/\s+/).filter(Boolean);
   if (tokens.length === 0 || isShellWrapper(tokens[0]))
     return false;
-  const commandIndex = tokens.findIndex((token) => ["specialists", "sp"].includes(basename6(token)));
+  const commandIndex = tokens.findIndex((token) => ["specialists", "sp"].includes(basename7(token)));
   return commandIndex >= 0 && tokens[commandIndex + 1] === "run";
 }
 function isPiAgentProcess(snapshot) {
@@ -46636,7 +46711,7 @@ import {
   writeFileSync as writeFileSync13
 } from "fs";
 import { homedir as homedir7 } from "os";
-import { dirname as dirname14, join as join26 } from "path";
+import { dirname as dirname15, join as join26 } from "path";
 function getConsoleConfigPath() {
   const home = process.env.HOME?.trim() || homedir7();
   const xdgConfigHome = process.env.XDG_CONFIG_HOME?.trim();
@@ -46690,7 +46765,7 @@ function normalizeConfig(raw) {
 }
 function writeConsoleConfig(config2, cookie = `${process.pid}.${Math.floor(performance.now() * 1000)}`) {
   const location = getConsoleConfigPath();
-  const dir = dirname14(location.path);
+  const dir = dirname15(location.path);
   mkdirSync12(dir, { recursive: true });
   const payload = `${JSON.stringify(config2, null, 2)}
 `;
@@ -47253,7 +47328,7 @@ var init_config_source = __esm(() => {
 // src/cli/console/runtime.ts
 import { spawnSync as spawnSync15 } from "child_process";
 import { existsSync as existsSync25, readdirSync as readdirSync10, readFileSync as readFileSync23, statSync as statSync8 } from "fs";
-import { basename as basename7, dirname as dirname15, join as join29 } from "path";
+import { basename as basename8, dirname as dirname16, join as join29 } from "path";
 function createRuntimeClient(cwd = process.cwd()) {
   return new LocalRuntimeClient(cwd);
 }
@@ -47304,7 +47379,7 @@ class LocalRuntimeClient {
         return { repos, message };
       }
     }
-    return { repos: [{ id: "cwd", name: basename7(this.cwd), path: this.cwd, current: true }] };
+    return { repos: [{ id: "cwd", name: basename8(this.cwd), path: this.cwd, current: true }] };
   }
   async readRepoConfigSnapshot(cwd = this.cwd) {
     return buildRepoConfigSnapshot(cwd);
@@ -47833,7 +47908,7 @@ function parseBdShowJson(beadId, stdout) {
   return { beadId, fields, sections };
 }
 function scanSiblingsForRepos(repoRoot) {
-  const parent = dirname15(repoRoot);
+  const parent = dirname16(repoRoot);
   if (parent === repoRoot)
     return [];
   let entries;
@@ -48002,7 +48077,7 @@ function parseConfiguredRepos() {
   return raw.split(",").map((entry, index) => {
     const [nameRaw, pathRaw] = entry.includes("=") ? entry.split("=", 2) : ["", entry];
     const path3 = (pathRaw ?? "").trim();
-    const name = (nameRaw || basename7(path3)).trim();
+    const name = (nameRaw || basename8(path3)).trim();
     return path3 ? resolveRepoRef(path3, index === 0, name) : null;
   }).filter((repo) => repo !== null);
 }
@@ -48011,7 +48086,7 @@ function resolveRepoRef(path3, current, nameOverride) {
   const jobsDir = resolveJobsDir(path3);
   if (!existsSync25(location.dbPath) && !existsSync25(jobsDir))
     return null;
-  const name = nameOverride ?? basename7(location.gitRoot || path3);
+  const name = nameOverride ?? basename8(location.gitRoot || path3);
   return { id: name, name, path: location.gitRoot || path3, dbPath: location.dbPath, current };
 }
 function openClient(repo) {
@@ -48910,28 +48985,28 @@ class SourceQueue {
   constructor(onError) {
     this.onError = onError;
   }
-  enqueue(sourceKey, run15) {
+  enqueue(sourceKey, run16) {
     this.queued = true;
     if (this.running || this.timer)
       return;
     this.timer = setTimeout(() => {
       this.timer = null;
-      this.drain(sourceKey, run15);
+      this.drain(sourceKey, run16);
     }, COALESCE_MS);
   }
-  async drain(sourceKey, run15) {
+  async drain(sourceKey, run16) {
     if (!this.queued || this.running)
       return;
     this.running = true;
     this.queued = false;
     try {
-      await run15();
+      await run16();
     } catch (error2) {
       this.onError?.(sourceKey, error2);
     } finally {
       this.running = false;
       if (this.queued)
-        this.enqueue(sourceKey, run15);
+        this.enqueue(sourceKey, run16);
     }
   }
   cancel() {
@@ -50110,9 +50185,9 @@ var init_components = __esm(() => {
 // src/cli/console.ts
 var exports_console = {};
 __export(exports_console, {
-  run: () => run15
+  run: () => run16
 });
-async function run15() {
+async function run16() {
   const terminal = new ProcessTerminal;
   const tui = new TUI(terminal);
   const root = new Container;
@@ -50504,7 +50579,7 @@ __export(exports_merge, {
   runTypecheckGate: () => runTypecheckGate,
   runRebuild: () => runRebuild,
   runMergePlan: () => runMergePlan,
-  run: () => run16,
+  run: () => run17,
   resolveMergeTargetsForBeadIds: () => resolveMergeTargetsForBeadIds,
   resolveMergeTargets: () => resolveMergeTargets,
   resolveChainEpicMembership: () => resolveChainEpicMembership,
@@ -51315,7 +51390,7 @@ function executePublicationPlan(targets, options2) {
     throw error2;
   }
 }
-async function run16() {
+async function run17() {
   let options2;
   try {
     options2 = parseOptions(process.argv.slice(3));
@@ -51346,7 +51421,7 @@ var init_merge = __esm(() => {
 // src/cli/run.ts
 var exports_run = {};
 __export(exports_run, {
-  run: () => run17,
+  run: () => run18,
   resolveBasePin: () => resolveBasePin,
   buildTmuxLiveFeedCommand: () => buildTmuxLiveFeedCommand,
   buildInjectedWriterDiffVariables: () => buildInjectedWriterDiffVariables,
@@ -52015,7 +52090,7 @@ function buildInjectedWriterDiffVariables(cwd, maxFiles = 20) {
 `)
   };
 }
-async function run17() {
+async function run18() {
   const args = await parseArgs9(process.argv.slice(3));
   ensureObservabilityDb2(process.cwd());
   const loader = new SpecialistLoader;
@@ -54530,7 +54605,7 @@ __export(exports_node, {
 });
 import { existsSync as existsSync30, readFileSync as readFileSync28, readdirSync as readdirSync13 } from "fs";
 import { randomUUID as randomUUID4 } from "crypto";
-import { basename as basename8, join as join35, resolve as resolve10 } from "path";
+import { basename as basename9, join as join35, resolve as resolve10 } from "path";
 function parseNodeArgs(argv) {
   const command = argv[0];
   const supportedCommands = new Set(["run", "list", "promote", "members", "memory", "stop", "spawn-member", "create-bead", "complete", "wait-phase"]);
@@ -54713,7 +54788,7 @@ function parseNodeArgs(argv) {
   };
 }
 function toNodeName(filePath) {
-  const fileName = basename8(filePath);
+  const fileName = basename9(filePath);
   return fileName.endsWith(NODE_CONFIG_SUFFIX) ? fileName.slice(0, -NODE_CONFIG_SUFFIX.length) : fileName;
 }
 function discoverNodeConfigs(cwd) {
@@ -55583,15 +55658,15 @@ function evaluateReadiness(epicId, state, chainRecords, sqlite) {
 }
 function gatherEpicList(sqlite, unresolvedOnly) {
   const epicRuns = sqlite.listEpicRuns();
-  return epicRuns.filter((run18) => !unresolvedOnly || isEpicUnresolvedState(run18.status)).map((run18) => {
-    const chainRecords = sqlite.listEpicChains(run18.epic_id);
-    const readiness = evaluateReadiness(run18.epic_id, run18.status, chainRecords, sqlite);
+  return epicRuns.filter((run19) => !unresolvedOnly || isEpicUnresolvedState(run19.status)).map((run19) => {
+    const chainRecords = sqlite.listEpicChains(run19.epic_id);
+    const readiness = evaluateReadiness(run19.epic_id, run19.status, chainRecords, sqlite);
     return {
-      epic_id: run18.epic_id,
-      state: run18.status,
+      epic_id: run19.epic_id,
+      state: run19.status,
       chain_count: chainRecords.length,
       readiness,
-      updated_at_ms: run18.updated_at_ms
+      updated_at_ms: run19.updated_at_ms
     };
   });
 }
@@ -56115,7 +56190,7 @@ var init_epic = __esm(() => {
 // src/cli/status.ts
 var exports_status = {};
 __export(exports_status, {
-  run: () => run18,
+  run: () => run19,
   detectJobOutputMode: () => detectJobOutputMode
 });
 import { spawnSync as spawnSync20 } from "child_process";
@@ -56127,7 +56202,7 @@ function ok2(msg) {
 function warn2(msg) {
   console.log(`  ${yellow10("\u25CB")} ${msg}`);
 }
-function fail4(msg) {
+function fail5(msg) {
   console.log(`  ${red2("\u2717")} ${msg}`);
 }
 function info(msg) {
@@ -56333,7 +56408,7 @@ ${bold11("specialists status")}
     console.log(`  error        ${red2(job.error)}`);
   console.log();
 }
-async function run18() {
+async function run19() {
   const argv = process.argv.slice(3);
   let parsedArgs;
   try {
@@ -56375,7 +56450,7 @@ async function run18() {
         if (jsonMode) {
           console.log(JSON.stringify({ error: `Job not found: ${jobId}` }, null, 2));
         } else {
-          fail4(`job not found: ${jobId}`);
+          fail5(`job not found: ${jobId}`);
         }
         process.exit(1);
       }
@@ -56468,7 +56543,7 @@ ${bold11("specialists status")}
     }
     section("pi  (coding agent runtime)");
     if (!piInstalled) {
-      fail4(`pi not installed \u2014 install ${yellow10("pi")} first`);
+      fail5(`pi not installed \u2014 install ${yellow10("pi")} first`);
     } else {
       const vStr = piVersion?.ok ? `v${piVersion.stdout}` : "unknown version";
       const pStr = piProviders.size > 0 ? `${piProviders.size} provider${piProviders.size > 1 ? "s" : ""} active  ${dim9(`(${[...piProviders].join(", ")})`)} ` : yellow10("no providers configured \u2014 run pi config");
@@ -56476,7 +56551,7 @@ ${bold11("specialists status")}
     }
     section("beads  (issue tracker)");
     if (!bdInstalled) {
-      fail4(`bd not installed \u2014 install ${yellow10("bd")} first`);
+      fail5(`bd not installed \u2014 install ${yellow10("bd")} first`);
     } else {
       ok2(`bd installed${bdVersion?.ok ? `  ${dim9(bdVersion.stdout)}` : ""}`);
       if (beadsPresent) {
@@ -56487,7 +56562,7 @@ ${bold11("specialists status")}
     }
     section("MCP");
     if (!specialistsBin.ok) {
-      fail4(`specialists not installed globally \u2014 run ${yellow10("npm install -g @jaggerxtrm/specialists")}`);
+      fail5(`specialists not installed globally \u2014 run ${yellow10("npm install -g @jaggerxtrm/specialists")}`);
     } else {
       ok2(`specialists binary installed  ${dim9(specialistsBin.stdout)}`);
       info(`verify registration: claude mcp get specialists`);
@@ -56531,7 +56606,7 @@ var init_status2 = __esm(() => {
 // src/cli/ps.ts
 var exports_ps = {};
 __export(exports_ps, {
-  run: () => run19,
+  run: () => run20,
   formatSpawnedByLine: () => formatSpawnedByLine
 });
 import { spawnSync as spawnSync21 } from "child_process";
@@ -57565,7 +57640,7 @@ async function follow(args) {
     interval = setInterval(drawFrame, 1000);
   });
 }
-async function run19() {
+async function run20() {
   const args = parseArgs10(process.argv.slice(3));
   const sqliteClient = createObservabilitySqliteClient();
   try {
@@ -57613,7 +57688,7 @@ var init_ps = __esm(() => {
 // src/cli/result.ts
 var exports_result = {};
 __export(exports_result, {
-  run: () => run20
+  run: () => run21
 });
 import { existsSync as existsSync32, readFileSync as readFileSync30 } from "fs";
 import { join as join37 } from "path";
@@ -57832,7 +57907,7 @@ function formatStartupSnapshot(snapshot) {
 `)}
 `;
 }
-async function run20() {
+async function run21() {
   const args = parseArgs11(process.argv.slice(3));
   const emitJson = (status, output2, error2, startupContext = null) => {
     console.log(JSON.stringify({
@@ -58113,9 +58188,9 @@ var init_result = __esm(() => {
 
 // src/specialist/timeline-query.ts
 import { existsSync as existsSync33, readdirSync as readdirSync14, readFileSync as readFileSync31 } from "fs";
-import { basename as basename9, join as join38 } from "path";
+import { basename as basename10, join as join38 } from "path";
 function readJobEvents(jobDir) {
-  const jobId = basename9(jobDir);
+  const jobId = basename10(jobDir);
   try {
     const sqliteEvents = createObservabilitySqliteClient()?.readEvents(jobId) ?? [];
     if (sqliteEvents.length > 0) {
@@ -58256,7 +58331,7 @@ var init_timeline_query = __esm(() => {
 // src/cli/feed.ts
 var exports_feed = {};
 __export(exports_feed, {
-  run: () => run21
+  run: () => run22
 });
 import {
   closeSync as closeSync2,
@@ -58928,7 +59003,7 @@ async function followMerged(sqliteClient, jobsDir, options2) {
     }, 750);
   });
 }
-async function run21() {
+async function run22() {
   const options2 = parseArgs12(process.argv.slice(3));
   const sqliteClient = createObservabilitySqliteClient();
   try {
@@ -58982,7 +59057,7 @@ var init_feed2 = __esm(() => {
 // src/cli/forensic.ts
 var exports_forensic = {};
 __export(exports_forensic, {
-  run: () => run22
+  run: () => run23
 });
 function parseArgs13(argv) {
   const options2 = { json: true, limit: 1000 };
@@ -59050,7 +59125,7 @@ function parseSince2(value) {
   const ms = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
   return Date.now() - n * ms[unit];
 }
-async function run22() {
+async function run23() {
   const options2 = parseArgs13(process.argv.slice(3));
   const client = createObservabilitySqliteClient();
   if (!client)
@@ -59078,7 +59153,7 @@ function collectPrometheusProjection(options2 = {}) {
 }
 function collectPrometheusProjectionFromClient(client, options2 = {}) {
   const location = resolveObservabilityDbLocation();
-  const repo = options2.repo ?? basename10(location.gitRoot);
+  const repo = options2.repo ?? basename11(location.gitRoot);
   return renderPrometheusProjection({
     statuses: client.listStatuses(),
     jobMetrics: client.listJobMetrics({ sinceMs: options2.sinceMs }),
@@ -59796,7 +59871,7 @@ function formatNumber(value) {
 function escapeLabel(value) {
   return value.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/"/g, "\\\"");
 }
-function basename10(path3) {
+function basename11(path3) {
   return path3.split(/[\\/]/).filter(Boolean).at(-1) ?? path3;
 }
 var JOB_DURATION_BUCKETS, JOB_WAIT_BUCKETS, CHAIN_DURATION_BUCKETS, DEFAULT_SERVICE_LABELS;
@@ -59816,7 +59891,7 @@ var init_prometheus_projection = __esm(() => {
 // src/cli/metrics.ts
 var exports_metrics = {};
 __export(exports_metrics, {
-  run: () => run23
+  run: () => run24
 });
 function parseArgs14(argv) {
   let format = "prometheus";
@@ -59854,7 +59929,7 @@ function parseSince3(value) {
   const ms = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
   return Date.now() - n * ms[unit];
 }
-async function run23() {
+async function run24() {
   const options2 = parseArgs14(process.argv.slice(3));
   if (options2.format !== "prometheus")
     throw new Error(`Unsupported metrics format: ${options2.format}`);
@@ -59867,10 +59942,10 @@ var init_metrics = __esm(() => {
 // src/cli/log.ts
 var exports_log = {};
 __export(exports_log, {
-  run: () => run24
+  run: () => run25
 });
 import { existsSync as existsSync35, readdirSync as readdirSync16, statSync as statSync11 } from "fs";
-import { basename as basename11, join as join40 } from "path";
+import { basename as basename12, join as join40 } from "path";
 function parseSince4(value) {
   if (value.includes("T") || value.includes("-"))
     return new Date(value).getTime();
@@ -59951,7 +60026,7 @@ function parseArgs15(argv) {
 function discoverDbTargets(cwd, repoFilter) {
   const cwdLocation = resolveObservabilityDbLocation(cwd);
   if (existsSync35(cwdLocation.dbPath)) {
-    const repo = basename11(cwdLocation.gitRoot);
+    const repo = basename12(cwdLocation.gitRoot);
     if (!repoFilter || repo === repoFilter) {
       return [{ repo, root: cwdLocation.gitRoot, dbPath: cwdLocation.dbPath, source: "cwd" }];
     }
@@ -60202,7 +60277,7 @@ function eventLabel(event) {
   }
 }
 function formatWorktree(row) {
-  const base = row.path ? basename11(row.path) : row.repo ?? "-";
+  const base = row.path ? basename12(row.path) : row.repo ?? "-";
   if (!row.repo || base === row.repo)
     return base;
   return `${row.repo}/${base}`;
@@ -60284,7 +60359,7 @@ function printRow(row, json) {
   ].filter(Boolean).join(" ");
   console.log(`${head} ${eventDetail(row.event)}`.trim());
 }
-async function run24(argv = process.argv.slice(3)) {
+async function run25(argv = process.argv.slice(3)) {
   let options2;
   try {
     options2 = parseArgs15(argv);
@@ -60477,10 +60552,10 @@ var init_log2 = __esm(() => {
 // src/cli/steer.ts
 var exports_steer = {};
 __export(exports_steer, {
-  run: () => run25
+  run: () => run26
 });
 import { writeFileSync as writeFileSync17 } from "fs";
-async function run25() {
+async function run26() {
   const jobId = process.argv[3];
   const message = process.argv[4];
   if (!jobId || !message) {
@@ -60537,10 +60612,10 @@ var init_steer = __esm(() => {
 // src/cli/resume.ts
 var exports_resume = {};
 __export(exports_resume, {
-  run: () => run26
+  run: () => run27
 });
 import { writeFileSync as writeFileSync18 } from "fs";
-async function run26() {
+async function run27() {
   const jobId = process.argv[3];
   const task = process.argv[4];
   if (!jobId || !task) {
@@ -60605,9 +60680,9 @@ var init_resume = __esm(() => {
 // src/cli/follow-up.ts
 var exports_follow_up = {};
 __export(exports_follow_up, {
-  run: () => run27
+  run: () => run28
 });
-async function run27() {
+async function run28() {
   process.stderr.write("\x1B[33m\u26A0 DEPRECATED:\x1B[0m `specialists follow-up` is deprecated. Use `specialists resume` instead.\n\n");
   const { run: resumeRun } = await Promise.resolve().then(() => (init_resume(), exports_resume));
   return resumeRun();
@@ -60716,7 +60791,7 @@ var init_worktree_gc = __esm(() => {
 // src/cli/clean.ts
 var exports_clean = {};
 __export(exports_clean, {
-  run: () => run28
+  run: () => run29
 });
 import { existsSync as existsSync37, readFileSync as readFileSync34, readdirSync as readdirSync18, rmSync as rmSync7, statSync as statSync12 } from "fs";
 import { join as join42 } from "path";
@@ -61228,7 +61303,7 @@ function removeStaleProcesses(statuses, dryRun) {
   }
   return updatedCount;
 }
-async function run28() {
+async function run29() {
   let options2;
   try {
     options2 = parseOptions2(process.argv.slice(3));
@@ -61333,7 +61408,7 @@ var init_clean = __esm(() => {
 // src/cli/end.ts
 var exports_end = {};
 __export(exports_end, {
-  run: () => run29
+  run: () => run30
 });
 import { spawnSync as spawnSync23 } from "child_process";
 function parseOptions3(argv) {
@@ -61417,7 +61492,7 @@ async function publishChain(beadId, options2) {
     console.log("Publication mode: direct merge");
   }
 }
-async function run29() {
+async function run30() {
   let options2;
   try {
     options2 = parseOptions3(process.argv.slice(3));
@@ -61458,7 +61533,7 @@ var init_end = __esm(() => {
 // src/cli/stop.ts
 var exports_stop = {};
 __export(exports_stop, {
-  run: () => run30
+  run: () => run31
 });
 function parseStopArgs(argv) {
   let jobId;
@@ -61481,7 +61556,7 @@ function parseStopArgs(argv) {
   }
   return { jobId, force, closeBeadAnyway };
 }
-async function run30() {
+async function run31() {
   let parsed;
   try {
     parsed = parseStopArgs(process.argv.slice(3));
@@ -61509,13 +61584,13 @@ var init_stop = __esm(() => {
 // src/cli/finalize.ts
 var exports_finalize = {};
 __export(exports_finalize, {
-  run: () => run31
+  run: () => run32
 });
 function parseFinalizeArgs(argv) {
   const jobId = argv.find((token) => !token.startsWith("-"));
   return { jobId };
 }
-async function run31() {
+async function run32() {
   const parsed = parseFinalizeArgs(process.argv.slice(3));
   const jobId = parsed.jobId;
   if (!jobId) {
@@ -61537,9 +61612,9 @@ var init_finalize = __esm(() => {
 // src/cli/attach-tui.ts
 var exports_attach_tui = {};
 __export(exports_attach_tui, {
-  run: () => run32
+  run: () => run33
 });
-async function run32(target, deps = {}) {
+async function run33(target, deps = {}) {
   const piTui = await Promise.resolve().then(() => (init_dist2(), exports_dist));
   const { TUI: TUI2, ProcessTerminal: ProcessTerminal2, Container: Container2, Input: Input2, matchesKey: matchesKey2, Key: Key2 } = piTui;
   const terminal = new ProcessTerminal2;
@@ -61659,7 +61734,7 @@ var init_attach_tui = __esm(() => {
 // src/cli/attach.ts
 var exports_attach = {};
 __export(exports_attach, {
-  run: () => run33
+  run: () => run34
 });
 import readline3 from "readline";
 function exitWithError(message) {
@@ -61776,7 +61851,7 @@ function pickTarget(targets) {
     render2();
   });
 }
-async function run33(deps = {}) {
+async function run34(deps = {}) {
   const [jobId] = process.argv.slice(3);
   if (!jobId) {
     if (!process.stdout.isTTY || !process.stdin.isTTY)
@@ -61792,8 +61867,8 @@ async function run33(deps = {}) {
 }
 async function attachTarget(target, deps) {
   const runTui = deps.runTui ?? (async (resolvedTarget) => {
-    const { run: run34 } = await Promise.resolve().then(() => (init_attach_tui(), exports_attach_tui));
-    return run34(resolvedTarget, deps);
+    const { run: run35 } = await Promise.resolve().then(() => (init_attach_tui(), exports_attach_tui));
+    return run35(resolvedTarget, deps);
   });
   return runTui(target);
 }
@@ -61916,7 +61991,7 @@ var init_drift_detector = __esm(() => {
 // src/cli/prune-stale-defaults.ts
 var exports_prune_stale_defaults = {};
 __export(exports_prune_stale_defaults, {
-  run: () => run34
+  run: () => run35
 });
 import { resolve as resolve12 } from "path";
 function parseArgs16(argv) {
@@ -61956,7 +62031,7 @@ function printHelp() {
   console.log("  --keep-diverged   Preserve diverged .specialists/default entries");
   console.log("  --root            Repo root to scan");
 }
-async function run34(argv = process.argv.slice(3)) {
+async function run35(argv = process.argv.slice(3)) {
   const { dryRun, root, help, keepDiverged } = parseArgs16(argv);
   if (help) {
     printHelp();
@@ -61988,7 +62063,7 @@ var init_prune_stale_defaults = __esm(() => {
 // src/cli/quickstart.ts
 var exports_quickstart = {};
 __export(exports_quickstart, {
-  run: () => run35
+  run: () => run36
 });
 function section2(title) {
   const bar = "\u2500".repeat(60);
@@ -62002,7 +62077,7 @@ function cmd2(s) {
 function flag(s) {
   return green13(s);
 }
-async function run35() {
+async function run36() {
   const lines = [
     "",
     bold12("specialists  \xB7  Quick Start Guide"),
@@ -62380,7 +62455,7 @@ var init_dead_job_audit = __esm(() => {
 var exports_doctor = {};
 __export(exports_doctor, {
   setStatusError: () => setStatusError,
-  run: () => run36,
+  run: () => run37,
   resolvePackageAssetDir: () => resolvePackageAssetDir,
   renderProcessSummary: () => renderProcessSummary,
   parseVersionTuple: () => parseVersionTuple,
@@ -62389,15 +62464,16 @@ __export(exports_doctor, {
 });
 import { createHash as createHash7 } from "crypto";
 import { spawnSync as spawnSync24 } from "child_process";
-import { existsSync as existsSync39, lstatSync as lstatSync2, mkdirSync as mkdirSync15, readdirSync as readdirSync20, readFileSync as readFileSync36, readlinkSync as readlinkSync3, writeFileSync as writeFileSync19 } from "fs";
-import { dirname as dirname16, join as join44, relative as relative4, resolve as resolve13 } from "path";
+import { existsSync as existsSync39, mkdirSync as mkdirSync15, readdirSync as readdirSync20, readFileSync as readFileSync36, writeFileSync as writeFileSync19 } from "fs";
+import { homedir as homedir10 } from "os";
+import { join as join44, relative as relative4, resolve as resolve13 } from "path";
 function ok3(msg) {
   console.log(`  ${green14("\u2713")} ${msg}`);
 }
 function warn3(msg) {
   console.log(`  ${yellow12("\u25CB")} ${msg}`);
 }
-function fail5(msg) {
+function fail6(msg) {
   console.log(`  ${red7("\u2717")} ${msg}`);
 }
 function fix(msg) {
@@ -62430,7 +62506,7 @@ function loadJson2(path3) {
 function checkPi() {
   section3("pi  (coding agent runtime)");
   if (!isInstalled3("pi")) {
-    fail5("pi not installed");
+    fail6("pi not installed");
     fix("install pi first");
     return false;
   }
@@ -62453,14 +62529,14 @@ function checkSpAlias() {
     ok3("sp alias installed");
     return true;
   }
-  fail5("sp alias not found in PATH");
+  fail6("sp alias not found in PATH");
   fix("npm install -g @jaggerxtrm/specialists@latest   (reinstall to create symlink)");
   return false;
 }
 function checkBd() {
   section3("beads  (issue tracker)");
   if (!isInstalled3("bd")) {
-    fail5("bd not installed");
+    fail6("bd not installed");
     fix("install beads (bd) first");
     return false;
   }
@@ -62474,7 +62550,7 @@ function checkBd() {
 function checkXt() {
   section3("xtrm-tools");
   if (!isInstalled3("xt")) {
-    fail5("xt not installed");
+    fail6("xt not installed");
     fix("install xtrm-tools first");
     return false;
   }
@@ -62482,69 +62558,19 @@ function checkXt() {
   return true;
 }
 function checkHooks() {
-  section3("Claude Code hooks  (2 expected)");
+  section3(`Claude Code hooks  (global ${relative4(homedir10(), GLOBAL_HOOKS_DIR)})`);
   let allPresent = true;
   for (const name of HOOK_NAMES) {
-    const canonicalPath = join44(HOOKS_DIR, name);
-    if (!existsSync39(canonicalPath)) {
-      fail5(`${relative4(CWD, canonicalPath)}  ${red7("missing")}`);
-      fix("specialists init");
+    const hookPath = join44(GLOBAL_HOOKS_DIR, name);
+    if (!existsSync39(hookPath)) {
+      fail6(`${hookPath} ${red7("missing")}`);
+      fix("reinstall xtrm-tools (hooks are vendored globally)");
       allPresent = false;
     } else {
-      ok3(relative4(CWD, canonicalPath));
-    }
-    const claudeHookPath = join44(CLAUDE_HOOKS_DIR, name);
-    const symlinkState = isSymlinkTo(claudeHookPath, canonicalPath);
-    if (symlinkState.ok) {
-      ok3(`${relative4(CWD, claudeHookPath)} -> ${relative4(dirname16(claudeHookPath), canonicalPath)}`);
-      continue;
-    }
-    allPresent = false;
-    const relHookPath = relative4(CWD, claudeHookPath);
-    if (symlinkState.reason === "missing") {
-      fail5(`${relHookPath} missing`);
-    } else if (symlinkState.reason === "not-symlink") {
-      fail5(`${relHookPath} is not a symlink`);
-    } else if (symlinkState.reason === "wrong-target") {
-      fail5(`${relHookPath} points to ${symlinkState.target ?? "unknown target"}`);
-    } else {
-      fail5(`${relHookPath} is broken`);
-    }
-    fix("specialists init");
-  }
-  const settings = loadJson2(SETTINGS_FILE);
-  if (!settings) {
-    warn3(`Could not read ${SETTINGS_FILE}`);
-    fix("specialists init");
-    return false;
-  }
-  const hooksObj = settings.hooks ?? {};
-  const hookEntries = Object.values(hooksObj).flat();
-  const legacyEntries = Object.entries(settings).filter(([key, value]) => key !== "hooks" && Array.isArray(value)).flatMap(([, value]) => value);
-  const wiredCommands = new Set([...hookEntries, ...legacyEntries].flatMap((entry) => (entry.hooks ?? []).map((hook) => hook.command ?? "")));
-  for (const name of HOOK_NAMES) {
-    const expectedRelative = `node .claude/hooks/${name}`;
-    if (!wiredCommands.has(expectedRelative)) {
-      warn3(`${name} not wired in settings.json`);
-      fix("specialists init");
-      allPresent = false;
+      ok3(relative4(homedir10(), hookPath));
     }
   }
-  if (allPresent)
-    hint(`Hooks wired in ${SETTINGS_FILE}`);
   return allPresent;
-}
-function checkMCP() {
-  section3("MCP registration");
-  const mcp = loadJson2(MCP_FILE2);
-  const spec = mcp?.mcpServers?.specialists;
-  if (!spec || spec.command !== "specialists") {
-    fail5(`MCP server 'specialists' not registered in .mcp.json`);
-    fix("specialists init");
-    return false;
-  }
-  ok3(`MCP server 'specialists' registered in ${MCP_FILE2}`);
-  return true;
 }
 function checkVersion() {
   section3("Version check");
@@ -62590,187 +62616,49 @@ function collectFileHashes(rootDir) {
     visit2(rootDir);
   return hashes;
 }
-function isSymlinkTo(linkPath, expectedTargetPath) {
-  if (!existsSync39(linkPath))
-    return { ok: false, reason: "missing" };
-  let stats;
-  try {
-    stats = lstatSync2(linkPath);
-  } catch {
-    return { ok: false, reason: "broken" };
-  }
-  if (!stats.isSymbolicLink())
-    return { ok: false, reason: "not-symlink" };
-  try {
-    const rawTarget = readlinkSync3(linkPath);
-    const resolvedTarget = resolve13(dirname16(linkPath), rawTarget);
-    const resolvedExpected = resolve13(expectedTargetPath);
-    if (resolvedTarget !== resolvedExpected) {
-      return { ok: false, reason: "wrong-target", target: rawTarget };
-    }
-    return { ok: true };
-  } catch {
-    return { ok: false, reason: "broken" };
-  }
-}
 function resolvePackageAssetDir(relativePath) {
   return resolveCanonicalAssetDir(relativePath) ?? (existsSync39(join44(CWD, "config", relativePath)) ? join44(CWD, "config", relativePath) : null);
 }
 function checkSkillDrift() {
-  section3("Category A  package-live skill sync");
+  section3(`Skills \u2014 global default pool  (~/${relative4(homedir10(), GLOBAL_DEFAULT_SKILLS_DIR)})`);
   const canonicalSkillsDir = resolvePackageAssetDir("skills");
   if (!canonicalSkillsDir) {
-    fail5("package canonical skills source missing");
+    fail6("package canonical skills source missing");
     fix("restore config/skills/ or install package assets");
     return false;
   }
-  if (!existsSync39(XTRM_DEFAULT_SKILLS_DIR)) {
-    fail5(".xtrm/skills/default/ missing");
-    fix("specialists init --sync-skills");
+  if (!existsSync39(GLOBAL_DEFAULT_SKILLS_DIR)) {
+    fail6(`${GLOBAL_DEFAULT_SKILLS_DIR} missing`);
+    fix("reinstall xtrm-tools (skills are vendored globally)");
     return false;
   }
   const canonicalHashes = collectFileHashes(canonicalSkillsDir);
-  const defaultHashes = collectFileHashes(XTRM_DEFAULT_SKILLS_DIR);
+  const defaultHashes = collectFileHashes(GLOBAL_DEFAULT_SKILLS_DIR);
   const drifted = [];
-  const missingInDefault = [];
-  const extraInDefault = [];
+  const missing = [];
   for (const [relPath2, canonicalHash] of canonicalHashes) {
-    const defaultHash = defaultHashes.get(relPath2);
-    if (!defaultHash) {
-      missingInDefault.push(relPath2);
+    const globalHash = defaultHashes.get(relPath2);
+    if (!globalHash) {
+      missing.push(relPath2);
       continue;
     }
-    if (canonicalHash !== defaultHash)
+    if (canonicalHash !== globalHash)
       drifted.push(relPath2);
   }
-  for (const relPath2 of defaultHashes.keys()) {
-    if (!canonicalHashes.has(relPath2))
-      extraInDefault.push(relPath2);
-  }
-  if (drifted.length === 0 && missingInDefault.length === 0 && extraInDefault.length === 0) {
-    ok3(`${relative4(CWD, canonicalSkillsDir)} and .xtrm/skills/default/ are in sync`);
-  } else {
-    if (drifted.length > 0) {
-      fail5(`${drifted.length} drifted file${drifted.length === 1 ? "" : "s"} between ${relative4(CWD, canonicalSkillsDir)} and .xtrm/skills/default`);
-      hint(`example: ${drifted.slice(0, 3).join(", ")}${drifted.length > 3 ? ", ..." : ""}`);
-    }
-    if (missingInDefault.length > 0) {
-      fail5(`${missingInDefault.length} file${missingInDefault.length === 1 ? "" : "s"} missing from .xtrm/skills/default`);
-      hint(`example: ${missingInDefault.slice(0, 3).join(", ")}${missingInDefault.length > 3 ? ", ..." : ""}`);
-    }
-    if (extraInDefault.length > 0) {
-      warn3(`${extraInDefault.length} extra file${extraInDefault.length === 1 ? "" : "s"} found only in .xtrm/skills/default`);
-      hint(`example: ${extraInDefault.slice(0, 3).join(", ")}${extraInDefault.length > 3 ? ", ..." : ""}`);
-    }
-    fix("specialists init --sync-skills");
-  }
-  const defaultSkills = readdirSync20(XTRM_DEFAULT_SKILLS_DIR, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
-  let linksOk = true;
-  for (const skillName of defaultSkills) {
-    const activeLinkPath = join44(XTRM_ACTIVE_SKILLS_DIR, skillName);
-    const expectedTarget = join44(XTRM_DEFAULT_SKILLS_DIR, skillName);
-    const state = isSymlinkTo(activeLinkPath, expectedTarget);
-    if (state.ok)
-      continue;
-    linksOk = false;
-    const relLink = relative4(CWD, activeLinkPath);
-    if (state.reason === "missing") {
-      fail5(`${relLink} missing`);
-    } else if (state.reason === "not-symlink") {
-      fail5(`${relLink} is not a symlink`);
-    } else if (state.reason === "wrong-target") {
-      fail5(`${relLink} points to ${state.target ?? "unknown target"}`);
-    } else {
-      fail5(`${relLink} is broken`);
-    }
-    fix("specialists init --sync-skills");
-  }
-  const legacyActiveRoots = [
-    { scope: "claude", root: join44(XTRM_ACTIVE_SKILLS_DIR, "claude") },
-    { scope: "pi", root: join44(XTRM_ACTIVE_SKILLS_DIR, "pi") }
-  ];
-  for (const { root } of legacyActiveRoots) {
-    if (!existsSync39(root))
-      continue;
-    if (isSymlinkTo(root, XTRM_ACTIVE_SKILLS_DIR).ok)
-      continue;
-    const relRoot = relative4(CWD, root);
-    if (lstatSync2(root).isDirectory()) {
-      warn3(`${relRoot}/ legacy scoped layout found`);
-    } else {
-      warn3(`${relRoot} legacy scoped layout found`);
-    }
-    fix("specialists init --sync-skills");
-  }
-  const skillRootChecks = [
-    { root: join44(CLAUDE_DIR, "skills"), expected: XTRM_ACTIVE_SKILLS_DIR },
-    { root: join44(PI_DIR, "skills"), expected: XTRM_ACTIVE_SKILLS_DIR }
-  ];
-  let rootLinksOk = true;
-  for (const check2 of skillRootChecks) {
-    const state = isSymlinkTo(check2.root, check2.expected);
-    if (state.ok) {
-      ok3(`${relative4(CWD, check2.root)} -> ${relative4(dirname16(check2.root), check2.expected)}`);
-      continue;
-    }
-    rootLinksOk = false;
-    const relRoot = relative4(CWD, check2.root);
-    if (state.reason === "missing") {
-      fail5(`${relRoot} missing`);
-    } else if (state.reason === "not-symlink") {
-      fail5(`${relRoot} is not a symlink`);
-    } else if (state.reason === "wrong-target") {
-      fail5(`${relRoot} points to ${state.target ?? "unknown target"}`);
-    } else {
-      fail5(`${relRoot} is broken`);
-    }
-    fix("specialists init --sync-skills");
-  }
-  return drifted.length === 0 && missingInDefault.length === 0 && linksOk && rootLinksOk;
-}
-function checkManagedMirror(label, canonicalRelativePath, mirrorDir, fixHint) {
-  const sourceDir = resolvePackageAssetDir(canonicalRelativePath);
-  const sourceLabel = sourceDir ? relative4(CWD, sourceDir) : `package canonical ${canonicalRelativePath}`;
-  if (!sourceDir) {
-    warn3(`${label} source missing: package canonical ${canonicalRelativePath}`);
-    fix(fixHint);
-    return false;
-  }
-  if (!existsSync39(mirrorDir)) {
-    fail5(`${label} mirror missing: ${relative4(CWD, mirrorDir)}`);
-    fix(fixHint);
-    return false;
-  }
-  const sourceHashes = collectFileHashes(sourceDir);
-  const mirrorHashes = collectFileHashes(mirrorDir);
-  const drifted = [...sourceHashes.keys()].filter((relPath2) => mirrorHashes.get(relPath2) !== sourceHashes.get(relPath2));
-  const missing = [...sourceHashes.keys()].filter((relPath2) => !mirrorHashes.has(relPath2));
-  const extra = [...mirrorHashes.keys()].filter((relPath2) => !sourceHashes.has(relPath2));
-  if (drifted.length === 0 && missing.length === 0 && extra.length === 0) {
-    ok3(`${label} mirror in sync against ${sourceLabel}`);
+  if (drifted.length === 0 && missing.length === 0) {
+    ok3(`${relative4(CWD, canonicalSkillsDir)} matches global default pool`);
     return true;
   }
   if (drifted.length > 0) {
-    fail5(`${label}: ${drifted.length} safe prune candidate${drifted.length === 1 ? "" : "s"}`);
+    fail6(`${drifted.length} drifted file${drifted.length === 1 ? "" : "s"} between package and global default pool`);
     hint(`example: ${drifted.slice(0, 3).join(", ")}${drifted.length > 3 ? ", ..." : ""}`);
   }
   if (missing.length > 0) {
-    fail5(`${label}: ${missing.length} missing mirror file${missing.length === 1 ? "" : "s"}`);
+    fail6(`${missing.length} file${missing.length === 1 ? "" : "s"} missing from global default pool`);
     hint(`example: ${missing.slice(0, 3).join(", ")}${missing.length > 3 ? ", ..." : ""}`);
   }
-  if (extra.length > 0) {
-    warn3(`${label}: ${extra.length} extra mirror file${extra.length === 1 ? "" : "s"}`);
-    hint(`example: ${extra.slice(0, 3).join(", ")}${extra.length > 3 ? ", ..." : ""}`);
-  }
-  fix(fixHint);
+  fix("reinstall xtrm-tools (skills are vendored globally)");
   return false;
-}
-function checkManagedAssetMirrors() {
-  section3("Category B  xtrm-managed asset mirrors");
-  const specialistsOk = checkManagedMirror("specialists", "specialists", DEFAULT_SPECIALISTS_DIR, "sp prune-stale-defaults --apply");
-  const rulesOk = checkManagedMirror("mandatory-rules", "mandatory-rules", join44(DEFAULT_SPECIALISTS_DIR, "mandatory-rules"), "sp prune-stale-defaults --apply");
-  const nodesOk = checkManagedMirror("nodes", "nodes", join44(DEFAULT_SPECIALISTS_DIR, "nodes"), "sp prune-stale-defaults --apply");
-  return specialistsOk && rulesOk && nodesOk;
 }
 function checkUserOverlayDrift() {
   section3("User specialist overlays");
@@ -62783,17 +62671,18 @@ function checkUserOverlayDrift() {
     ok3("no user overlays present");
     return true;
   }
+  const packageSpecialistsDir = resolvePackageAssetDir("specialists");
   let allOk = true;
   for (const name of overlays) {
     const userPath = join44(USER_SPECIALISTS_DIR, name);
-    const defaultPath = join44(DEFAULT_SPECIALISTS_DIR, name);
+    const defaultPath = packageSpecialistsDir ? join44(packageSpecialistsDir, name) : "";
     const userSpec = loadJson2(userPath);
     if (!userSpec) {
       warn3(`${name}: failed to parse \u2014 skipping drift check`);
       continue;
     }
-    if (!existsSync39(defaultPath)) {
-      ok3(`${name}: user-only overlay (no default to drift from)`);
+    if (!defaultPath || !existsSync39(defaultPath)) {
+      ok3(`${name}: user-only overlay (no package default to drift from)`);
       continue;
     }
     const defaultSpec = loadJson2(defaultPath);
@@ -62948,7 +62837,7 @@ async function checkSpecialistOverrides() {
     loader = new SpecialistLoader;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    fail5(`could not construct SpecialistLoader: ${msg}`);
+    fail6(`could not construct SpecialistLoader: ${msg}`);
     return false;
   }
   const globalLayer = loader.getGlobalLayerPath();
@@ -62968,15 +62857,16 @@ async function checkSpecialistOverrides() {
     summaries = await loader.list();
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    fail5(`SpecialistLoader.list() threw: ${msg}`);
+    fail6(`SpecialistLoader.list() threw: ${msg}`);
     return false;
   }
+  const dispatchable = summaries.filter((s) => s.category !== "template");
   const missing = [];
-  for (const summary of summaries) {
+  for (const summary of dispatchable) {
     if (!summary.model || summary.model === "")
       missing.push(summary.name);
   }
-  const total = summaries.length;
+  const total = dispatchable.length;
   const present = total - missing.length;
   if (missing.length === 0) {
     ok3(`${present}/${total} specialists have a model configured`);
@@ -62984,7 +62874,7 @@ async function checkSpecialistOverrides() {
     warn3(`${present}/${total} specialists have a model configured  ${dim14("(global override file not created yet)")}`);
     fix("sp init --global  \u2192  sp edit --global  (set the model for each specialist you use)");
   } else {
-    fail5(`${present}/${total} specialists have a model configured`);
+    fail6(`${present}/${total} specialists have a model configured`);
     hint(`missing: ${missing.join(", ")}`);
     fix(`sp edit --global <name>.execution.model <model-id>   (run once per missing specialist)`);
   }
@@ -62995,7 +62885,7 @@ async function checkSpecialistOverrides() {
     const stripCount = warnings.filter((w) => w.severity === "strip").length;
     const warnCount = warnings.filter((w) => w.severity === "warn").length;
     if (stripCount > 0) {
-      fail5(`${stripCount} blocked-field overrides STRIPPED from the global layer`);
+      fail6(`${stripCount} blocked-field overrides STRIPPED from the global layer`);
       for (const w of warnings.filter((w2) => w2.severity === "strip")) {
         hint(`${w.specialist}: ${w.field} = ${JSON.stringify(w.value)}  ${dim14("(source: global, stripped)")}`);
       }
@@ -63084,8 +62974,19 @@ function cleanupProcesses(jobsDir, dryRun) {
     for (const status of statuses) {
       if (status.status !== "running" && status.status !== "starting")
         continue;
+      if (!status.id)
+        continue;
       result2.total += 1;
-      if (status.pid && process.kill(status.pid, 0)) {
+      let alive = false;
+      if (status.pid) {
+        try {
+          process.kill(status.pid, 0);
+          alive = true;
+        } catch {
+          alive = false;
+        }
+      }
+      if (alive) {
         result2.running += 1;
         continue;
       }
@@ -63154,7 +63055,7 @@ function runDoctorOrphans() {
     console.log(`
 ${bold13("specialists doctor orphans")}
 `);
-    fail5("observability SQLite not available");
+    fail6("observability SQLite not available");
     fix("specialists db setup");
     console.log("");
     process.exit(1);
@@ -63343,7 +63244,7 @@ ${bold13("specialists doctor --reap-dead-jobs")}
     client.close();
   }
 }
-async function run36(argv = process.argv.slice(3)) {
+async function run37(argv = process.argv.slice(3)) {
   const subcommand = argv[0];
   if (subcommand === "orphans") {
     runDoctorOrphans();
@@ -63383,26 +63284,24 @@ ${bold13("specialists doctor")}
   const bdOk = checkBd();
   const xtOk = checkXt();
   const hooksOk = checkHooks();
-  const mcpOk = checkMCP();
   const versionOk = checkVersion();
   const skillDriftOk = checkSkillDrift();
-  const mirrorOk = checkManagedAssetMirrors();
   const userOverlayOk = checkUserOverlayDrift();
   const dirsOk = checkRuntimeDirs();
   const jobsOk = checkZombieJobs();
   const fragmentsOk = checkClaudeMdFragments();
   const overridesOk = await checkSpecialistOverrides();
-  const allOk = piOk && spOk && bdOk && xtOk && hooksOk && mcpOk && versionOk && skillDriftOk && mirrorOk && userOverlayOk && dirsOk && jobsOk && fragmentsOk && overridesOk;
+  const allOk = piOk && spOk && bdOk && xtOk && hooksOk && versionOk && skillDriftOk && userOverlayOk && dirsOk && jobsOk && fragmentsOk && overridesOk;
   console.log("");
   if (allOk) {
     console.log(`  ${green14("\u2713")} ${bold13("All checks passed")}  \u2014 specialists is healthy`);
   } else {
     console.log(`  ${yellow12("\u25CB")} ${bold13("Some checks failed")}  \u2014 follow the fix hints above`);
-    console.log(`  ${dim14("specialists init fixes hook + MCP registration; specialists init --sync-skills fixes skill drift/symlink issues; sp prune-stale-defaults --apply removes stale default mirrors; --sync-defaults is deprecated.")}`);
+    console.log(`  ${dim14("Hooks + default skill pool are vendored globally by xtrm-tools; reinstall if drift or missing files appear.")}`);
   }
   console.log("");
 }
-var bold13 = (s) => `\x1B[1m${s}\x1B[0m`, dim14 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow12 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, PI_DIR, XTRM_SKILLS_DIR, XTRM_DEFAULT_SKILLS_DIR, XTRM_ACTIVE_SKILLS_DIR, SPECIALISTS_DIR, DEFAULT_SPECIALISTS_DIR, USER_SPECIALISTS_DIR, HOOKS_DIR, CLAUDE_HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
+var bold13 = (s) => `\x1B[1m${s}\x1B[0m`, dim14 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow12 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, SPECIALISTS_DIR, USER_SPECIALISTS_DIR, XTRM_HOME, GLOBAL_HOOKS_DIR, GLOBAL_DEFAULT_SKILLS_DIR, HOOK_NAMES;
 var init_doctor = __esm(() => {
   init_observability_sqlite();
   init_pr_drift_refresh();
@@ -63412,18 +63311,11 @@ var init_doctor = __esm(() => {
   init_loader();
   init_version_check();
   CWD = process.cwd();
-  CLAUDE_DIR = join44(CWD, ".claude");
-  PI_DIR = join44(CWD, ".pi");
-  XTRM_SKILLS_DIR = join44(CWD, ".xtrm", "skills");
-  XTRM_DEFAULT_SKILLS_DIR = join44(XTRM_SKILLS_DIR, "default");
-  XTRM_ACTIVE_SKILLS_DIR = join44(XTRM_SKILLS_DIR, "active");
   SPECIALISTS_DIR = join44(CWD, ".specialists");
-  DEFAULT_SPECIALISTS_DIR = join44(SPECIALISTS_DIR, "default");
   USER_SPECIALISTS_DIR = join44(SPECIALISTS_DIR, "user");
-  HOOKS_DIR = join44(CWD, ".xtrm", "hooks", "specialists");
-  CLAUDE_HOOKS_DIR = join44(CLAUDE_DIR, "hooks");
-  SETTINGS_FILE = join44(CLAUDE_DIR, "settings.json");
-  MCP_FILE2 = join44(CWD, ".mcp.json");
+  XTRM_HOME = join44(homedir10(), ".xtrm");
+  GLOBAL_HOOKS_DIR = join44(XTRM_HOME, "hooks", "specialists");
+  GLOBAL_DEFAULT_SKILLS_DIR = join44(XTRM_HOME, "skills", "default");
   HOOK_NAMES = [
     "specialists-complete.mjs",
     "specialists-session-start.mjs"
@@ -63433,7 +63325,7 @@ var init_doctor = __esm(() => {
 // src/specialist/benchmarks.ts
 import { randomUUID as randomUUID5 } from "crypto";
 import { closeSync as closeSync3, existsSync as existsSync40, fsyncSync as fsyncSync2, mkdirSync as mkdirSync16, openSync as openSync4, readFileSync as readFileSync37, renameSync as renameSync5, writeFileSync as writeFileSync20 } from "fs";
-import { homedir as homedir10 } from "os";
+import { homedir as homedir11 } from "os";
 import { dirname as dirname17, join as join45 } from "path";
 async function loadBenchmarkSnapshot(options2 = {}) {
   const warnings = [];
@@ -63550,7 +63442,7 @@ function toSnapshot(cache) {
 function isOffline(options2) {
   return options2.offline === true || process.env.SPECIALISTS_OFFLINE === "1";
 }
-function getBenchmarkCachePath(source, cacheDir = join45(homedir10(), ".cache", "specialists", "benchmarks")) {
+function getBenchmarkCachePath(source, cacheDir = join45(homedir11(), ".cache", "specialists", "benchmarks")) {
   return join45(cacheDir, `${source}.json`);
 }
 function writeCache2(path3, snapshot) {
@@ -63589,15 +63481,15 @@ var init_benchmarks = __esm(() => {
 // src/specialist/model-probes.ts
 import { createHash as createHash8, randomUUID as randomUUID6 } from "crypto";
 import { mkdirSync as mkdirSync17, readdirSync as readdirSync21, readFileSync as readFileSync38, writeFileSync as writeFileSync21 } from "fs";
-import { homedir as homedir11 } from "os";
+import { homedir as homedir12 } from "os";
 import { dirname as dirname18, join as join46, resolve as resolve14 } from "path";
 async function runAgenticFollowthroughProbe(model, specName, opts = {}) {
   const probeDir = getProbeRunDir(model, specName, opts.cacheDir);
   mkdirSync17(probeDir, { recursive: true, mode: 448 });
   writeFileSync21(join46(probeDir, "probe-notes.md"), `# Probe notes
 `, { mode: 384 });
-  const run37 = opts.runSpecialist ?? runScriptSpecialist;
-  const result = await withTimeout(run37({
+  const run38 = opts.runSpecialist ?? runScriptSpecialist;
+  const result = await withTimeout(run38({
     specialist: specName,
     model_override: model,
     template: PROBE_TEMPLATE,
@@ -63693,10 +63585,10 @@ function withTimeout(promise2, timeoutMs) {
   });
   return Promise.race([promise2, timeoutPromise]).finally(() => clearTimeout(timeout));
 }
-function getProbeRunDir(model, specName, cacheDir = join46(homedir11(), ".cache", "specialists", "probes")) {
+function getProbeRunDir(model, specName, cacheDir = join46(homedir12(), ".cache", "specialists", "probes")) {
   return resolve14(getProbeCanonicalPath(model, specName, cacheDir).replace(/\.json$/u, ""), randomUUID6());
 }
-function getProbeCanonicalPath(model, specName, cacheDir = join46(homedir11(), ".cache", "specialists", "probes")) {
+function getProbeCanonicalPath(model, specName, cacheDir = join46(homedir12(), ".cache", "specialists", "probes")) {
   const probeId = createHash8("sha256").update(`${model}\x00${specName}\x00${PROBE_TEMPLATE}`).digest("hex").slice(0, 12);
   return join46(cacheDir, `${sanitizePathSegment(model)}-${sanitizePathSegment(specName)}-${probeId}.json`);
 }
@@ -63728,7 +63620,7 @@ __export(exports_setup, {
   runFetchBenchmarks: () => runFetchBenchmarks,
   runDiscovery: () => runDiscovery,
   runApply: () => runApply,
-  run: () => run37
+  run: () => run38
 });
 import { spawnSync as spawnSync25 } from "child_process";
 import { readFileSync as readFileSync39 } from "fs";
@@ -63815,7 +63707,7 @@ function pickMode(current, next) {
     throw new Error("Choose exactly one setup mode");
   return next;
 }
-async function run37(argv = process.argv.slice(3)) {
+async function run38(argv = process.argv.slice(3)) {
   const args = parseArgs17(argv);
   switch (args.mode) {
     case "discovery":
@@ -64332,7 +64224,7 @@ var init_serve_hot_reload = () => {};
 var exports_serve = {};
 __export(exports_serve, {
   startServe: () => startServe,
-  run: () => run38,
+  run: () => run39,
   recordAuditFailure: () => recordAuditFailure,
   evaluateReadiness: () => evaluateReadiness2,
   createReadinessState: () => createReadinessState,
@@ -64344,7 +64236,7 @@ import { once } from "events";
 import { spawnSync as spawnSync26 } from "child_process";
 import { access, readdir as readdir2, readFile as readFile4, constants } from "fs/promises";
 import { existsSync as existsSync42 } from "fs";
-import { homedir as homedir12 } from "os";
+import { homedir as homedir13 } from "os";
 import { join as join48 } from "path";
 function createReadinessState() {
   return { shuttingDown: false, auditFailures: [], dbWriteFailuresTotal: 0 };
@@ -64388,7 +64280,7 @@ async function evaluateReadiness2(opts) {
   if (opts.state.auditFailures.length > opts.auditFailureThreshold) {
     return { ready: false, reason: "degraded:audit" };
   }
-  const piConfigPath = opts.piConfigPath ?? join48(homedir12(), ".pi", "agent", "auth.json");
+  const piConfigPath = opts.piConfigPath ?? join48(homedir13(), ".pi", "agent", "auth.json");
   try {
     await access(piConfigPath, constants.R_OK);
   } catch {
@@ -64738,7 +64630,7 @@ async function startServe(argv = process.argv.slice(3)) {
   console.log(`sp serve listening on ${args.port}`);
   return { server, args, db, readinessState };
 }
-async function run38(argv = process.argv.slice(3)) {
+async function run39(argv = process.argv.slice(3)) {
   await startServe(argv);
 }
 var AUDIT_WINDOW_MS = 60000, DEFAULT_REQUIRED_PI_FLAGS;
@@ -64757,7 +64649,7 @@ var init_serve = __esm(() => {
 var exports_script = {};
 __export(exports_script, {
   scriptCli: () => scriptCli,
-  run: () => run39,
+  run: () => run40,
   parseArgs: () => parseArgs19,
   mapExitCode: () => mapExitCode
 });
@@ -64901,7 +64793,7 @@ function runUnderLock(lockPath, argv) {
     return 75;
   return flock.status ?? 1;
 }
-async function run39(argv = process.argv.slice(3)) {
+async function run40(argv = process.argv.slice(3)) {
   const args = parseArgs19(argv);
   if (args.singleInstance && !process.env.SP_SCRIPT_NO_LOCK) {
     process.exit(runUnderLock(args.singleInstance, argv));
@@ -64933,13 +64825,13 @@ var init_script = __esm(() => {
 // src/cli/help.ts
 var exports_help2 = {};
 __export(exports_help2, {
-  run: () => run40
+  run: () => run41
 });
 function formatCommands(entries) {
   const width = Math.max(...entries.map(([cmd3]) => cmd3.length));
   return entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(width)}   ${desc}`);
 }
-async function run40() {
+async function run41() {
   const lines = [
     "",
     "Specialists lets you run project-scoped specialist agents with a bead-first workflow.",
@@ -72678,7 +72570,7 @@ var next = process.argv[3];
 function wantsHelp() {
   return next === "--help" || next === "-h";
 }
-async function run41() {
+async function run42() {
   if (sub === "install") {
     if (wantsHelp()) {
       console.log([
@@ -72775,6 +72667,28 @@ async function run41() {
       return;
     }
     const { run: handler } = await Promise.resolve().then(() => (init_render_task(), exports_render_task));
+    return handler();
+  }
+  if (sub === "render-skill-prefix") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists render-skill-prefix <name> [--surface pi|claude]",
+        "",
+        "Emit the turn-1 /skill: composition block for a specialist (unitAI-qeguh).",
+        "Byte-identical to the prefix `render-task` bakes into initial_prompt.",
+        "",
+        "Options:",
+        "  --surface pi|claude    Interactive surface (default: pi)",
+        "",
+        'Output: { ok: true, skill_prefix: "..." } \u2014 key always present, "" when no declared skills.',
+        "Errors: JSON { ok: false, error: { code, message } } with exit 1.",
+        ""
+      ].join(`
+`));
+      return;
+    }
+    const { run: handler } = await Promise.resolve().then(() => (init_render_skill_prefix(), exports_render_skill_prefix));
     return handler();
   }
   if (sub === "view") {
@@ -73904,7 +73818,7 @@ Run 'specialists help' to see available commands.`);
   const server = new SpecialistsServer;
   await server.start();
 }
-run41().then(() => {
+run42().then(() => {
   if (sub && sub !== "serve")
     process.exit(process.exitCode ?? 0);
 }).catch((error2) => {

@@ -138,6 +138,28 @@ async function run() {
     return handler();
   }
 
+  if (sub === 'render-skill-prefix') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists render-skill-prefix <name> [--surface pi|claude]',
+        '',
+        'Emit the turn-1 /skill: composition block for a specialist (unitAI-qeguh).',
+        'Byte-identical to the prefix `render-task` bakes into initial_prompt.',
+        '',
+        'Options:',
+        '  --surface pi|claude    Interactive surface (default: pi)',
+        '',
+        'Output: { ok: true, skill_prefix: "..." } — key always present, "" when no declared skills.',
+        'Errors: JSON { ok: false, error: { code, message } } with exit 1.',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/render-skill-prefix.js');
+    return handler();
+  }
+
   if (sub === 'view') {
     if (wantsHelp()) {
       console.log([

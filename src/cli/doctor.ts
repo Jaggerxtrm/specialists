@@ -2,8 +2,9 @@
 
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, relative, resolve } from 'node:path';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import { refreshPrDriftForJob } from '../specialist/pr-drift-refresh.js';
 import type { PrClassification } from '../specialist/pr-drift-refresh.js';
@@ -40,18 +41,13 @@ function isInstalled(bin: string): boolean {
 }
 
 const CWD = process.cwd();
-const CLAUDE_DIR = join(CWD, '.claude');
-const PI_DIR = join(CWD, '.pi');
-const XTRM_SKILLS_DIR = join(CWD, '.xtrm', 'skills');
-const XTRM_DEFAULT_SKILLS_DIR = join(XTRM_SKILLS_DIR, 'default');
-const XTRM_ACTIVE_SKILLS_DIR = join(XTRM_SKILLS_DIR, 'active');
 const SPECIALISTS_DIR = join(CWD, '.specialists');
-const DEFAULT_SPECIALISTS_DIR = join(SPECIALISTS_DIR, 'default');
 const USER_SPECIALISTS_DIR = join(SPECIALISTS_DIR, 'user');
-const HOOKS_DIR = join(CWD, '.xtrm', 'hooks', 'specialists');
-const CLAUDE_HOOKS_DIR = join(CLAUDE_DIR, 'hooks');
-const SETTINGS_FILE = join(CLAUDE_DIR, 'settings.json');
-const MCP_FILE = join(CWD, '.mcp.json');
+
+// Global install locations — xtrm-tools now vendors these into ~/.xtrm/ instead of per-repo mirrors.
+const XTRM_HOME = join(homedir(), '.xtrm');
+const GLOBAL_HOOKS_DIR = join(XTRM_HOME, 'hooks', 'specialists');
+const GLOBAL_DEFAULT_SKILLS_DIR = join(XTRM_HOME, 'skills', 'default');
 const HOOK_NAMES = [
   'specialists-complete.mjs',
   'specialists-session-start.mjs',
@@ -122,82 +118,21 @@ function checkXt(): boolean {
 }
 
 function checkHooks(): boolean {
-  section('Claude Code hooks  (2 expected)');
+  section(`Claude Code hooks  (global ${relative(homedir(), GLOBAL_HOOKS_DIR)})`);
   let allPresent = true;
 
   for (const name of HOOK_NAMES) {
-    const canonicalPath = join(HOOKS_DIR, name);
-    if (!existsSync(canonicalPath)) {
-      fail(`${relative(CWD, canonicalPath)}  ${red('missing')}`);
-      fix('specialists init');
+    const hookPath = join(GLOBAL_HOOKS_DIR, name);
+    if (!existsSync(hookPath)) {
+      fail(`${hookPath} ${red('missing')}`);
+      fix('reinstall xtrm-tools (hooks are vendored globally)');
       allPresent = false;
     } else {
-      ok(relative(CWD, canonicalPath));
-    }
-
-    const claudeHookPath = join(CLAUDE_HOOKS_DIR, name);
-    const symlinkState = isSymlinkTo(claudeHookPath, canonicalPath);
-    if (symlinkState.ok) {
-      ok(`${relative(CWD, claudeHookPath)} -> ${relative(dirname(claudeHookPath), canonicalPath)}`);
-      continue;
-    }
-
-    allPresent = false;
-    const relHookPath = relative(CWD, claudeHookPath);
-    if (symlinkState.reason === 'missing') {
-      fail(`${relHookPath} missing`);
-    } else if (symlinkState.reason === 'not-symlink') {
-      fail(`${relHookPath} is not a symlink`);
-    } else if (symlinkState.reason === 'wrong-target') {
-      fail(`${relHookPath} points to ${symlinkState.target ?? 'unknown target'}`);
-    } else {
-      fail(`${relHookPath} is broken`);
-    }
-    fix('specialists init');
-  }
-
-  const settings = loadJson(SETTINGS_FILE);
-  if (!settings) {
-    warn(`Could not read ${SETTINGS_FILE}`);
-    fix('specialists init');
-    return false;
-  }
-
-  // Read from settings.hooks (correct location) and fall back to top-level (legacy buggy location)
-  const hooksObj = (settings.hooks ?? {}) as Record<string, Array<{ hooks?: Array<{ command?: string }> }>>;
-  const hookEntries = Object.values(hooksObj).flat();
-  const legacyEntries = Object.entries(settings)
-    .filter(([key, value]) => key !== 'hooks' && Array.isArray(value))
-    .flatMap(([, value]) => value as Array<{ hooks?: Array<{ command?: string }> }>);
-  const wiredCommands = new Set(
-    [...hookEntries, ...legacyEntries]
-      .flatMap(entry => (entry.hooks ?? []).map(hook => hook.command ?? '')),
-  );
-
-  for (const name of HOOK_NAMES) {
-    const expectedRelative = `node .claude/hooks/${name}`;
-    if (!wiredCommands.has(expectedRelative)) {
-      warn(`${name} not wired in settings.json`);
-      fix('specialists init');
-      allPresent = false;
+      ok(relative(homedir(), hookPath));
     }
   }
 
-  if (allPresent) hint(`Hooks wired in ${SETTINGS_FILE}`);
   return allPresent;
-}
-
-function checkMCP(): boolean {
-  section('MCP registration');
-  const mcp = loadJson(MCP_FILE);
-  const spec = (mcp?.mcpServers as { specialists?: { command?: string } } | undefined)?.specialists;
-  if (!spec || spec.command !== 'specialists') {
-    fail(`MCP server 'specialists' not registered in .mcp.json`);
-    fix('specialists init');
-    return false;
-  }
-  ok(`MCP server 'specialists' registered in ${MCP_FILE}`);
-  return true;
 }
 
 function checkVersion(): boolean {
@@ -249,37 +184,12 @@ function collectFileHashes(rootDir: string): Map<string, string> {
   return hashes;
 }
 
-function isSymlinkTo(linkPath: string, expectedTargetPath: string): { ok: boolean; reason?: string; target?: string } {
-  if (!existsSync(linkPath)) return { ok: false, reason: 'missing' };
-
-  let stats;
-  try {
-    stats = lstatSync(linkPath);
-  } catch {
-    return { ok: false, reason: 'broken' };
-  }
-
-  if (!stats.isSymbolicLink()) return { ok: false, reason: 'not-symlink' };
-
-  try {
-    const rawTarget = readlinkSync(linkPath);
-    const resolvedTarget = resolve(dirname(linkPath), rawTarget);
-    const resolvedExpected = resolve(expectedTargetPath);
-    if (resolvedTarget !== resolvedExpected) {
-      return { ok: false, reason: 'wrong-target', target: rawTarget };
-    }
-    return { ok: true };
-  } catch {
-    return { ok: false, reason: 'broken' };
-  }
-}
-
 export function resolvePackageAssetDir(relativePath: string): string | null {
   return resolveCanonicalAssetDir(relativePath) ?? (existsSync(join(CWD, 'config', relativePath)) ? join(CWD, 'config', relativePath) : null);
 }
 
 function checkSkillDrift(): boolean {
-  section('Category A  package-live skill sync');
+  section(`Skills — global default pool  (~/${relative(homedir(), GLOBAL_DEFAULT_SKILLS_DIR)})`);
 
   const canonicalSkillsDir = resolvePackageAssetDir('skills');
   if (!canonicalSkillsDir) {
@@ -288,171 +198,37 @@ function checkSkillDrift(): boolean {
     return false;
   }
 
-  if (!existsSync(XTRM_DEFAULT_SKILLS_DIR)) {
-    fail('.xtrm/skills/default/ missing');
-    fix('specialists init --sync-skills');
+  if (!existsSync(GLOBAL_DEFAULT_SKILLS_DIR)) {
+    fail(`${GLOBAL_DEFAULT_SKILLS_DIR} missing`);
+    fix('reinstall xtrm-tools (skills are vendored globally)');
     return false;
   }
 
   const canonicalHashes = collectFileHashes(canonicalSkillsDir);
-  const defaultHashes = collectFileHashes(XTRM_DEFAULT_SKILLS_DIR);
+  const defaultHashes = collectFileHashes(GLOBAL_DEFAULT_SKILLS_DIR);
 
   const drifted: string[] = [];
-  const missingInDefault: string[] = [];
-  const extraInDefault: string[] = [];
-
+  const missing: string[] = [];
   for (const [relPath, canonicalHash] of canonicalHashes) {
-    const defaultHash = defaultHashes.get(relPath);
-    if (!defaultHash) {
-      missingInDefault.push(relPath);
-      continue;
-    }
-    if (canonicalHash !== defaultHash) drifted.push(relPath);
+    const globalHash = defaultHashes.get(relPath);
+    if (!globalHash) { missing.push(relPath); continue; }
+    if (canonicalHash !== globalHash) drifted.push(relPath);
   }
 
-  for (const relPath of defaultHashes.keys()) {
-    if (!canonicalHashes.has(relPath)) extraInDefault.push(relPath);
-  }
-
-  if (drifted.length === 0 && missingInDefault.length === 0 && extraInDefault.length === 0) {
-    ok(`${relative(CWD, canonicalSkillsDir)} and .xtrm/skills/default/ are in sync`);
-  } else {
-    if (drifted.length > 0) {
-      fail(`${drifted.length} drifted file${drifted.length === 1 ? '' : 's'} between ${relative(CWD, canonicalSkillsDir)} and .xtrm/skills/default`);
-      hint(`example: ${drifted.slice(0, 3).join(', ')}${drifted.length > 3 ? ', ...' : ''}`);
-    }
-    if (missingInDefault.length > 0) {
-      fail(`${missingInDefault.length} file${missingInDefault.length === 1 ? '' : 's'} missing from .xtrm/skills/default`);
-      hint(`example: ${missingInDefault.slice(0, 3).join(', ')}${missingInDefault.length > 3 ? ', ...' : ''}`);
-    }
-    if (extraInDefault.length > 0) {
-      warn(`${extraInDefault.length} extra file${extraInDefault.length === 1 ? '' : 's'} found only in .xtrm/skills/default`);
-      hint(`example: ${extraInDefault.slice(0, 3).join(', ')}${extraInDefault.length > 3 ? ', ...' : ''}`);
-    }
-    fix('specialists init --sync-skills');
-  }
-
-  const defaultSkills = readdirSync(XTRM_DEFAULT_SKILLS_DIR, { withFileTypes: true })
-    .filter(entry => entry.isDirectory())
-    .map(entry => entry.name);
-
-  let linksOk = true;
-  for (const skillName of defaultSkills) {
-    const activeLinkPath = join(XTRM_ACTIVE_SKILLS_DIR, skillName);
-    const expectedTarget = join(XTRM_DEFAULT_SKILLS_DIR, skillName);
-    const state = isSymlinkTo(activeLinkPath, expectedTarget);
-    if (state.ok) continue;
-
-    linksOk = false;
-    const relLink = relative(CWD, activeLinkPath);
-    if (state.reason === 'missing') {
-      fail(`${relLink} missing`);
-    } else if (state.reason === 'not-symlink') {
-      fail(`${relLink} is not a symlink`);
-    } else if (state.reason === 'wrong-target') {
-      fail(`${relLink} points to ${state.target ?? 'unknown target'}`);
-    } else {
-      fail(`${relLink} is broken`);
-    }
-    fix('specialists init --sync-skills');
-  }
-
-  const legacyActiveRoots: Array<{ scope: 'claude' | 'pi'; root: string }> = [
-    { scope: 'claude', root: join(XTRM_ACTIVE_SKILLS_DIR, 'claude') },
-    { scope: 'pi', root: join(XTRM_ACTIVE_SKILLS_DIR, 'pi') },
-  ];
-
-  for (const { root } of legacyActiveRoots) {
-    if (!existsSync(root)) continue;
-    if (isSymlinkTo(root, XTRM_ACTIVE_SKILLS_DIR).ok) continue;
-
-    const relRoot = relative(CWD, root);
-    if (lstatSync(root).isDirectory()) {
-      warn(`${relRoot}/ legacy scoped layout found`);
-    } else {
-      warn(`${relRoot} legacy scoped layout found`);
-    }
-    fix('specialists init --sync-skills');
-  }
-
-  const skillRootChecks: Array<{ root: string; expected: string }> = [
-    { root: join(CLAUDE_DIR, 'skills'), expected: XTRM_ACTIVE_SKILLS_DIR },
-    { root: join(PI_DIR, 'skills'), expected: XTRM_ACTIVE_SKILLS_DIR },
-  ];
-
-  let rootLinksOk = true;
-  for (const check of skillRootChecks) {
-    const state = isSymlinkTo(check.root, check.expected);
-    if (state.ok) {
-      ok(`${relative(CWD, check.root)} -> ${relative(dirname(check.root), check.expected)}`);
-      continue;
-    }
-
-    rootLinksOk = false;
-    const relRoot = relative(CWD, check.root);
-    if (state.reason === 'missing') {
-      fail(`${relRoot} missing`);
-    } else if (state.reason === 'not-symlink') {
-      fail(`${relRoot} is not a symlink`);
-    } else if (state.reason === 'wrong-target') {
-      fail(`${relRoot} points to ${state.target ?? 'unknown target'}`);
-    } else {
-      fail(`${relRoot} is broken`);
-    }
-    fix('specialists init --sync-skills');
-  }
-
-  return drifted.length === 0 && missingInDefault.length === 0 && linksOk && rootLinksOk;
-}
-
-
-function checkManagedMirror(label: string, canonicalRelativePath: string, mirrorDir: string, fixHint: string): boolean {
-  const sourceDir = resolvePackageAssetDir(canonicalRelativePath);
-  const sourceLabel = sourceDir ? relative(CWD, sourceDir) : `package canonical ${canonicalRelativePath}`;
-  if (!sourceDir) {
-    warn(`${label} source missing: package canonical ${canonicalRelativePath}`);
-    fix(fixHint);
-    return false;
-  }
-  if (!existsSync(mirrorDir)) {
-    fail(`${label} mirror missing: ${relative(CWD, mirrorDir)}`);
-    fix(fixHint);
-    return false;
-  }
-
-  const sourceHashes = collectFileHashes(sourceDir);
-  const mirrorHashes = collectFileHashes(mirrorDir);
-  const drifted = [...sourceHashes.keys()].filter(relPath => mirrorHashes.get(relPath) !== sourceHashes.get(relPath));
-  const missing = [...sourceHashes.keys()].filter(relPath => !mirrorHashes.has(relPath));
-  const extra = [...mirrorHashes.keys()].filter(relPath => !sourceHashes.has(relPath));
-
-  if (drifted.length === 0 && missing.length === 0 && extra.length === 0) {
-    ok(`${label} mirror in sync against ${sourceLabel}`);
+  if (drifted.length === 0 && missing.length === 0) {
+    ok(`${relative(CWD, canonicalSkillsDir)} matches global default pool`);
     return true;
   }
-
   if (drifted.length > 0) {
-    fail(`${label}: ${drifted.length} safe prune candidate${drifted.length === 1 ? '' : 's'}`);
+    fail(`${drifted.length} drifted file${drifted.length === 1 ? '' : 's'} between package and global default pool`);
     hint(`example: ${drifted.slice(0, 3).join(', ')}${drifted.length > 3 ? ', ...' : ''}`);
   }
   if (missing.length > 0) {
-    fail(`${label}: ${missing.length} missing mirror file${missing.length === 1 ? '' : 's'}`);
+    fail(`${missing.length} file${missing.length === 1 ? '' : 's'} missing from global default pool`);
     hint(`example: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? ', ...' : ''}`);
   }
-  if (extra.length > 0) {
-    warn(`${label}: ${extra.length} extra mirror file${extra.length === 1 ? '' : 's'}`);
-    hint(`example: ${extra.slice(0, 3).join(', ')}${extra.length > 3 ? ', ...' : ''}`);
-  }
-  fix(fixHint);
+  fix('reinstall xtrm-tools (skills are vendored globally)');
   return false;
-}
-
-function checkManagedAssetMirrors(): boolean {
-  section('Category B  xtrm-managed asset mirrors');
-  const specialistsOk = checkManagedMirror('specialists', 'specialists', DEFAULT_SPECIALISTS_DIR, 'sp prune-stale-defaults --apply');
-  const rulesOk = checkManagedMirror('mandatory-rules', 'mandatory-rules', join(DEFAULT_SPECIALISTS_DIR, 'mandatory-rules'), 'sp prune-stale-defaults --apply');
-  const nodesOk = checkManagedMirror('nodes', 'nodes', join(DEFAULT_SPECIALISTS_DIR, 'nodes'), 'sp prune-stale-defaults --apply');
-  return specialistsOk && rulesOk && nodesOk;
 }
 
 function checkUserOverlayDrift(): boolean {
@@ -466,17 +242,18 @@ function checkUserOverlayDrift(): boolean {
     ok('no user overlays present');
     return true;
   }
+  const packageSpecialistsDir = resolvePackageAssetDir('specialists');
   let allOk = true;
   for (const name of overlays) {
     const userPath = join(USER_SPECIALISTS_DIR, name);
-    const defaultPath = join(DEFAULT_SPECIALISTS_DIR, name);
+    const defaultPath = packageSpecialistsDir ? join(packageSpecialistsDir, name) : '';
     const userSpec = loadJson(userPath);
     if (!userSpec) {
       warn(`${name}: failed to parse — skipping drift check`);
       continue;
     }
-    if (!existsSync(defaultPath)) {
-      ok(`${name}: user-only overlay (no default to drift from)`);
+    if (!defaultPath || !existsSync(defaultPath)) {
+      ok(`${name}: user-only overlay (no package default to drift from)`);
       continue;
     }
     const defaultSpec = loadJson(defaultPath);
@@ -663,12 +440,15 @@ async function checkSpecialistOverrides(): Promise<boolean> {
     return false;
   }
 
+  // Templates (category:'template') are copy-source specialists that are never
+  // dispatched, so a missing model is not a real gap.
+  const dispatchable = summaries.filter(s => s.category !== 'template');
   const missing: string[] = [];
-  for (const summary of summaries) {
+  for (const summary of dispatchable) {
     if (!summary.model || summary.model === '') missing.push(summary.name);
   }
 
-  const total = summaries.length;
+  const total = dispatchable.length;
   const present = total - missing.length;
 
   if (missing.length === 0) {
@@ -792,8 +572,18 @@ export function cleanupProcesses(jobsDir: string, dryRun: boolean): CleanupProce
     const statuses = sqliteClient.listStatuses();
     for (const status of statuses) {
       if (status.status !== 'running' && status.status !== 'starting') continue;
+      // Skip rows whose job_id was written NULL/empty — they can't be actioned by
+      // the user (no path to open, no id to name) and rendering them as "undefined"
+      // was misleading. The upstream write that produced them is a separate bug.
+      if (!status.id) continue;
       result.total += 1;
-      if (status.pid && process.kill(status.pid, 0)) {
+      // process.kill(pid, 0) THROWS ESRCH when the pid is dead — it does not return false.
+      // Mirror the file-path branch below (try/catch → zombie on ESRCH).
+      let alive = false;
+      if (status.pid) {
+        try { process.kill(status.pid, 0); alive = true; } catch { alive = false; }
+      }
+      if (alive) {
         result.running += 1;
         continue;
       }
@@ -1126,23 +916,21 @@ export async function run(argv: readonly string[] = process.argv.slice(3)): Prom
   const bdOk = checkBd();
   const xtOk = checkXt();
   const hooksOk = checkHooks();
-  const mcpOk = checkMCP();
   const versionOk = checkVersion();
   const skillDriftOk = checkSkillDrift();
-  const mirrorOk = checkManagedAssetMirrors();
   const userOverlayOk = checkUserOverlayDrift();
   const dirsOk = checkRuntimeDirs();
   const jobsOk = checkZombieJobs();
   const fragmentsOk = checkClaudeMdFragments();
   const overridesOk = await checkSpecialistOverrides();
 
-  const allOk = piOk && spOk && bdOk && xtOk && hooksOk && mcpOk && versionOk && skillDriftOk && mirrorOk && userOverlayOk && dirsOk && jobsOk && fragmentsOk && overridesOk;
+  const allOk = piOk && spOk && bdOk && xtOk && hooksOk && versionOk && skillDriftOk && userOverlayOk && dirsOk && jobsOk && fragmentsOk && overridesOk;
   console.log('');
   if (allOk) {
     console.log(`  ${green('✓')} ${bold('All checks passed')}  — specialists is healthy`);
   } else {
     console.log(`  ${yellow('○')} ${bold('Some checks failed')}  — follow the fix hints above`);
-    console.log(`  ${dim('specialists init fixes hook + MCP registration; specialists init --sync-skills fixes skill drift/symlink issues; sp prune-stale-defaults --apply removes stale default mirrors; --sync-defaults is deprecated.')}`);
+    console.log(`  ${dim('Hooks + default skill pool are vendored globally by xtrm-tools; reinstall if drift or missing files appear.')}`);
   }
   console.log('');
 }

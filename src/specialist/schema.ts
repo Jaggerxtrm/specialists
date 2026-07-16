@@ -58,7 +58,7 @@ const PromptSchema = z.object({
   system_prompt_mode: z.enum(['append', 'replace']).optional(),
   task_template: z.string(),
   output_schema: z.record(z.unknown()).optional(),
-  skill_inherit: z.string().optional(),         // injected via pi --skill
+  skill_inherit: z.string().optional(),         // declared via pi --skill (force-loaded at turn-1)
 }).passthrough();
 
 /** Script/command entry for pre/post execution hooks.
