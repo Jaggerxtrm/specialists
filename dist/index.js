@@ -22513,8 +22513,12 @@ function buildSkillPrefix(specialist, surface) {
   }
   if (names.length === 0)
     return "";
-  const sep2 = surface === "claude" ? "-" : ":";
-  return `${names.map((n) => `/skill${sep2}${n}`).join(" ")}
+  if (surface === "claude")
+    return `${names.map((n) => `/${n}`).join(`
+`)}
+
+`;
+  return `${names.map((n) => `/skill:${n}`).join(" ")}
 
 `;
 }
@@ -72674,8 +72678,9 @@ async function run42() {
         "",
         "Usage: specialists render-skill-prefix <name> [--surface pi|claude]",
         "",
-        "Emit the turn-1 /skill: composition block for a specialist (unitAI-qeguh).",
-        "Byte-identical to the prefix `render-task` bakes into initial_prompt.",
+        "Emit the turn-1 skill-command block for a specialist (unitAI-qeguh).",
+        "Pi emits `/skill:<name>` commands separated by spaces; Claude emits `/<name>` commands",
+        "separated by newlines. Byte-identical to `render-task`'s skill_prefix metadata.",
         "",
         "Options:",
         "  --surface pi|claude    Interactive surface (default: pi)",
