@@ -40,7 +40,13 @@ function getJobs(workflow: Mapping): Mapping | undefined {
 
 function isPullRequestReachable(job: Mapping): boolean {
   const condition = job.if;
-  return !(typeof condition === 'string' && /github\.event_name\s*!=\s*['"]pull_request['"]/.test(condition));
+  if (typeof condition !== 'string') return true;
+
+  const normalizedCondition = condition
+    .replace(/^\s*\$\{\{\s*/, '')
+    .replace(/\s*\}\}\s*$/, '')
+    .trim();
+  return !/^github\.event_name\s*!=\s*(['"])pull_request\1$/.test(normalizedCondition);
 }
 
 function resolvePullRequestRunner(value: unknown): RunnerResolution {
@@ -186,6 +192,14 @@ describe('pull_request workflow trust boundary', () => {
   it('rejects runner indirection that can select CI_RUNNER', () => {
     const workflow = fixtureWith((source) => source.replace('ubuntu-latest', '${{ vars.CI_RUNNER }}'));
     expect(findTrustViolations(workflow)).toContain('fixture/check: pull_request runner cannot be resolved safely');
+  });
+
+  it('rejects compound non-pull-request guards', () => {
+    const workflow = fixtureWith((source) => source.replace(
+      '    runs-on: ubuntu-latest',
+      "    if: github.event_name != 'pull_request' || github.event_name == 'pull_request'\n    runs-on: self-hosted",
+    ));
+    expect(findTrustViolations(workflow)).toContain('fixture/check: pull_request resolves to self-hosted runner');
   });
 
   it('allows read-only pull request permission', () => {
