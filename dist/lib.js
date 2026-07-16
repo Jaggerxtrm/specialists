@@ -16945,6 +16945,7 @@ var MetadataSchema = objectType({
 var ExecutionSchema = objectType({
   mode: enumType(["tool", "skill", "auto"]).default("auto"),
   model: stringType().nullable(),
+  surface_models: recordType(stringType()).optional(),
   fallback_model: stringType().nullable().optional(),
   fallback_models: arrayType(stringType()).nullable().optional(),
   timeout_ms: numberType().default(120000),

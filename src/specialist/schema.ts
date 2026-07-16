@@ -16,6 +16,7 @@ const MetadataSchema = z.object({
 const ExecutionSchema = z.object({
   mode: z.enum(['tool', 'skill', 'auto']).default('auto'),
   model: z.string().nullable(),
+  surface_models: z.record(z.string()).optional(),
   fallback_model: z.string().nullable().optional(),
   fallback_models: z.array(z.string()).nullable().optional(),
   timeout_ms: z.number().default(120_000),
