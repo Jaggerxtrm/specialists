@@ -26,6 +26,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -70,6 +71,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -114,6 +116,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -382,6 +385,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -426,6 +430,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -470,6 +475,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -738,6 +744,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -782,6 +789,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -826,6 +834,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -1096,6 +1105,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -1140,6 +1150,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -1184,6 +1195,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -1452,6 +1464,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -1496,6 +1509,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -1540,6 +1554,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -1808,6 +1823,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -1852,6 +1868,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -1896,6 +1913,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -2166,6 +2184,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -2210,6 +2229,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -2254,6 +2274,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -2522,6 +2543,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -2566,6 +2588,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -2610,6 +2633,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -2878,6 +2902,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -2922,6 +2947,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
@@ -2966,6 +2992,7 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
             model: z.ZodNullable<z.ZodString>;
+            surface_models: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
             fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;

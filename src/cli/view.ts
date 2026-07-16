@@ -30,6 +30,7 @@ const SECTION_ALIASES: Record<string, keyof Specialist['specialist'] | 'beads'> 
 interface ParsedArgs {
   name?: string;
   section?: keyof Specialist['specialist'] | 'beads';
+  surface?: string;
   raw: boolean;
   all: boolean;
 }
@@ -48,7 +49,7 @@ function permissionBadge(permission: SpecialistSummary['permission_required']): 
   return magenta('[HIGH]');
 }
 
-function parseArgs(argv: string[]): ParsedArgs {
+export function parseArgs(argv: string[]): ParsedArgs {
   const parsed: ParsedArgs = { raw: false, all: false };
 
   for (let index = 0; index < argv.length; index++) {
@@ -61,6 +62,16 @@ function parseArgs(argv: string[]): ParsedArgs {
 
     if (token === '--all') {
       parsed.all = true;
+      continue;
+    }
+
+    if (token === '--surface') {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new ArgParseError('--surface requires a value');
+      }
+      parsed.surface = value;
+      index += 1;
       continue;
     }
 
@@ -142,13 +153,13 @@ function printGenericSection(title: string, color: (value: string) => string, va
   console.log(formatValue(value));
 }
 
-function printHeader(summary: SpecialistSummary): void {
+function printHeader(summary: SpecialistSummary, model: string | null = summary.model): void {
   const scope = summary.scope === 'default' ? green('[default]') : summary.scope === 'package' ? blue('[package]') : yellow('[user]');
   const source = dim(summary.source);
   console.log();
   console.log(`${bold(cyan(summary.name))} ${scope} ${permissionBadge(summary.permission_required)} ${source}`);
   console.log(dim(summary.description));
-  console.log(`${dim('model:')} ${summary.model}`);
+  console.log(`${dim('model:')} ${model}`);
   console.log(`${dim('version:')} ${summary.version}`);
   console.log(`${dim('source:')} ${summary.filePath}`);
 }
@@ -226,7 +237,28 @@ function printFullSpecialist(spec: Specialist): void {
   printBySection(spec, 'beads');
 }
 
-async function printRaw(summary: SpecialistSummary, loader: SpecialistLoader): Promise<void> {
+type SurfaceModelConfig = Pick<Specialist['specialist']['execution'], 'model'> & {
+  surface_models?: Record<string, string>;
+};
+
+export function resolveSurfaceModel(execution: SurfaceModelConfig, surface?: string): string | null {
+  if (!surface) return execution.model;
+  return execution.surface_models?.[surface] ?? execution.model;
+}
+
+function withSurfaceModel(spec: Specialist, surface?: string): Specialist {
+  const model = resolveSurfaceModel(spec.specialist.execution, surface);
+  if (!surface || model === spec.specialist.execution.model) return spec;
+  return {
+    ...spec,
+    specialist: {
+      ...spec.specialist,
+      execution: { ...spec.specialist.execution, model },
+    },
+  };
+}
+
+async function printRaw(summary: SpecialistSummary, loader: SpecialistLoader, surface?: string): Promise<void> {
   // xtmux-1lb.4: emit the MERGED effective spec (package canonical + global
   // user.json + repo overrides), not the file text verbatim. "Raw" now means
   // the machine-readable form of what humans see in `sp view <name>`.
@@ -241,7 +273,7 @@ async function printRaw(summary: SpecialistSummary, loader: SpecialistLoader): P
     console.error(`Specialist not found: ${summary.name}`);
     process.exit(1);
   }
-  console.log(JSON.stringify(spec, null, 2));
+  console.log(JSON.stringify(withSurfaceModel(spec, surface), null, 2));
 }
 
 export async function run(): Promise<void> {
@@ -286,12 +318,12 @@ export async function run(): Promise<void> {
   }
 
   if (args.raw) {
-    await printRaw(selectedSummary, loader);
+    await printRaw(selectedSummary, loader, args.surface);
     return;
   }
 
-  const specialist = await loader.get(selectedSummary.name);
-  printHeader(selectedSummary);
+  const specialist = withSurfaceModel(await loader.get(selectedSummary.name), args.surface);
+  printHeader(selectedSummary, specialist.specialist.execution.model);
 
   if (args.section) {
     printBySection(specialist, args.section);

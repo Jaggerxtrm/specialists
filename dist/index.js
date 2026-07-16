@@ -20896,6 +20896,7 @@ var init_schema = __esm(() => {
   ExecutionSchema = objectType({
     mode: enumType(["tool", "skill", "auto"]).default("auto"),
     model: stringType().nullable(),
+    surface_models: recordType(stringType()).optional(),
     fallback_model: stringType().nullable().optional(),
     fallback_models: arrayType(stringType()).nullable().optional(),
     timeout_ms: numberType().default(120000),
@@ -29547,7 +29548,9 @@ var init_render_skill_prefix = __esm(() => {
 // src/cli/view.ts
 var exports_view = {};
 __export(exports_view, {
-  run: () => run7
+  run: () => run7,
+  resolveSurfaceModel: () => resolveSurfaceModel,
+  parseArgs: () => parseArgs4
 });
 import readline2 from "readline/promises";
 import { stdin as input, stdout as output } from "process";
@@ -29570,6 +29573,15 @@ function parseArgs4(argv) {
     }
     if (token === "--all") {
       parsed.all = true;
+      continue;
+    }
+    if (token === "--surface") {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new ArgParseError2("--surface requires a value");
+      }
+      parsed.surface = value;
+      index += 1;
       continue;
     }
     if (token === "--section") {
@@ -29640,13 +29652,13 @@ function printGenericSection(title, color, value) {
   printSectionHeader(title, color);
   console.log(formatValue(value));
 }
-function printHeader(summary) {
+function printHeader(summary, model = summary.model) {
   const scope = summary.scope === "default" ? green2("[default]") : summary.scope === "package" ? blue2("[package]") : yellow3("[user]");
   const source = dim3(summary.source);
   console.log();
   console.log(`${bold3(cyan2(summary.name))} ${scope} ${permissionBadge2(summary.permission_required)} ${source}`);
   console.log(dim3(summary.description));
-  console.log(`${dim3("model:")} ${summary.model}`);
+  console.log(`${dim3("model:")} ${model}`);
   console.log(`${dim3("version:")} ${summary.version}`);
   console.log(`${dim3("source:")} ${summary.filePath}`);
 }
@@ -29713,13 +29725,30 @@ function printFullSpecialist(spec) {
   printBySection(spec, "stall_detection");
   printBySection(spec, "beads");
 }
-async function printRaw(summary, loader) {
+function resolveSurfaceModel(execution, surface) {
+  if (!surface)
+    return execution.model;
+  return execution.surface_models?.[surface] ?? execution.model;
+}
+function withSurfaceModel(spec, surface) {
+  const model = resolveSurfaceModel(spec.specialist.execution, surface);
+  if (!surface || model === spec.specialist.execution.model)
+    return spec;
+  return {
+    ...spec,
+    specialist: {
+      ...spec.specialist,
+      execution: { ...spec.specialist.execution, model }
+    }
+  };
+}
+async function printRaw(summary, loader, surface) {
   const spec = await loader.getEffective(summary.name);
   if (!spec) {
     console.error(`Specialist not found: ${summary.name}`);
     process.exit(1);
   }
-  console.log(JSON.stringify(spec, null, 2));
+  console.log(JSON.stringify(withSurfaceModel(spec, surface), null, 2));
 }
 async function run7() {
   let args;
@@ -29757,11 +29786,11 @@ async function run7() {
     selectedSummary = chosen;
   }
   if (args.raw) {
-    await printRaw(selectedSummary, loader);
+    await printRaw(selectedSummary, loader, args.surface);
     return;
   }
-  const specialist = await loader.get(selectedSummary.name);
-  printHeader(selectedSummary);
+  const specialist = withSurfaceModel(await loader.get(selectedSummary.name), args.surface);
+  printHeader(selectedSummary, specialist.specialist.execution.model);
   if (args.section) {
     printBySection(specialist, args.section);
     return;
@@ -72712,6 +72741,7 @@ async function run42() {
         "Modes:",
         "  specialists view <name>         Render one specialist in human-friendly sections",
         "  specialists view --section X    Render one section only (metadata/execution/prompt/...)",
+        "  specialists view --surface <name>  Prefer execution.surface_models[name]",
         "  specialists view --raw          Print raw source config for piping",
         "  specialists view --all          Show detailed catalog for all specialists",
         "  specialists view                Show catalog, then prompt to pick a specialist",
@@ -72719,6 +72749,7 @@ async function run42() {
         "Examples:",
         "  specialists view debugger",
         "  specialists view debugger --section prompt",
+        "  specialists view debugger --surface claude",
         "  specialists view debugger --raw",
         "  specialists view --all",
         ""
