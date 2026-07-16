@@ -1,5 +1,8 @@
 name: telemetry-contract
 
+permissions:
+  contents: read
+
 on:
   pull_request:
     paths:
@@ -27,9 +30,11 @@ on:
 
 jobs:
   telemetry-contract:
-    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["self-hosted","linux","mercury-lite","specialists"]') }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest

@@ -1,5 +1,8 @@
 name: pi-compat
 
+permissions:
+  contents: read
+
 # Detects when a newer @mariozechner/pi-coding-agent breaks our spawn flags.
 # We unpinned the Dockerfile to @latest, so this is the canary.
 #
@@ -26,6 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Resolve pi version
         id: pi

@@ -14,12 +14,11 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write  # write needed to post the leak summary comment on PRs
 
 jobs:
   gitleaks:
     name: Gitleaks scan
-    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["self-hosted","linux","mercury-lite","specialists"]') }}
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON(vars.CI_RUNNER || '["self-hosted","linux","mercury-lite","specialists"]') }}
     timeout-minutes: 15
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
@@ -29,6 +28,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0  # full history for scheduled deep scans
+          persist-credentials: false
 
       - name: Install gitleaks
         run: |
