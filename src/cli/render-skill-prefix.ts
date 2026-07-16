@@ -1,4 +1,4 @@
-// `specialists render-skill-prefix` — turn-1 /skill: composition emitter (unitAI-qeguh).
+// `specialists render-skill-prefix` — turn-1 skill-command block emitter (unitAI-qeguh).
 //
 // Consumed by xtrm-tools (`xt --role`) so it can reuse the exact prefix that
 // `sp render-task` bakes into initial_prompt, keeping the sp/xt parity contract

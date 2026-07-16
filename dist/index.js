@@ -22507,6 +22507,9 @@ function buildSkillPrefix(specialist, surface) {
   const names = [];
   for (const p of paths) {
     const n = deriveSkillName(p);
+    if (!SKILL_NAME_PATTERN.test(n)) {
+      throw new Error("Invalid skill name derived from skills.paths");
+    }
     if (seen.has(n))
       continue;
     seen.add(n);
@@ -22514,8 +22517,12 @@ function buildSkillPrefix(specialist, surface) {
   }
   if (names.length === 0)
     return "";
-  const sep2 = surface === "claude" ? "-" : ":";
-  return `${names.map((n) => `/skill${sep2}${n}`).join(" ")}
+  if (surface === "claude")
+    return `${names.map((n) => `/${n}`).join(`
+`)}
+
+`;
+  return `${names.map((n) => `/skill:${n}`).join(" ")}
 
 `;
 }
@@ -22610,10 +22617,11 @@ ${mandatoryRulesBlock}`;
     resolvedPrompt
   };
 }
-var MANDATORY_RULES_TOKEN_LIMIT = 2000;
+var MANDATORY_RULES_TOKEN_LIMIT = 2000, SKILL_NAME_PATTERN;
 var init_task_prompt = __esm(() => {
   init_mandatory_rules();
   init_beads();
+  SKILL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 });
 
 // src/pi/backendMap.ts
@@ -72675,8 +72683,9 @@ async function run42() {
         "",
         "Usage: specialists render-skill-prefix <name> [--surface pi|claude]",
         "",
-        "Emit the turn-1 /skill: composition block for a specialist (unitAI-qeguh).",
-        "Byte-identical to the prefix `render-task` bakes into initial_prompt.",
+        "Emit the turn-1 skill-command block for a specialist (unitAI-qeguh).",
+        "Pi emits `/skill:<name>` commands separated by spaces; Claude emits `/<name>` commands",
+        "separated by newlines. Byte-identical to `render-task`'s skill_prefix metadata.",
         "",
         "Options:",
         "  --surface pi|claude    Interactive surface (default: pi)",

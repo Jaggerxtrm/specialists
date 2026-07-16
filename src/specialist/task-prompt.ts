@@ -8,6 +8,7 @@ import type { Specialist } from './schema.js';
 
 /** MANDATORY_RULES are dropped above this budget rather than truncated (sp run contract). */
 const MANDATORY_RULES_TOKEN_LIMIT = 2000;
+const SKILL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export type Surface = 'pi' | 'claude';
 
@@ -27,6 +28,8 @@ export function deriveSkillName(path: string): string {
  * Turn-1 deterministic skill-load block (unitAI-qeguh).
  * Empty string when the specialist declares no skills — caller must NOT prepend anything.
  * Dedup by derived name, preserving skills.paths JSON declaration order.
+ * Pi uses `/skill:<name>` commands separated by spaces; Claude uses `/<name>`
+ * commands separated by newlines. Names come from the loader-validated skill paths.
  */
 export function buildSkillPrefix(specialist: Specialist['specialist'], surface: Surface): string {
   const paths = specialist.skills?.paths ?? [];
@@ -35,13 +38,16 @@ export function buildSkillPrefix(specialist: Specialist['specialist'], surface: 
   const names: string[] = [];
   for (const p of paths) {
     const n = deriveSkillName(p);
+    if (!SKILL_NAME_PATTERN.test(n)) {
+      throw new Error('Invalid skill name derived from skills.paths');
+    }
     if (seen.has(n)) continue;
     seen.add(n);
     names.push(n);
   }
   if (names.length === 0) return '';
-  const sep = surface === 'claude' ? '-' : ':';
-  return `${names.map((n) => `/skill${sep}${n}`).join(' ')}\n\n`;
+  if (surface === 'claude') return `${names.map((n) => `/${n}`).join('\n')}\n\n`;
+  return `${names.map((n) => `/skill:${n}`).join(' ')}\n\n`;
 }
 
 export function buildBeadBoundaryInstruction(cwd: string, worktreeBoundary?: string): string {
@@ -201,9 +207,9 @@ export function renderTaskPrompt(input: TaskPromptInput): TaskPromptResult {
     renderedTask = input.appendExecutionContext(renderedTask, cwd, variables);
   }
 
-  // unitAI-qeguh: prepend the turn-1 /skill: block so declared skills load
-  // deterministically. Empty when no declared skills — core relies on that
-  // absence to trigger its position-0 body-safety fallback.
+  // unitAI-qeguh: prepend the surface-specific turn-1 skill command block so
+  // declared skills load deterministically. Empty when no declared skills — core
+  // relies on that absence to trigger its position-0 body-safety fallback.
   const skillPrefix = buildSkillPrefix(specialist, input.surface ?? 'pi');
   if (skillPrefix) renderedTask = `${skillPrefix}${renderedTask}`;
 
