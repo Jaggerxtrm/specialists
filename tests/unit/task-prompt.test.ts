@@ -128,7 +128,7 @@ describe('renderTaskPrompt', () => {
   });
 });
 
-// unitAI-qeguh — turn-1 /skill: composition, sp/xt parity (unitAI-6639v.1).
+// unitAI-qeguh — turn-1 skill-command composition, sp/xt parity (unitAI-6639v.1).
 describe('buildSkillPrefix', () => {
   it('derives folder name for /SKILL.md and stem for bare .md', () => {
     expect(deriveSkillName('config/skills/using-specialists/SKILL.md')).toBe('using-specialists');
@@ -141,10 +141,19 @@ describe('buildSkillPrefix', () => {
     expect(buildSkillPrefix(s, 'claude')).toBe('');
   });
 
-  it('uses / delimiters per surface: pi=/skill: claude=/skill-', () => {
+  it('emits Pi commands space-separated and byte-identically', () => {
     const s = spec('$prompt', { skills: { paths: ['a/b/using-specialists/SKILL.md', 'a/b/pi-quick.md'] } });
     expect(buildSkillPrefix(s, 'pi')).toBe('/skill:using-specialists /skill:pi-quick\n\n');
-    expect(buildSkillPrefix(s, 'claude')).toBe('/skill-using-specialists /skill-pi-quick\n\n');
+  });
+
+  it('emits one Claude command followed by one blank line', () => {
+    const s = spec('$prompt', { skills: { paths: ['a/b/using-specialists/SKILL.md'] } });
+    expect(buildSkillPrefix(s, 'claude')).toBe('/using-specialists\n\n');
+  });
+
+  it('emits each Claude command on its own line followed by one blank line', () => {
+    const s = spec('$prompt', { skills: { paths: ['a/b/using-specialists/SKILL.md', 'a/b/pi-quick.md'] } });
+    expect(buildSkillPrefix(s, 'claude')).toBe('/using-specialists\n/pi-quick\n\n');
   });
 
   it('preserves skills.paths declaration order and dedups by derived name', () => {
@@ -155,12 +164,20 @@ describe('buildSkillPrefix', () => {
   });
 });
 
-describe('renderTaskPrompt — /skill: prefix baked into initial_prompt', () => {
-  it('bakes prefix at position 0, then the prior task body', () => {
+describe('renderTaskPrompt — surface-specific skill prefix baked into initial_prompt', () => {
+  it('bakes the Pi prefix at position 0, then the prior task body', () => {
     const s = spec('$prompt', { skills: { paths: ['x/using-specialists/SKILL.md'] } });
     const out = renderTaskPrompt({ ...base, specialist: s, surface: 'pi' });
     expect(out.skillPrefix).toBe('/skill:using-specialists\n\n');
     expect(out.initial_prompt.startsWith('/skill:using-specialists\n\n')).toBe(true);
+    expect(out.initial_prompt).toContain(BEAD.title);
+  });
+
+  it('bakes the exact Claude prefix at position 0, then the prior task body', () => {
+    const s = spec('$prompt', { skills: { paths: ['x/using-specialists/SKILL.md', 'x/pi-quick.md'] } });
+    const out = renderTaskPrompt({ ...base, specialist: s, surface: 'claude' });
+    expect(out.skillPrefix).toBe('/using-specialists\n/pi-quick\n\n');
+    expect(out.initial_prompt.startsWith('/using-specialists\n/pi-quick\n\n')).toBe(true);
     expect(out.initial_prompt).toContain(BEAD.title);
   });
 
