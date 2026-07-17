@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v3.21.0] — 2026-07-18
+
 ### Added
 
 - **Wire verified-audit skill into reviewer.specialist.json** ([0a6895c](https://github.com/xtrm-dev/specialists/commit/0a6895c95dac898f97ca6af9d94265c2c52246e5))
@@ -16,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Isolate ambient pool + force turn-1 body load (unitAI-0o3pv, -qeguh, -uv1yg)** ([3d77800](https://github.com/xtrm-dev/specialists/commit/3d7780010061d844363436452aca5257da6f8d82))
 
 - **Add --surface to sp view (#195)** ([ab88775](https://github.com/xtrm-dev/specialists/commit/ab8877542c07668ee0a359b226402b02a9135c86))
+
+- **Help audit + cliff cleanup + repo metadata + release docs (r6g.3, WIP) (#196)** ([0f4a31d](https://github.com/xtrm-dev/specialists/commit/0f4a31d316a277c2b51ec56e04c659de48987b83))
 
 ### Fixed
 
@@ -56,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Retire repo-local mirror checks, redirect to global vendored paths** ([d0ce4c2](https://github.com/xtrm-dev/specialists/commit/d0ce4c29077680f25847e3ecf1d1a91fd2503788))
 
 - **Refresh [Unreleased] with verified-audit wire** ([ec36b3f](https://github.com/xtrm-dev/specialists/commit/ec36b3fc1bc2b3d846af68a130eec5cd4c4b9253))
+
+- **Resync task-prompt d.ts with source docstring** ([9f86070](https://github.com/xtrm-dev/specialists/commit/9f860700657d40475fdc030772adfda6c5726438))
 
 ## [v3.20.0] — 2026-07-14
 
