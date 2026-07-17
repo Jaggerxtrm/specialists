@@ -13,41 +13,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Wire verified-audit skill into reviewer.specialist.json** ([0a6895c](https://github.com/xtrm-dev/specialists/commit/0a6895c95dac898f97ca6af9d94265c2c52246e5))
 
-  Adds ~/.xtrm/skills/default/verified-audit/SKILL.md to reviewer's
-  skills.paths. Complements reviewer's existing inline "Simplification
-  Findings" section with a whole-file / cross-file audit methodology
-  (four legs: line-count reduction, GitNexus impact verification,
-  config/usage grep for enum branches, efficiency signals hunt) plus
-  methodology gotchas the inline block doesn't cover: closures inside
-  methods report zero callers in the impact graph, dead-data branches
-  evade GitNexus entirely, and file size is not a proxy for slop density.
+- **Isolate ambient pool + force turn-1 body load (unitAI-0o3pv, -qeguh, -uv1yg)** ([3d77800](https://github.com/xtrm-dev/specialists/commit/3d7780010061d844363436452aca5257da6f8d82))
 
-  Skill source lives in xtrm-dev/core (see companion PR). Requires an
-  xt update / skills reconcile on the host before this merges, or
-  reviewer's pre-run validator will hard-fail on the missing skill file.
+- **Add --surface to sp view (#195)** ([ab88775](https://github.com/xtrm-dev/specialists/commit/ab8877542c07668ee0a359b226402b02a9135c86))
+
+### Fixed
+
+- **ESRCH crash in Background jobs check** ([76ce52a](https://github.com/xtrm-dev/specialists/commit/76ce52adc4148b0b9140b864ebc51445fe318944))
+
+- **Skip template specialists in model-configured check + skip null-id sqlite rows** ([0d450ed](https://github.com/xtrm-dev/specialists/commit/0d450ed48d65543336d35ea172af16a17a329765))
+
+- **Bump stall_timeout_ms + Phase 6 self-open-PR (xtrm-efa2a.1, xtrm-vu2ro.1) (#192)** ([7bcd3a0](https://github.com/xtrm-dev/specialists/commit/7bcd3a06f25e376706d949bbbd6b97f0dd81c390))
+
+- **Render Claude skill commands separately** ([2fbcabd](https://github.com/xtrm-dev/specialists/commit/2fbcabd4c1498927dea248ee9d6e0192cf13f62e))
+
+- **Rebuild Claude skill prefix distribution** ([d560314](https://github.com/xtrm-dev/specialists/commit/d5603144a9ba97b154cb32b42f214a572029d401))
+
+- **Trust OSV verdict and preserve unknown launch mode** ([578ef90](https://github.com/xtrm-dev/specialists/commit/578ef9090a56de5d19016f56e45df6f3c443fbb9))
+
+- **Reject OSV scanner operational exits** ([4e37caa](https://github.com/xtrm-dev/specialists/commit/4e37caa6bed9ebfa85e304dbcef5d7aa31c4e7d1))
+
+- **Isolate pull request workflow trust boundary** ([797b8f3](https://github.com/xtrm-dev/specialists/commit/797b8f3baf4148f880ef9eb1903e46f16e89cb5b))
+
+- **Close PR 193 Ubuntu CI gaps** ([c5d46fe](https://github.com/xtrm-dev/specialists/commit/c5d46fef38c29a1f5911e2d222021f5e7ba78937))
+
+- **Reject compound PR workflow guards** ([e93d8bd](https://github.com/xtrm-dev/specialists/commit/e93d8bdf6ad256bbcdc2bba63af84b7af61d37b0))
+
+- **Validate rendered skill names** ([e44b451](https://github.com/xtrm-dev/specialists/commit/e44b4515fa6862032b9f84c1ac637420150eeb50))
+
+### Other changes
+
+- **Orphan releasing/SKILL.md — core owns it** ([455e123](https://github.com/xtrm-dev/specialists/commit/455e12321c93bd80c39478641a7a69449c63ce53))
 
 ### Project maintenance
 
 - **Record the post-release launcher smoke** ([670d213](https://github.com/xtrm-dev/specialists/commit/670d2134ee6fff2ab12158c49b460e0c76bd3555))
 
-  The progressive-disclosure benchmark listed "xt --role was not smoked through
-  the launcher" as its one open limitation, because the launcher refuses to run
-  from a worktree and would have resolved the old spec from master. With v3.20.0
-  released and installed, the smoke runs for real: the coordinator session loads
-  using-specialists v3.8 from the global root, opens only the 257-line router, and
-  answers the merge question from it without pulling any reference.
-
-  Also harden scripts/changelog-update.mjs: refuse to write when the file has no
-  "# " title above the first section. A CHANGELOG already corrupted by an earlier
-  `git-cliff --prepend` has its title buried inside the injected block, so
-  "everything above the first section" is empty and the title would be silently
-  deleted. This happened on the origin/master merge and is now a hard error.
-
 - **Correlate xtmux coordination replies (#188)** ([a575696](https://github.com/xtrm-dev/specialists/commit/a575696f32862c9d548fd4b09f5a3cf42c0254c1))
 
-  * docs(skills): correlate xtmux coordination replies
+- **Reviewer-path interaction with /skill: prefix** ([f6fdb90](https://github.com/xtrm-dev/specialists/commit/f6fdb90177b2b4be1c9ffded8a3739cc43a32ddb))
 
-  * docs(coordinator): require correlated escalations
+- **Retire repo-local mirror checks, redirect to global vendored paths** ([d0ce4c2](https://github.com/xtrm-dev/specialists/commit/d0ce4c29077680f25847e3ecf1d1a91fd2503788))
+
+- **Refresh [Unreleased] with verified-audit wire** ([ec36b3f](https://github.com/xtrm-dev/specialists/commit/ec36b3fc1bc2b3d846af68a130eec5cd4c4b9253))
 
 ## [v3.20.0] — 2026-07-14
 

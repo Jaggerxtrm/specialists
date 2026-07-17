@@ -870,7 +870,7 @@ function runSetup(): void {
 export async function run(argv: readonly string[] = process.argv.slice(3)): Promise<void> {
   const subcommand = argv[0];
 
-  if (!subcommand || subcommand === '--help' || subcommand === '-h') {
+  if (!subcommand || subcommand === '--help' || subcommand === '-h' || argv.slice(1).some((arg) => arg === '--help' || arg === '-h')) {
     printDbHelp();
     return;
   }

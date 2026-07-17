@@ -31523,7 +31523,7 @@ function runSetup() {
 }
 async function run11(argv = process.argv.slice(3)) {
   const subcommand = argv[0];
-  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+  if (!subcommand || subcommand === "--help" || subcommand === "-h" || argv.slice(1).some((arg) => arg === "--help" || arg === "-h")) {
     printDbHelp();
     return;
   }
@@ -56190,6 +56190,19 @@ async function handleEpicCommand(argv) {
 `));
     return;
   }
+  const usage3 = {
+    list: "specialists epic list [--unresolved] [--json]",
+    status: "specialists epic status <epic-id> [--json]",
+    sync: "specialists epic sync <epic-id> [--apply] [--json]",
+    abandon: "specialists epic abandon <epic-id> --reason <text> [--force] [--json]",
+    merge: "specialists epic merge <epic-id> [--rebuild] [--pr] [--json] [--target-branch <name>]"
+  };
+  if (argv.slice(1).some((arg) => arg === "--help" || arg === "-h") && usage3[subcommand]) {
+    console.log(`
+Usage: ${usage3[subcommand]}
+`);
+    return;
+  }
   if (subcommand === "list") {
     await handleEpicListCommand(argv.slice(1));
     return;
@@ -64957,8 +64970,6 @@ async function run41() {
     "  specialists merge unitAI-55d                   # publish standalone chain",
     "  specialists epic merge unitAI-3f7b --pr         # publish epic via pull request",
     "  specialists end --pr                             # close session with PR publication mode",
-    "  specialists report list",
-    "  specialists report show --specialists",
     "  specialists result <job-id> --wait",
     "",
     bold15("More help:"),
@@ -64987,7 +64998,7 @@ var init_help = __esm(() => {
     ["init", "Bootstrap a project: dirs, workflow injection, project MCP registration"],
     ["list", "List specialists with full descriptions; --compact truncates, --live opens tmux picker"],
     ["list-rules", "Show mandatory-rule \xD7 specialist matrix; --rule/--specialist filters, --json"],
-    ["view", "Pretty-print specialist config with readable prompts; --section, --raw"],
+    ["view", "Pretty-print specialist config with readable prompts; --section, --surface, --raw"],
     ["edit", "Edit specialist fields via dot-path: set/get/append/remove, --preset, --list-presets"],
     ["validate", "Validate specialist schema; --target=script adds compatGuard checks"],
     ["run", "Run a specialist; --json for NDJSON event stream, --raw for legacy text"],
@@ -64995,26 +65006,26 @@ var init_help = __esm(() => {
     ["script", "One-shot CLI peer to sp serve for cron/scripts; cron-friendly exit codes, --single-instance"],
     ["release", "Deprecated alias: proxy to xt release prepare/publish"],
     ["node", "Run and inspect NodeSupervisor nodes (run/status)"],
-    ["epic", "Epic lifecycle management: list/status/resolve wave-bound chain groups"],
+    ["epic", "Epic lifecycle management: list/status/sync/abandon/merge wave-bound chain groups"],
     ["feed", "Tail compact job events; use -f to follow all jobs"],
     ["log", "Full runtime logs from xtrm.forensic.v1 (default); --legacy uses TimelineEvent filtering (deprecated, removed next minor release); -f follows live events"],
     ["forensic", "Query persisted xtrm.forensic.v1 runtime events; --json emits NDJSON"],
     ["metrics", "Export low-cardinality xtrm AgentOps metrics in Prometheus text format"],
     ["chat", "Launch an interactive TUI: feed-style timeline, status row, result, and steer/resume input"],
-    ["console", "Operator TUI for ps/feed/result/inspect with history/all traceability"],
+    ["console", "Multi-repo operator TUI with ALL/ps/feed/result/inspect views"],
     ["result", "Print final output of a completed job; --wait polls until done, --timeout <ms> sets a limit"],
     ["clean", "Clean job dirs, dashboard history (--ps), and orphan processes"],
     ["merge", "Publish one standalone chain (refuses unresolved epic chains)"],
     ["end", "Session-close publish helper; chain-aware and epic-aware with optional --pr mode"],
     ["epic list", "Enumerate epics with lifecycle state and merge readiness summary"],
     ["epic status", "Show epic state and chain job statuses"],
-    ["epic resolve", "Transition epic from open to resolving state"],
+    ["epic sync", "Reconcile epic drift; dry-run unless --apply is passed"],
+    ["epic abandon", "Close a stale epic with a required reason"],
     ["epic merge", "Publish epic-owned chains (canonical path, supports direct merge or --pr mode)"],
     ["steer", "Send a mid-run message to a running job"],
     ["resume", "Resume a waiting keep-alive session with a next-turn prompt (retains full context)"],
     ["stop", "Stop a running job"],
     ["attach", "Legacy tmux attach for jobs with tmux_session; chat-style attach is planned separately"],
-    ["report", "Generate/show/list/diff session reports in .xtrm/reports/"],
     ["status", "Show health, MCP state, and active jobs"],
     ["ps", "Show actionable dashboard (active + unresolved terminal problems); --json, --all, --follow, --active, --health, --include-terminal, --include-cleaned"],
     ["doctor", "Diagnose installation/runtime problems; --check-drift reports stale .specialists/default/ snapshots"],

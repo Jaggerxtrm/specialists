@@ -861,6 +861,18 @@ export async function handleEpicCommand(argv: readonly string[]): Promise<void> 
     return;
   }
 
+  const usage: Record<string, string> = {
+    list: 'specialists epic list [--unresolved] [--json]',
+    status: 'specialists epic status <epic-id> [--json]',
+    sync: 'specialists epic sync <epic-id> [--apply] [--json]',
+    abandon: 'specialists epic abandon <epic-id> --reason <text> [--force] [--json]',
+    merge: 'specialists epic merge <epic-id> [--rebuild] [--pr] [--json] [--target-branch <name>]',
+  };
+  if (argv.slice(1).some((arg) => arg === '--help' || arg === '-h') && usage[subcommand]) {
+    console.log(`\nUsage: ${usage[subcommand]}\n`);
+    return;
+  }
+
   if (subcommand === 'list') {
     await handleEpicListCommand(argv.slice(1));
     return;

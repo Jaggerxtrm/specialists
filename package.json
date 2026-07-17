@@ -2,6 +2,14 @@
   "name": "@jaggerxtrm/specialists",
   "version": "3.20.0",
   "description": "OmniSpecialist — 7-tool MCP orchestration layer powered by the Specialist System. Discover and execute .specialist.yaml files across project/user/system scopes via pi.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xtrm-dev/specialists.git"
+  },
+  "homepage": "https://github.com/xtrm-dev/specialists#readme",
+  "bugs": {
+    "url": "https://github.com/xtrm-dev/specialists/issues"
+  },
   "main": "dist/index.js",
   "types": "dist/types/lib.d.ts",
   "type": "module",
@@ -27,7 +35,7 @@
     "config/nodes/",
     "config/hooks/",
     "config/presets.json",
-    "docs/",
+    "docs/overrides-guide.md",
     "LICENSE",
     "!config/benchmarks/",
     "!config/skills/**/evals/",
@@ -52,7 +60,8 @@
     "benchmark:executor": "node scripts/run-executor-benchmark.mjs",
     "generate:contract": "node scripts/generate-asset-contract.mjs",
     "changelog": "node scripts/changelog-update.mjs",
-    "changelog:check": "node scripts/changelog-update.mjs --check"
+    "changelog:check": "node scripts/changelog-update.mjs --check",
+    "preversion": "bun run changelog"
   },
   "keywords": [
     "omnispecialist",

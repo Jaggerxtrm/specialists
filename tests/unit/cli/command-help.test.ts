@@ -101,4 +101,21 @@ describe('command-specific --help', () => {
     expect(out).toContain('specialists edit --global --set name.execution.model <value>');
     expect(out).toContain('specialists edit --global --get name.execution.model');
   });
+
+  it('nested epic and db help exits before runtime access', () => {
+    expect(captureIndexHelp(['epic', 'list', '--help'])).toContain('specialists epic list [--unresolved] [--json]');
+    expect(captureIndexHelp(['epic', 'status', '--help'])).toContain('specialists epic status <epic-id> [--json]');
+    expect(captureIndexHelp(['epic', 'sync', '--help'])).toContain('specialists epic sync <epic-id> [--apply] [--json]');
+    expect(captureIndexHelp(['epic', 'abandon', '--help'])).toContain('specialists epic abandon <epic-id> --reason <text>');
+    expect(captureIndexHelp(['epic', 'merge', '--help'])).toContain('specialists epic merge <epic-id>');
+    expect(captureIndexHelp(['db', 'setup', '--help'])).toContain('specialists db <setup|backfill|vacuum|prune|extract|stats|benchmark-export>');
+  });
+
+  it('top-level help advertises only current epic/report surfaces', () => {
+    const out = captureIndexHelp(['--help']);
+    expect(out).toContain('epic sync');
+    expect(out).toContain('epic abandon');
+    expect(out).not.toContain('epic resolve');
+    expect(out).not.toContain('specialists report list');
+  });
 });

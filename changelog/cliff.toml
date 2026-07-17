@@ -6,9 +6,6 @@ body = """
 ### {{ group }}
 {% for commit in commits %}
 - **{{ commit.message | upper_first }}** ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/xtrm-dev/specialists/commit/{{ commit.id }}))
-{% if commit.body %}
-{{ commit.body | trim | indent(prefix="  ", first=true) }}
-{% endif %}
 {% endfor %}{% endfor %}
 """
 trim = true
