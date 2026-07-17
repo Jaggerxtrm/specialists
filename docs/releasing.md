@@ -2,6 +2,8 @@
 
 `npm version <patch|minor>` runs `bun run changelog` through the package `preversion` hook, so git-cliff refreshes `[Unreleased]` before the version commit and tag.
 
+Prerequisite: install `git-cliff` on `PATH` (`brew install git-cliff` or `cargo install git-cliff`).
+
 Before publishing:
 
 ```bash

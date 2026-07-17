@@ -35,6 +35,7 @@
     "config/nodes/",
     "config/hooks/",
     "config/presets.json",
+    "docs/overrides-guide.md",
     "LICENSE",
     "!config/benchmarks/",
     "!config/skills/**/evals/",
