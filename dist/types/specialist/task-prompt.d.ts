@@ -14,6 +14,8 @@ export declare function deriveSkillName(path: string): string;
  * Turn-1 deterministic skill-load block (unitAI-qeguh).
  * Empty string when the specialist declares no skills — caller must NOT prepend anything.
  * Dedup by derived name, preserving skills.paths JSON declaration order.
+ * Pi uses `/skill:<name>` commands separated by spaces; Claude uses `/<name>`
+ * commands separated by newlines. Names come from the loader-validated skill paths.
  */
 export declare function buildSkillPrefix(specialist: Specialist['specialist'], surface: Surface): string;
 export declare function buildBeadBoundaryInstruction(cwd: string, worktreeBoundary?: string): string;
