@@ -783,6 +783,7 @@ specialists view --all
 ### Flags
 
 - `--section <section>`: Show one config section only. Supported values: `metadata`, `execution`, `prompt`, `skills`, `capabilities`, `communication`, `validation`, `stall` / `stall-detection`, `beads`.
+- `--surface <name>`: Prefer `execution.surface_models[name]` when displaying the effective model.
 - `--raw`: Dump raw JSON to stdout (pipe-friendly).
 - `--all`: Show the full detailed catalog of all specialists without interactive selection.
 
@@ -792,6 +793,7 @@ specialists view --all
 |---|---|
 | `sp view <name>` | Pretty-print all sections with ANSI color and readable multi-line prompts |
 | `sp view <name> --section <s>` | Print one section only |
+| `sp view <name> --surface <name>` | Resolve the model for a named surface such as `claude` |
 | `sp view <name> --raw` | Dump raw JSON (piping/scripting) |
 | `sp view --all` | Catalog with model, category, permission badge, keep-alive flag |
 | `sp view` (bare, TTY) | Catalog + interactive name prompt to drill into a specialist |
@@ -807,6 +809,7 @@ specialists view explorer
 specialists view executor --section prompt
 specialists view executor --section execution
 specialists view executor --section stall
+specialists view executor --surface claude
 
 # Raw JSON for scripting
 specialists view debugger --raw
