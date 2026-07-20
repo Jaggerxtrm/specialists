@@ -13175,6 +13175,7 @@ function initSchema(db) {
   migrateToV11(db);
   migrateToV12(db);
   migrateToV13(db);
+  migrateToV14(db);
   verifyWalMode(db);
 }
 function migrateToV13(db) {
@@ -13202,6 +13203,34 @@ function migrateToV13(db) {
   db.run(`
     INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
       VALUES (13, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV14(db) {
+  const hasV14 = db.query("SELECT 1 FROM schema_version WHERE version = 14 LIMIT 1").get();
+  db.run(`
+    CREATE TABLE IF NOT EXISTS branch_integration_events (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      t                 INTEGER NOT NULL,
+      schema_version    TEXT NOT NULL,
+      source_job_id     TEXT NOT NULL,
+      source_branch     TEXT NOT NULL,
+      source_worktree   TEXT NOT NULL,
+      target_role       TEXT,
+      target_branch     TEXT NOT NULL,
+      target_worktree   TEXT NOT NULL,
+      status            TEXT NOT NULL,
+      commit_sha        TEXT NOT NULL,
+      event_json        TEXT NOT NULL
+    );
+  `);
+  db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_branch_integration_source_commit ON branch_integration_events(source_branch, commit_sha)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_branch_integration_target ON branch_integration_events(target_branch, t)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_branch_integration_source_job ON branch_integration_events(source_job_id, t)");
+  if (hasV14)
+    return;
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (14, strftime('%s', 'now') * 1000);
   `);
 }
 function migrateToV5(db) {
@@ -13884,6 +13913,50 @@ class SqliteClient {
       const seq = typeof forensicEvent.seq === "number" && forensicEvent.seq > 0 ? forensicEvent.seq : this.getNextSpecialistEventSeq(jobId);
       this.insertForensicEventRow(jobId, seq, forensicEvent);
     }, "appendForensicEvent");
+  }
+  recordBranchIntegration(event) {
+    withRetry(() => {
+      this.db.run(`
+        INSERT OR IGNORE INTO branch_integration_events (
+          t, schema_version,
+          source_job_id, source_branch, source_worktree,
+          target_role, target_branch, target_worktree,
+          status, commit_sha, event_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        event.t_unix_ms,
+        event.schema_version,
+        event.source.job_id,
+        event.source.branch,
+        event.source.worktree,
+        event.target.role ?? null,
+        event.target.branch,
+        event.target.worktree,
+        event.status,
+        event.commit,
+        JSON.stringify(event)
+      ]);
+    }, "recordBranchIntegration");
+  }
+  listBranchIntegrations(filters = {}) {
+    const clauses = [];
+    const params = [];
+    if (filters.targetBranch) {
+      clauses.push("target_branch = ?");
+      params.push(filters.targetBranch);
+    }
+    if (filters.sourceJobId) {
+      clauses.push("source_job_id = ?");
+      params.push(filters.sourceJobId);
+    }
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit = filters.limit && filters.limit > 0 ? ` LIMIT ${Math.floor(filters.limit)}` : "";
+    const rows = this.db.query(`SELECT id, t, event_json FROM branch_integration_events ${where} ORDER BY t DESC, id DESC${limit}`).all(...params);
+    return rows.map((row) => ({
+      id: row.id,
+      t: row.t,
+      event: JSON.parse(row.event_json)
+    }));
   }
   upsertResult(jobId, output) {
     withRetry(() => {

@@ -11813,6 +11813,7 @@ function initSchema(db) {
   migrateToV11(db);
   migrateToV12(db);
   migrateToV13(db);
+  migrateToV14(db);
   verifyWalMode(db);
 }
 function migrateToV13(db) {
@@ -11840,6 +11841,34 @@ function migrateToV13(db) {
   db.run(`
     INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
       VALUES (13, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV14(db) {
+  const hasV14 = db.query("SELECT 1 FROM schema_version WHERE version = 14 LIMIT 1").get();
+  db.run(`
+    CREATE TABLE IF NOT EXISTS branch_integration_events (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      t                 INTEGER NOT NULL,
+      schema_version    TEXT NOT NULL,
+      source_job_id     TEXT NOT NULL,
+      source_branch     TEXT NOT NULL,
+      source_worktree   TEXT NOT NULL,
+      target_role       TEXT,
+      target_branch     TEXT NOT NULL,
+      target_worktree   TEXT NOT NULL,
+      status            TEXT NOT NULL,
+      commit_sha        TEXT NOT NULL,
+      event_json        TEXT NOT NULL
+    );
+  `);
+  db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_branch_integration_source_commit ON branch_integration_events(source_branch, commit_sha)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_branch_integration_target ON branch_integration_events(target_branch, t)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_branch_integration_source_job ON branch_integration_events(source_job_id, t)");
+  if (hasV14)
+    return;
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (14, strftime('%s', 'now') * 1000);
   `);
 }
 function migrateToV5(db) {
@@ -12521,6 +12550,50 @@ class SqliteClient {
       const seq = typeof forensicEvent.seq === "number" && forensicEvent.seq > 0 ? forensicEvent.seq : this.getNextSpecialistEventSeq(jobId);
       this.insertForensicEventRow(jobId, seq, forensicEvent);
     }, "appendForensicEvent");
+  }
+  recordBranchIntegration(event) {
+    withRetry(() => {
+      this.db.run(`
+        INSERT OR IGNORE INTO branch_integration_events (
+          t, schema_version,
+          source_job_id, source_branch, source_worktree,
+          target_role, target_branch, target_worktree,
+          status, commit_sha, event_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        event.t_unix_ms,
+        event.schema_version,
+        event.source.job_id,
+        event.source.branch,
+        event.source.worktree,
+        event.target.role ?? null,
+        event.target.branch,
+        event.target.worktree,
+        event.status,
+        event.commit,
+        JSON.stringify(event)
+      ]);
+    }, "recordBranchIntegration");
+  }
+  listBranchIntegrations(filters = {}) {
+    const clauses = [];
+    const params = [];
+    if (filters.targetBranch) {
+      clauses.push("target_branch = ?");
+      params.push(filters.targetBranch);
+    }
+    if (filters.sourceJobId) {
+      clauses.push("source_job_id = ?");
+      params.push(filters.sourceJobId);
+    }
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit = filters.limit && filters.limit > 0 ? ` LIMIT ${Math.floor(filters.limit)}` : "";
+    const rows = this.db.query(`SELECT id, t, event_json FROM branch_integration_events ${where} ORDER BY t DESC, id DESC${limit}`).all(...params);
+    return rows.map((row) => ({
+      id: row.id,
+      t: row.t,
+      event: JSON.parse(row.event_json)
+    }));
   }
   upsertResult(jobId, output) {
     withRetry(() => {
@@ -25294,26 +25367,83 @@ var bold = (s) => `\x1B[1m${s}\x1B[0m`, yellow = (s) => `\x1B[33m${s}\x1B[0m`, d
 // src/cli/version.ts
 var exports_version = {};
 __export(exports_version, {
-  run: () => run2
+  run: () => run2,
+  collectVersionInfo: () => collectVersionInfo
 });
 import { createRequire } from "module";
 import { fileURLToPath as fileURLToPath2 } from "url";
-import { dirname as dirname7, join as join9 } from "path";
-import { existsSync as existsSync10 } from "fs";
-async function run2() {
+import { dirname as dirname7, join as join9, sep as sep3 } from "path";
+import { existsSync as existsSync10, statSync as statSync2 } from "fs";
+import { spawnSync as spawnSync5 } from "child_process";
+function resolvePackage() {
   const req = createRequire(import.meta.url);
   const here = dirname7(fileURLToPath2(import.meta.url));
   const bundlePkgPath = join9(here, "..", "package.json");
   const sourcePkgPath = join9(here, "..", "..", "package.json");
-  let pkg;
   if (existsSync10(bundlePkgPath)) {
-    pkg = req("../package.json");
-  } else if (existsSync10(sourcePkgPath)) {
-    pkg = req("../../package.json");
-  } else {
-    console.error("Cannot find package.json");
-    process.exit(1);
+    const pkg = req("../package.json");
+    return { name: pkg.name, version: pkg.version, root: dirname7(bundlePkgPath) };
   }
+  if (existsSync10(sourcePkgPath)) {
+    const pkg = req("../../package.json");
+    return { name: pkg.name, version: pkg.version, root: dirname7(sourcePkgPath) };
+  }
+  return { name: "@jaggerxtrm/specialists", version: "0.0.0", root: join9(here, "..", "..") };
+}
+function detectSource(installRoot) {
+  return installRoot.split(sep3).includes("node_modules") ? "npm" : "local";
+}
+function git(installRoot, args) {
+  if (!existsSync10(join9(installRoot, ".git")))
+    return null;
+  const result = spawnSync5("git", args, {
+    cwd: installRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (result.status !== 0)
+    return null;
+  return result.stdout;
+}
+function readGitCommit(installRoot) {
+  const out = git(installRoot, ["rev-parse", "HEAD"]);
+  return out ? out.trim() || null : null;
+}
+function readGitDirty(installRoot) {
+  const out = git(installRoot, ["status", "--porcelain"]);
+  return out === null ? null : out.trim().length > 0;
+}
+function readBuiltAt(installRoot) {
+  const distPath = join9(installRoot, "dist", "index.js");
+  if (!existsSync10(distPath))
+    return null;
+  try {
+    return new Date(statSync2(distPath).mtime).toISOString();
+  } catch {
+    return null;
+  }
+}
+function collectVersionInfo() {
+  const pkg = resolvePackage();
+  return {
+    package: pkg.name,
+    version: pkg.version,
+    commit: readGitCommit(pkg.root),
+    dirty: readGitDirty(pkg.root),
+    source: detectSource(pkg.root),
+    built_at: readBuiltAt(pkg.root),
+    runtime: {
+      bun: process.versions.bun ?? null
+    }
+  };
+}
+async function run2() {
+  if (process.argv.includes("--json")) {
+    process.stdout.write(JSON.stringify(collectVersionInfo()) + `
+`);
+    return;
+  }
+  const pkg = resolvePackage();
   console.log(`${pkg.name} v${pkg.version}`);
 }
 var init_version = () => {};
@@ -25580,9 +25710,9 @@ var init_list_rules = __esm(() => {
 });
 
 // src/specialist/runtime-origin.ts
-import { spawnSync as spawnSync5 } from "child_process";
+import { spawnSync as spawnSync6 } from "child_process";
 function defaultRunner(cmd, args, opts) {
-  const result = spawnSync5(cmd, args, {
+  const result = spawnSync6(cmd, args, {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: opts.timeoutMs,
@@ -26635,7 +26765,7 @@ function derivePersistedChainIdentity(status, chainRootSnapshot) {
 var init_chain_identity = () => {};
 
 // src/cli/tmux-utils.ts
-import { spawnSync as spawnSync6 } from "child_process";
+import { spawnSync as spawnSync7 } from "child_process";
 function escapeForSingleQuotedBash(script) {
   return script.replace(/'/g, "'\\''");
 }
@@ -26643,7 +26773,7 @@ function quoteShellValue(value) {
   return `'${escapeForSingleQuotedBash(value)}'`;
 }
 function isTmuxAvailable() {
-  return spawnSync6("which", ["tmux"], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync7("which", ["tmux"], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function buildSessionName(specialist, suffix) {
   return `${TMUX_SESSION_PREFIX}-${specialist}-${suffix}`;
@@ -26658,14 +26788,14 @@ function createTmuxSession(name, cwd, cmd, extraEnv = {}) {
   }
   const startupScript = `${exports.join("; ")}; exec ${cmd}`;
   const wrappedCommand = `/bin/bash -c '${escapeForSingleQuotedBash(startupScript)}'`;
-  const result = spawnSync6("tmux", ["new-session", "-d", "-s", name, "-c", cwd, wrappedCommand], { encoding: "utf8", stdio: "pipe" });
+  const result = spawnSync7("tmux", ["new-session", "-d", "-s", name, "-c", cwd, wrappedCommand], { encoding: "utf8", stdio: "pipe" });
   if (result.status !== 0) {
     const errorOutput = (result.stderr ?? "").trim() || (result.error?.message ?? "unknown error");
     throw new Error(`Failed to create tmux session "${name}": ${errorOutput}`);
   }
 }
 function isTmuxSessionAlive(sessionName) {
-  const result = spawnSync6("tmux", ["has-session", "-t", sessionName], {
+  const result = spawnSync7("tmux", ["has-session", "-t", sessionName], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 2000
@@ -26675,7 +26805,7 @@ function isTmuxSessionAlive(sessionName) {
   return result.status === 0;
 }
 function killTmuxSession(name) {
-  spawnSync6("tmux", ["kill-session", "-t", name], { encoding: "utf8", stdio: "pipe" });
+  spawnSync7("tmux", ["kill-session", "-t", name], { encoding: "utf8", stdio: "pipe" });
 }
 var TMUX_SESSION_PREFIX = "sp";
 var init_tmux_utils = () => {};
@@ -26704,16 +26834,16 @@ import {
   readFileSync as readFileSync10,
   renameSync as renameSync2,
   rmSync as rmSync2,
-  statSync as statSync2,
+  statSync as statSync3,
   writeFileSync as writeFileSync5,
   writeSync
 } from "fs";
 import { join as join12 } from "path";
 import { createInterface } from "readline";
 import { createReadStream } from "fs";
-import { spawn as spawn2, spawnSync as spawnSync7, execFileSync as execFileSync2 } from "child_process";
+import { spawn as spawn2, spawnSync as spawnSync8, execFileSync as execFileSync2 } from "child_process";
 function getCurrentGitSha() {
-  const result = spawnSync7("git", ["rev-parse", "HEAD"], {
+  const result = spawnSync8("git", ["rev-parse", "HEAD"], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
   });
@@ -26845,7 +26975,7 @@ function isAutoCommitNoisePath(path) {
   return AUTO_COMMIT_NOISE_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 function listSubstantiveWorktreeFiles(worktreePath) {
-  const status = spawnSync7("git", ["status", "--porcelain"], {
+  const status = spawnSync8("git", ["status", "--porcelain"], {
     cwd: worktreePath,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -26877,7 +27007,7 @@ function runAutoCommitCheckpoint(options) {
       return { status: "skipped", reason: "no_substantive_changes" };
     }
     const addStart = Date.now();
-    const addResult = spawnSync7("git", ["add", "--", ...substantiveFiles], {
+    const addResult = spawnSync8("git", ["add", "--", ...substantiveFiles], {
       cwd: worktreePath,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -26890,7 +27020,7 @@ function runAutoCommitCheckpoint(options) {
     emitCommandEvent?.("completed", { command_kind: "git", duration_ms: addDuration, command: "git", args: ["add", "--", ...substantiveFiles], exit_code: 0, redacted: true });
     const commitMessage = buildAutoCommitMessage(specialist, beadId, turnNumber);
     const commitStart = Date.now();
-    const commitResult = spawnSync7("git", ["commit", "-m", commitMessage], {
+    const commitResult = spawnSync8("git", ["commit", "-m", commitMessage], {
       cwd: worktreePath,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -26902,7 +27032,7 @@ function runAutoCommitCheckpoint(options) {
     }
     emitCommandEvent?.("completed", { command_kind: "git", duration_ms: commitDuration, command: "git", args: ["commit", "-m", commitMessage], exit_code: 0, redacted: true });
     const shaStart = Date.now();
-    const shaResult = spawnSync7("git", ["rev-parse", "HEAD"], {
+    const shaResult = spawnSync8("git", ["rev-parse", "HEAD"], {
       cwd: worktreePath,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -26950,7 +27080,7 @@ function resolveDetachedRuntime() {
   const envRuntime = process.env.SPECIALISTS_BUN_PATH ?? process.env.BUN_PATH;
   if (envRuntime)
     return envRuntime;
-  const whichResult = spawnSync7("which", ["bun"], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  const whichResult = spawnSync8("which", ["bun"], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
   if (whichResult.status === 0) {
     const resolved = (whichResult.stdout ?? "").trim();
     if (resolved)
@@ -27509,7 +27639,7 @@ class Supervisor {
     for (const entry of readdirSync2(this.resolvedJobsDir)) {
       const dir = join12(this.resolvedJobsDir, entry);
       try {
-        const stat2 = statSync2(dir);
+        const stat2 = statSync3(dir);
         if (!stat2.isDirectory())
           continue;
         if (stat2.mtimeMs < cutoff)
@@ -27893,7 +28023,7 @@ class Supervisor {
     let skipFinalKeepAliveInputBeadAppend = false;
     let latestEvidenceRefs;
     const getObservedPrEvidenceRef = (worktreePath) => {
-      const result = spawnSync7("gh", ["pr", "view", "--json", "number,url,state"], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      const result = spawnSync8("gh", ["pr", "view", "--json", "number,url,state"], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
       if (result.status !== 0)
         return;
       try {
@@ -27969,12 +28099,12 @@ ${appendError}
     };
     const appendResultToInputBead = (params) => writeUnifiedHandoff(params);
     const buildAutoCommitEvidenceRefs = (jobId, worktreePath, commitSha) => {
-      const baseShaResult = spawnSync7("git", ["rev-parse", commitSha + "^"], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      const baseShaResult = spawnSync8("git", ["rev-parse", commitSha + "^"], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
       const baseSha = baseShaResult.status === 0 ? (baseShaResult.stdout ?? "").trim() : undefined;
       const baseRef = baseSha ? commitSha + "^" : undefined;
       const range = baseSha ? baseSha + ".." + commitSha : commitSha + "^.." + commitSha;
-      const numstatResult = spawnSync7("git", ["diff", "--numstat", "--no-renames", range], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
-      const hunksResult = spawnSync7("git", ["diff", "--unified=0", "--no-ext-diff", "--no-renames", range], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      const numstatResult = spawnSync8("git", ["diff", "--numstat", "--no-renames", range], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      const hunksResult = spawnSync8("git", ["diff", "--unified=0", "--no-ext-diff", "--no-renames", range], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
       const hunksOutput = (hunksResult.stdout ?? "").trim();
       const artifactRef = hunksOutput && !willHunksBeInline(hunksOutput) ? writeGitDiffHunksArtifact(this.jobDir(jobId), "git-diff-" + commitSha.slice(0, 12) + ".patch", hunksOutput) : undefined;
       const diff = buildGitDiffEvidence({
@@ -28864,7 +28994,7 @@ ${appendError}
           rmSync2(fifoPath);
       } catch {}
       if (statusSnapshot.tmux_session) {
-        spawnSync7("tmux", ["kill-session", "-t", statusSnapshot.tmux_session], { stdio: "ignore" });
+        spawnSync8("tmux", ["kill-session", "-t", statusSnapshot.tmux_session], { stdio: "ignore" });
       }
       await this.dispose();
     }
@@ -28908,7 +29038,7 @@ var init_supervisor = __esm(() => {
 });
 
 // src/cli/version-check.ts
-import { spawnSync as spawnSync8 } from "child_process";
+import { spawnSync as spawnSync9 } from "child_process";
 import { existsSync as existsSync13, mkdirSync as mkdirSync7, readFileSync as readFileSync11, writeFileSync as writeFileSync6 } from "fs";
 import { dirname as dirname8, join as join13 } from "path";
 import { createRequire as createRequire2 } from "module";
@@ -28976,7 +29106,7 @@ function compareVersions(left, right) {
   return 0;
 }
 function runRemoteTagLookup() {
-  const result = spawnSync8("git", ["ls-remote", "--tags", "--refs", "origin"], {
+  const result = spawnSync9("git", ["ls-remote", "--tags", "--refs", "origin"], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: NETWORK_TIMEOUT_MS
@@ -29049,7 +29179,7 @@ __export(exports_list, {
   computeMedianElapsedMs: () => computeMedianElapsedMs,
   ArgParseError: () => ArgParseError
 });
-import { spawnSync as spawnSync9 } from "child_process";
+import { spawnSync as spawnSync10 } from "child_process";
 import { existsSync as existsSync14, readdirSync as readdirSync3, readFileSync as readFileSync12 } from "fs";
 import { join as join14 } from "path";
 import readline from "readline";
@@ -29235,7 +29365,7 @@ async function runLiveMode(showDead) {
   const selected = await selectLiveJob(jobs);
   if (!selected)
     return;
-  const attach = spawnSync9("tmux", ["attach-session", "-t", selected.tmuxSession], {
+  const attach = spawnSync10("tmux", ["attach-session", "-t", selected.tmuxSession], {
     stdio: "inherit"
   });
   if (attach.error) {
@@ -29826,9 +29956,9 @@ var exports_models = {};
 __export(exports_models, {
   run: () => run8
 });
-import { spawnSync as spawnSync10 } from "child_process";
+import { spawnSync as spawnSync11 } from "child_process";
 function parsePiModels() {
-  const r = spawnSync10("pi", ["--list-models"], {
+  const r = spawnSync11("pi", ["--list-models"], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 8000
@@ -29933,7 +30063,7 @@ __export(exports_init, {
   run: () => run9
 });
 import { copyFileSync, cpSync, existsSync as existsSync15, lstatSync, mkdirSync as mkdirSync8, readdirSync as readdirSync4, readFileSync as readFileSync13, readlinkSync, renameSync as renameSync3, rmSync as rmSync3, symlinkSync, unlinkSync, writeFileSync as writeFileSync7 } from "fs";
-import { spawnSync as spawnSync11 } from "child_process";
+import { spawnSync as spawnSync12 } from "child_process";
 import { basename as basename5, dirname as dirname9, join as join15, relative, resolve as resolve6 } from "path";
 function ok(msg) {
   console.log(`  ${green4("\u2713")} ${msg}`);
@@ -29945,7 +30075,7 @@ function warn(msg) {
   console.warn(`  ${yellow5("!")} ${msg}`);
 }
 function isInstalled(bin) {
-  return spawnSync11("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync12("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function assertXtrmPrerequisites(cwd) {
   const hasXtrmDir = existsSync15(join15(cwd, ".xtrm"));
@@ -32748,7 +32878,7 @@ __export(exports_edit, {
   run: () => run13
 });
 import { existsSync as existsSync19, mkdirSync as mkdirSync10, readFileSync as readFileSync16, writeFileSync as writeFileSync9 } from "fs";
-import { spawnSync as spawnSync12 } from "child_process";
+import { spawnSync as spawnSync13 } from "child_process";
 import { join as join18 } from "path";
 function usage() {
   const aliasList = Object.keys(LEGACY_FIELD_ALIASES).map((v) => `--${v}`).join(", ");
@@ -33306,7 +33436,7 @@ function openInEditor(filePath) {
 Run ${setCommand} in scripts.`);
   }
   const editor = process.env.EDITOR?.trim() || process.env.VISUAL?.trim() || "vi";
-  const result = spawnSync12(editor, [filePath], { stdio: "inherit" });
+  const result = spawnSync13(editor, [filePath], { stdio: "inherit" });
   if (result.error) {
     fail3(`Error: failed to launch $EDITOR (${editor}): ${result.error.message}`);
   }
@@ -33657,7 +33787,7 @@ __export(exports_config, {
   run: () => run14
 });
 import { readFileSync as readFileSync17 } from "fs";
-import { spawnSync as spawnSync13 } from "child_process";
+import { spawnSync as spawnSync14 } from "child_process";
 import { dirname as dirname11, join as join20 } from "path";
 import { fileURLToPath as fileURLToPath3 } from "url";
 function usage2() {
@@ -33688,17 +33818,17 @@ function readPackageVersion(packageJsonPath) {
   }
 }
 function isInsideGitWorktree(projectDir) {
-  const result = spawnSync13("git", ["rev-parse", "--is-inside-work-tree"], { cwd: projectDir, encoding: "utf-8" });
+  const result = spawnSync14("git", ["rev-parse", "--is-inside-work-tree"], { cwd: projectDir, encoding: "utf-8" });
   return result.status === 0 && result.stdout.trim() === "true";
 }
 function getGitCommonDir(projectDir) {
-  const result = spawnSync13("git", ["rev-parse", "--git-common-dir"], { cwd: projectDir, encoding: "utf-8" });
+  const result = spawnSync14("git", ["rev-parse", "--git-common-dir"], { cwd: projectDir, encoding: "utf-8" });
   if (result.status !== 0)
     return;
   return result.stdout.trim() || undefined;
 }
 function getGitTopLevel(projectDir) {
-  const result = spawnSync13("git", ["rev-parse", "--show-toplevel"], { cwd: projectDir, encoding: "utf-8" });
+  const result = spawnSync14("git", ["rev-parse", "--show-toplevel"], { cwd: projectDir, encoding: "utf-8" });
   if (result.status !== 0)
     return;
   return result.stdout.trim() || undefined;
@@ -33801,7 +33931,7 @@ ${usage2()}`);
     console.error(yellow9("\u26A0 hint: use --from-source for worktree-source resolver review"));
   }
   if (flags.has("--from-source") && !import.meta.url.includes("/src/")) {
-    const result = spawnSync13("bunx", ["tsx", "src/index.ts", "config", "show", specialistName, "--resolved"], {
+    const result = spawnSync14("bunx", ["tsx", "src/index.ts", "config", "show", specialistName, "--resolved"], {
       cwd: projectDir,
       encoding: "utf-8",
       stdio: "pipe"
@@ -34067,7 +34197,7 @@ function fuzzyFilter(items, query, getText) {
 
 // ../../../node_modules/@earendil-works/pi-tui/dist/autocomplete.js
 import { spawn as spawn4 } from "child_process";
-import { readdirSync as readdirSync6, statSync as statSync3 } from "fs";
+import { readdirSync as readdirSync6, statSync as statSync4 } from "fs";
 import { homedir as homedir5 } from "os";
 import { basename as basename6, dirname as dirname12, join as join21 } from "path";
 function toDisplayPath(value) {
@@ -34437,7 +34567,7 @@ class CombinedAutocompleteProvider {
       baseDir = join21(this.basePath, displayBase);
     }
     try {
-      if (!statSync3(baseDir).isDirectory()) {
+      if (!statSync4(baseDir).isDirectory()) {
         return null;
       }
     } catch {
@@ -34496,7 +34626,7 @@ class CombinedAutocompleteProvider {
         if (!isDirectory && entry.isSymbolicLink()) {
           try {
             const fullPath = join21(searchDir, entry.name);
-            isDirectory = statSync3(fullPath).isDirectory();
+            isDirectory = statSync4(fullPath).isDirectory();
           } catch {}
         }
         let relativePath;
@@ -44842,7 +44972,7 @@ __export(exports_chat, {
   formatChatShow: () => formatChatShow,
   createCleanup: () => createCleanup
 });
-import { spawnSync as spawnSync14 } from "child_process";
+import { spawnSync as spawnSync15 } from "child_process";
 import { appendFileSync as appendFileSync4, readFileSync as readFileSync19, writeFileSync as writeFileSync12 } from "fs";
 function dbg(msg, extra) {
   if (!DEBUG_LOG_PATH)
@@ -45048,7 +45178,7 @@ function buildPrompt(args) {
 }
 function createEphemeralBead(prompt) {
   const title = buildEphemeralBeadTitle(prompt);
-  const result = spawnSync14("bd", ["create", title, "-t", "task", "-p3", "--json"], {
+  const result = spawnSync15("bd", ["create", title, "-t", "task", "-p3", "--json"], {
     cwd: process.cwd(),
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -46286,10 +46416,10 @@ function renderStatsLine(snapshot, width) {
     fields.rssCpu = paint(`rss=${rssMb}MB cpu=${cpuPct}%`, "dim");
     fields.orphans = paint(`orphans ${health.orphanCount ?? 0}`, "dim");
   }
-  const sep3 = " \xB7 ";
+  const sep4 = " \xB7 ";
   const keys = STATS_FIELD_ORDER.filter((k) => fields[k] !== undefined);
   while (keys.length > 0) {
-    const line = keys.map((k) => fields[k]).join(sep3);
+    const line = keys.map((k) => fields[k]).join(sep4);
     if (visibleLength(line) <= width)
       return line;
     keys.pop();
@@ -46744,7 +46874,7 @@ import {
   readFileSync as readFileSync21,
   renameSync as renameSync4,
   rmSync as rmSync4,
-  statSync as statSync5,
+  statSync as statSync6,
   writeFileSync as writeFileSync13
 } from "fs";
 import { homedir as homedir7 } from "os";
@@ -46837,7 +46967,7 @@ var init_repo_config = __esm(() => {
 });
 
 // src/cli/console/repo-discovery.ts
-import { existsSync as existsSync23, readdirSync as readdirSync9, statSync as statSync6 } from "fs";
+import { existsSync as existsSync23, readdirSync as readdirSync9, statSync as statSync7 } from "fs";
 import { homedir as homedir8 } from "os";
 import { join as join27 } from "path";
 function expandHomePath(p) {
@@ -46896,14 +47026,14 @@ function isWorktreeDir(path3) {
     const gitPath = join27(path3, ".git");
     if (!existsSync23(gitPath))
       return false;
-    return !statSync6(gitPath).isDirectory();
+    return !statSync7(gitPath).isDirectory();
   } catch {
     return false;
   }
 }
 function safeIsDirectory(path3) {
   try {
-    return existsSync23(path3) && statSync6(path3).isDirectory();
+    return existsSync23(path3) && statSync7(path3).isDirectory();
   } catch {
     return false;
   }
@@ -46948,7 +47078,7 @@ __export(exports_config_source, {
 });
 import { homedir as homedir9 } from "os";
 import { join as join28 } from "path";
-import { existsSync as existsSync24, readFileSync as readFileSync22, statSync as statSync7 } from "fs";
+import { existsSync as existsSync24, readFileSync as readFileSync22, statSync as statSync8 } from "fs";
 function readGlobalConfigSnapshot(loader) {
   const location = getGlobalUserConfigPath();
   const exists = existsSync24(location.path);
@@ -47300,7 +47430,7 @@ function writeGlobalConfigSafe(rawObj, expectedMtimeMs) {
   const location = getGlobalUserConfigPath();
   if (typeof expectedMtimeMs === "number" && existsSync24(location.path)) {
     try {
-      const stat2 = statSync7(location.path);
+      const stat2 = statSync8(location.path);
       if (Math.floor(stat2.mtimeMs) !== Math.floor(expectedMtimeMs)) {
         return { ok: false, errorClass: "mtime_mismatch" };
       }
@@ -47325,7 +47455,7 @@ function statConfigFileMtimeMs() {
   try {
     if (!existsSync24(location.path))
       return;
-    return statSync7(location.path).mtimeMs;
+    return statSync8(location.path).mtimeMs;
   } catch {
     return;
   }
@@ -47363,8 +47493,8 @@ var init_config_source = __esm(() => {
 });
 
 // src/cli/console/runtime.ts
-import { spawnSync as spawnSync15 } from "child_process";
-import { existsSync as existsSync25, readdirSync as readdirSync10, readFileSync as readFileSync23, statSync as statSync8 } from "fs";
+import { spawnSync as spawnSync16 } from "child_process";
+import { existsSync as existsSync25, readdirSync as readdirSync10, readFileSync as readFileSync23, statSync as statSync9 } from "fs";
 import { basename as basename8, dirname as dirname16, join as join29 } from "path";
 function createRuntimeClient(cwd = process.cwd()) {
   return new LocalRuntimeClient(cwd);
@@ -47670,8 +47800,8 @@ class LocalRuntimeClient {
       return { raw: {}, exists: false };
     try {
       const raw = JSON.parse(readFileSync23(location.path, "utf-8"));
-      const { statSync: statSync9 } = await import("fs");
-      const mtimeMs = statSync9(location.path).mtimeMs;
+      const { statSync: statSync10 } = await import("fs");
+      const mtimeMs = statSync10(location.path).mtimeMs;
       return { raw, exists: true, mtimeMs };
     } catch {
       return { raw: {}, exists: true };
@@ -47682,7 +47812,7 @@ class LocalRuntimeClient {
     const location = getGlobalUserConfigPath2();
     const editor = process.env.EDITOR?.trim() || process.env.VISUAL?.trim() || "vi";
     try {
-      const result = spawnSync15(editor, [location.path], { stdio: "inherit" });
+      const result = spawnSync16(editor, [location.path], { stdio: "inherit" });
       if (result.error) {
         return { ok: false, errorClass: result.error.code ?? "editor_failed" };
       }
@@ -47792,7 +47922,7 @@ function kvRow(key, value) {
 function resolveDiffBase(worktreePath, branch) {
   const candidates = ["origin/HEAD", "origin/main", "origin/master", "main", "master"];
   for (const ref of candidates) {
-    const result = spawnSync15("git", ["-C", worktreePath, "merge-base", "HEAD", ref], {
+    const result = spawnSync16("git", ["-C", worktreePath, "merge-base", "HEAD", ref], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 1500
@@ -47801,7 +47931,7 @@ function resolveDiffBase(worktreePath, branch) {
       return result.stdout.trim();
   }
   if (branch) {
-    const result = spawnSync15("git", ["-C", worktreePath, "rev-parse", `${branch}@{u}`], {
+    const result = spawnSync16("git", ["-C", worktreePath, "rev-parse", `${branch}@{u}`], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 1500
@@ -47809,7 +47939,7 @@ function resolveDiffBase(worktreePath, branch) {
     if (result.status === 0 && result.stdout)
       return result.stdout.trim();
   }
-  const fallback = spawnSync15("git", ["-C", worktreePath, "rev-parse", "HEAD^"], {
+  const fallback = spawnSync16("git", ["-C", worktreePath, "rev-parse", "HEAD^"], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"],
     timeout: 1500
@@ -47840,7 +47970,7 @@ function buildDiffFileResult(file, raw, meta) {
 }
 function runGit(args, cwd, op) {
   const started = Date.now();
-  const result = spawnSync15("git", ["-C", cwd, ...args], {
+  const result = spawnSync16("git", ["-C", cwd, ...args], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: 1e4,
@@ -47869,7 +47999,7 @@ function fetchBeadDoc(beadId) {
   if (cached2 && now - cached2.at < BEAD_DOC_TTL_MS)
     return cached2.doc;
   const started = now;
-  const result = spawnSync15("bd", ["show", beadId, "--json"], {
+  const result = spawnSync16("bd", ["show", beadId, "--json"], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: 3000
@@ -47963,7 +48093,7 @@ function scanSiblingsForRepos(repoRoot) {
     if (seen.has(root))
       continue;
     try {
-      if (!statSync8(root).isDirectory())
+      if (!statSync9(root).isDirectory())
         continue;
     } catch {
       continue;
@@ -48052,7 +48182,7 @@ function buildRepoConfigSnapshot(cwd) {
 function buildRepoConfigRow(entry, current) {
   let exists = false;
   try {
-    exists = statSync8(entry.path).isDirectory();
+    exists = statSync9(entry.path).isDirectory();
   } catch {
     exists = false;
   }
@@ -48065,7 +48195,7 @@ function buildRepoConfigRow(entry, current) {
     try {
       const location = resolveObservabilityDbLocation(entry.path);
       if (existsSync25(location.dbPath)) {
-        const st = statSync8(location.dbPath);
+        const st = statSync9(location.dbPath);
         dbExists = true;
         dbSizeBytes = st.size;
         const client = createObservabilitySqliteClientAtPath(location.dbPath);
@@ -50268,7 +50398,7 @@ var init_console = __esm(() => {
 // src/specialist/worktree.ts
 import { existsSync as existsSync26, symlinkSync as symlinkSync2, mkdirSync as mkdirSync13, rmSync as rmSync5 } from "fs";
 import { join as join30, resolve as resolve9 } from "path";
-import { spawnSync as spawnSync16, execFileSync as execFileSync3 } from "child_process";
+import { spawnSync as spawnSync17, execFileSync as execFileSync3 } from "child_process";
 function deriveBranchName(beadId, specialistName) {
   return `feature/${beadId}-${slugify(specialistName)}`;
 }
@@ -50282,7 +50412,7 @@ function resolveCommonRoot(cwd) {
   return resolveCommonGitRoot(cwd) ?? cwd;
 }
 function listWorktrees(cwd = process.cwd()) {
-  const result = spawnSync16("git", ["worktree", "list", "--porcelain"], {
+  const result = spawnSync17("git", ["worktree", "list", "--porcelain"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -50316,7 +50446,7 @@ function provisionWorktree(options2) {
 }
 function normalizeParentHooksPath(mainRepoRoot) {
   try {
-    const result = spawnSync16("git", ["-C", mainRepoRoot, "config", "--get", "core.hooksPath"], {
+    const result = spawnSync17("git", ["-C", mainRepoRoot, "config", "--get", "core.hooksPath"], {
       stdio: "pipe",
       encoding: "utf8"
     });
@@ -50330,12 +50460,12 @@ function normalizeParentHooksPath(mainRepoRoot) {
     if (current !== ".beads/hooks" && current !== "./.beads/hooks")
       return;
     const absolute = join30(mainRepoRoot, ".beads", "hooks");
-    spawnSync16("git", ["-C", mainRepoRoot, "config", "core.hooksPath", absolute], { stdio: "pipe" });
+    spawnSync17("git", ["-C", mainRepoRoot, "config", "core.hooksPath", absolute], { stdio: "pipe" });
   } catch {}
 }
 function markBeadsSkipWorktree(worktreePath) {
   try {
-    const trackedResult = spawnSync16("git", ["-C", worktreePath, "ls-files", "--", ".beads"], {
+    const trackedResult = spawnSync17("git", ["-C", worktreePath, "ls-files", "--", ".beads"], {
       cwd: worktreePath,
       stdio: "pipe",
       encoding: "utf8"
@@ -50345,7 +50475,7 @@ function markBeadsSkipWorktree(worktreePath) {
     const trackedPaths = (trackedResult.stdout ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     if (trackedPaths.length === 0)
       return;
-    spawnSync16("git", ["-C", worktreePath, "update-index", "--skip-worktree", "--", ...trackedPaths], {
+    spawnSync17("git", ["-C", worktreePath, "update-index", "--skip-worktree", "--", ...trackedPaths], {
       cwd: worktreePath,
       stdio: "pipe",
       encoding: "utf8"
@@ -50396,6 +50526,31 @@ function parseWorktreeList(output2) {
 var init_worktree = __esm(() => {
   init_job_root();
 });
+
+// src/specialist/branch-integration-events.ts
+function createBranchIntegrationEvent(options2) {
+  const tUnixMs = options2.t_unix_ms ?? Date.now();
+  const target = {
+    branch: options2.target.branch,
+    worktree: options2.target.worktree
+  };
+  if (options2.target.role)
+    target.role = options2.target.role;
+  return {
+    schema_version: BRANCH_INTEGRATION_SCHEMA_VERSION,
+    timestamp: options2.timestamp ?? new Date(tUnixMs).toISOString(),
+    t_unix_ms: tUnixMs,
+    source: {
+      job_id: options2.source.job_id,
+      branch: options2.source.branch,
+      worktree: options2.source.worktree
+    },
+    target,
+    status: options2.status ?? "merged",
+    commit: options2.commit
+  };
+}
+var BRANCH_INTEGRATION_SCHEMA_VERSION = "xtrm.branch.integration.v1";
 
 // src/specialist/epic-reconciler.ts
 import { mkdirSync as mkdirSync14, openSync as openSync2, readFileSync as readFileSync24, rmSync as rmSync6, writeFileSync as writeFileSync14 } from "fs";
@@ -50632,7 +50787,7 @@ __export(exports_merge, {
   checkEpicUnresolvedGuard: () => checkEpicUnresolvedGuard,
   assertMainRepoCleanForMerge: () => assertMainRepoCleanForMerge
 });
-import { spawnSync as spawnSync17 } from "child_process";
+import { spawnSync as spawnSync18 } from "child_process";
 import { existsSync as existsSync27, readFileSync as readFileSync25, readdirSync as readdirSync11 } from "fs";
 import { join as join32 } from "path";
 function parseOptions(argv) {
@@ -50671,7 +50826,7 @@ function parseOptions(argv) {
   return { target, rebuild, targetBranch: targetBranch ? validateTargetBranchRef(targetBranch) : undefined };
 }
 function runCommand(command, args, cwd = process.cwd()) {
-  return spawnSync17(command, args, {
+  return spawnSync18(command, args, {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -51319,6 +51474,29 @@ function syncEpicStateAfterMerge(target) {
     sqliteClient.close();
   }
 }
+function recordBranchIntegrationAfterMerge(target, mainRepoRoot, targetBranch) {
+  try {
+    const head = runCommand("git", ["rev-parse", "HEAD"], mainRepoRoot);
+    if (head.status !== 0)
+      return;
+    const commit = head.stdout.trim();
+    if (!commit)
+      return;
+    const client = createObservabilitySqliteClient(mainRepoRoot);
+    if (!client)
+      return;
+    try {
+      client.recordBranchIntegration(createBranchIntegrationEvent({
+        source: { job_id: target.jobId, branch: target.branch, worktree: target.worktreePath },
+        target: { branch: targetBranch ?? resolveDefaultBranchName(mainRepoRoot), worktree: mainRepoRoot },
+        status: "merged",
+        commit
+      }));
+    } finally {
+      client.close();
+    }
+  } catch {}
+}
 function runMergePlan(targets, options2) {
   const mainRepoRoot = resolveMainWorktreeRoot();
   const targetBranch = options2.targetBranch ? validateTargetBranchRef(options2.targetBranch, mainRepoRoot) : undefined;
@@ -51348,6 +51526,7 @@ ${formatDirtyConflictMessage(dirtyState.overlappingPaths)}
       mergeBranch(target.branch, mainRepoRoot);
       runTypecheckGate(mainRepoRoot);
       syncEpicStateAfterMerge(target);
+      recordBranchIntegrationAfterMerge(target, mainRepoRoot, targetBranch);
       mergedSteps.push({
         beadId: target.beadId,
         branch: target.branch,
@@ -51465,7 +51644,7 @@ __export(exports_run, {
   buildInjectedReviewerDiffVariables: () => buildInjectedReviewerDiffVariables
 });
 import { join as join33 } from "path";
-import { existsSync as existsSync28, readFileSync as readFileSync26, readdirSync as readdirSync12, statSync as statSync9 } from "fs";
+import { existsSync as existsSync28, readFileSync as readFileSync26, readdirSync as readdirSync12, statSync as statSync10 } from "fs";
 import { randomBytes } from "crypto";
 import { spawn as cpSpawn, execSync as execSync5 } from "child_process";
 async function parseArgs9(argv) {
@@ -51706,8 +51885,8 @@ function resolveNewestJobIdFromJobsDir(jobsDir, previousLatest, minMtimeMs) {
     const entries = readdirSync12(jobsDir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && /^[a-f0-9]{6}$/.test(entry.name) && entry.name !== previousLatest).map((entry) => {
       const dirPath = join33(jobsDir, entry.name);
       const statusPath = join33(dirPath, "status.json");
-      const stats = statSync9(dirPath);
-      const statusStats = statSync9(statusPath);
+      const stats = statSync10(dirPath);
+      const statusStats = statSync10(statusPath);
       return {
         id: entry.name,
         mtimeMs: Math.max(stats.mtimeMs, statusStats.mtimeMs)
@@ -52709,7 +52888,7 @@ __export(exports_node_supervisor, {
   NodeSupervisor: () => NodeSupervisor
 });
 import { createHash as createHash5 } from "crypto";
-import { spawnSync as spawnSync18 } from "child_process";
+import { spawnSync as spawnSync19 } from "child_process";
 function hashOutput(output2, salt) {
   if (!output2)
     return null;
@@ -52754,7 +52933,7 @@ function parseCreatedBeadId(stdout) {
   return match[1];
 }
 function runCommandOrThrow(command, args, cwd = process.cwd()) {
-  const result = spawnSync18(command, args, {
+  const result = spawnSync19(command, args, {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -53827,7 +54006,7 @@ class NodeSupervisor {
     if (!this.opts.sourceBeadId)
       return;
     const notes = this.buildCompletionSummary(options2);
-    const result = spawnSync18("bd", ["update", this.opts.sourceBeadId, "--notes", notes], {
+    const result = spawnSync19("bd", ["update", this.opts.sourceBeadId, "--notes", notes], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -53840,7 +54019,7 @@ class NodeSupervisor {
     }
   }
   runCommand(command, args, cwd) {
-    const result = spawnSync18(command, args, {
+    const result = spawnSync19(command, args, {
       cwd,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -54044,8 +54223,8 @@ class NodeSupervisor {
     }
   }
   runFinalQualityGates(cwd) {
-    const lintPass = spawnSync18("npm", ["run", "lint"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
-    const tscPass = spawnSync18("npx", ["tsc", "--noEmit"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
+    const lintPass = spawnSync19("npm", ["run", "lint"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
+    const tscPass = spawnSync19("npx", ["tsc", "--noEmit"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
     return {
       lint: lintPass ? "pass" : "fail",
       tsc: tscPass ? "pass" : "fail"
@@ -55503,9 +55682,9 @@ __export(exports_epic, {
   handleEpicCommand: () => handleEpicCommand,
   handleEpicAbandonCommand: () => handleEpicAbandonCommand
 });
-import { spawnSync as spawnSync19 } from "child_process";
+import { spawnSync as spawnSync20 } from "child_process";
 function runCommand2(command, args, cwd = process.cwd()) {
-  return spawnSync19(command, args, {
+  return spawnSync20(command, args, {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -56243,7 +56422,7 @@ __export(exports_status, {
   run: () => run19,
   detectJobOutputMode: () => detectJobOutputMode
 });
-import { spawnSync as spawnSync20 } from "child_process";
+import { spawnSync as spawnSync21 } from "child_process";
 import { existsSync as existsSync31, readFileSync as readFileSync29 } from "fs";
 import { join as join36 } from "path";
 function ok2(msg) {
@@ -56264,7 +56443,7 @@ function section(label) {
 ${bold11(`\u2500\u2500 ${label} ${line}`)}`);
 }
 function cmd(bin, args) {
-  const r = spawnSync20(bin, args, {
+  const r = spawnSync21(bin, args, {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 5000
@@ -56272,7 +56451,7 @@ function cmd(bin, args) {
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled2(bin) {
-  return spawnSync20("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync21("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function formatElapsed2(s) {
   if (s.elapsed_s === undefined)
@@ -56659,11 +56838,11 @@ __export(exports_ps, {
   run: () => run20,
   formatSpawnedByLine: () => formatSpawnedByLine
 });
-import { spawnSync as spawnSync21 } from "child_process";
+import { spawnSync as spawnSync22 } from "child_process";
 function loadBeadIdsForCurrentUser() {
   const ids = new Set;
   try {
-    const result = spawnSync21("bd", ["query", "assignee=me", "--json"], {
+    const result = spawnSync22("bd", ["query", "assignee=me", "--json"], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 5000
@@ -57033,7 +57212,7 @@ function formatPayloadStats2(payloadJson) {
   }
 }
 function getBeadTitleFromBd(beadId) {
-  const result = spawnSync21("bd", ["show", beadId, "--json"], {
+  const result = spawnSync22("bd", ["show", beadId, "--json"], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"],
     timeout: 1500
@@ -58389,7 +58568,7 @@ import {
   openSync as openSync3,
   readFileSync as readFileSync32,
   readdirSync as readdirSync15,
-  statSync as statSync10
+  statSync as statSync11
 } from "fs";
 import { join as join39 } from "path";
 function getHumanEventKey2(event) {
@@ -58819,7 +58998,7 @@ function listMatchingJobIds(sqliteClient, jobsDir, options2) {
     for (const entry of readdirSync15(jobsDir)) {
       const jobDir = join39(jobsDir, entry);
       try {
-        if (!statSync10(jobDir).isDirectory())
+        if (!statSync11(jobDir).isDirectory())
           continue;
       } catch {
         continue;
@@ -58886,7 +59065,7 @@ function readJobEventsIncremental(sqliteClient, jobsDir, jobId, afterSeq, fileCa
   const eventsPath = join39(jobsDir, jobId, "events.jsonl");
   let stats;
   try {
-    stats = statSync10(eventsPath);
+    stats = statSync11(eventsPath);
   } catch {
     return [];
   }
@@ -59994,7 +60173,7 @@ var exports_log = {};
 __export(exports_log, {
   run: () => run25
 });
-import { existsSync as existsSync35, readdirSync as readdirSync16, statSync as statSync11 } from "fs";
+import { existsSync as existsSync35, readdirSync as readdirSync16, statSync as statSync12 } from "fs";
 import { basename as basename12, join as join40 } from "path";
 function parseSince4(value) {
   if (value.includes("T") || value.includes("-"))
@@ -60092,7 +60271,7 @@ function discoverDbTargets(cwd, repoFilter) {
   for (const entry of entries) {
     const root = join40(cwd, entry);
     try {
-      if (!statSync11(root).isDirectory())
+      if (!statSync12(root).isDirectory())
         continue;
     } catch {
       continue;
@@ -60741,7 +60920,7 @@ async function run28() {
 // src/specialist/worktree-gc.ts
 import { existsSync as existsSync36, readdirSync as readdirSync17, readFileSync as readFileSync33 } from "fs";
 import { join as join41 } from "path";
-import { spawnSync as spawnSync22 } from "child_process";
+import { spawnSync as spawnSync23 } from "child_process";
 function readJobStatus2(jobDir) {
   const statusPath = join41(jobDir, "status.json");
   if (!existsSync36(statusPath))
@@ -60809,7 +60988,7 @@ function collectWorktreeGcCandidates(jobsDir) {
   return candidates;
 }
 function removeWorktreeDirectory(worktreePath) {
-  const result = spawnSync22("git", ["worktree", "remove", "--force", worktreePath], {
+  const result = spawnSync23("git", ["worktree", "remove", "--force", worktreePath], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -60843,7 +61022,7 @@ var exports_clean = {};
 __export(exports_clean, {
   run: () => run29
 });
-import { existsSync as existsSync37, readFileSync as readFileSync34, readdirSync as readdirSync18, rmSync as rmSync7, statSync as statSync12 } from "fs";
+import { existsSync as existsSync37, readFileSync as readFileSync34, readdirSync as readdirSync18, rmSync as rmSync7, statSync as statSync13 } from "fs";
 import { join as join42 } from "path";
 function parseDuration2(raw) {
   const match = /^(\d+)(ms|s|m|h|d)$/i.exec(raw.trim());
@@ -61000,7 +61179,7 @@ function readDirectorySizeBytes(directoryPath) {
   let totalBytes = 0;
   for (const entry of readdirSync18(directoryPath, { withFileTypes: true })) {
     const entryPath = join42(directoryPath, entry.name);
-    const stats = statSync12(entryPath);
+    const stats = statSync13(entryPath);
     totalBytes += stats.isDirectory() ? readDirectorySizeBytes(entryPath) : stats.size;
   }
   return totalBytes;
@@ -61460,7 +61639,7 @@ var exports_end = {};
 __export(exports_end, {
   run: () => run30
 });
-import { spawnSync as spawnSync23 } from "child_process";
+import { spawnSync as spawnSync24 } from "child_process";
 function parseOptions3(argv) {
   let beadId;
   let epicId;
@@ -61495,7 +61674,7 @@ function parseOptions3(argv) {
   return { beadId, epicId, rebuild, pr };
 }
 function runCommand3(command, args) {
-  const result = spawnSync23(command, args, { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  const result = spawnSync24(command, args, { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
   return {
     status: result.status,
     stdout: result.stdout ?? "",
@@ -62513,7 +62692,7 @@ __export(exports_doctor, {
   cleanupProcesses: () => cleanupProcesses
 });
 import { createHash as createHash7 } from "crypto";
-import { spawnSync as spawnSync24 } from "child_process";
+import { spawnSync as spawnSync25 } from "child_process";
 import { existsSync as existsSync39, mkdirSync as mkdirSync15, readdirSync as readdirSync20, readFileSync as readFileSync36, writeFileSync as writeFileSync19 } from "fs";
 import { homedir as homedir10 } from "os";
 import { join as join44, relative as relative4, resolve as resolve13 } from "path";
@@ -62538,11 +62717,11 @@ function section3(label) {
 ${bold13(`\u2500\u2500 ${label} ${line}`)}`);
 }
 function sp(bin, args) {
-  const r = spawnSync24(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
+  const r = spawnSync25(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled3(bin) {
-  return spawnSync24("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync25("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function loadJson2(path3) {
   if (!existsSync39(path3))
@@ -62794,7 +62973,7 @@ function checkClaudeMdFragments() {
     hint("install xtrm-tools to enable: xt claude-sync --check");
     return true;
   }
-  const result = spawnSync24("xt", ["claude-sync", "--check", "--json", "--cwd", projectRoot], {
+  const result = spawnSync25("xt", ["claude-sync", "--check", "--json", "--cwd", projectRoot], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -63672,7 +63851,7 @@ __export(exports_setup, {
   runApply: () => runApply,
   run: () => run38
 });
-import { spawnSync as spawnSync25 } from "child_process";
+import { spawnSync as spawnSync26 } from "child_process";
 import { readFileSync as readFileSync39 } from "fs";
 function usage3() {
   return [
@@ -63840,7 +64019,7 @@ async function collectDiscoveryState() {
   };
 }
 function parsePiModels2() {
-  const result = spawnSync25("pi", ["--list-models"], { encoding: "utf8", stdio: "pipe", timeout: 8000 });
+  const result = spawnSync26("pi", ["--list-models"], { encoding: "utf8", stdio: "pipe", timeout: 8000 });
   if (result.status !== 0 || result.error)
     return [];
   return result.stdout.split(`
@@ -63991,7 +64170,7 @@ function collectPlannedChanges(writes) {
   return changes;
 }
 function readGlobalField(key) {
-  const getResult = spawnSync25("sp", ["edit", "--global", "--get", key], {
+  const getResult = spawnSync26("sp", ["edit", "--global", "--get", key], {
     encoding: "utf8",
     stdio: "pipe"
   });
@@ -64025,7 +64204,7 @@ function rollbackChanges(applied) {
   return failed;
 }
 function setGlobalField(key, value) {
-  return spawnSync25("sp", ["edit", "--global", "--set", key, value], {
+  return spawnSync26("sp", ["edit", "--global", "--set", key, value], {
     encoding: "utf8",
     stdio: "pipe"
   });
@@ -64172,7 +64351,7 @@ var init_setup = __esm(() => {
 });
 
 // src/cli/serve-hot-reload.ts
-import { existsSync as existsSync41, readdirSync as readdirSync22, statSync as statSync13, watch as fsWatch } from "fs";
+import { existsSync as existsSync41, readdirSync as readdirSync22, statSync as statSync14, watch as fsWatch } from "fs";
 import { join as join47 } from "path";
 function specialistNameFromFile(file) {
   const match = file.match(/^(.+)\.specialist\.(json|yaml)$/);
@@ -64185,7 +64364,7 @@ function snapshotMtimes(dir) {
   const entries = readdirSync22(dir).filter((name) => specialistNameFromFile(name) !== null);
   for (const name of entries) {
     try {
-      out.set(name, statSync13(join47(dir, name)).mtimeMs);
+      out.set(name, statSync14(join47(dir, name)).mtimeMs);
     } catch {}
   }
   return out;
@@ -64283,7 +64462,7 @@ __export(exports_serve, {
 import { createServer } from "http";
 import { randomUUID as randomUUID7 } from "crypto";
 import { once } from "events";
-import { spawnSync as spawnSync26 } from "child_process";
+import { spawnSync as spawnSync27 } from "child_process";
 import { access, readdir as readdir2, readFile as readFile4, constants } from "fs/promises";
 import { existsSync as existsSync42 } from "fs";
 import { homedir as homedir13 } from "os";
@@ -64423,7 +64602,7 @@ function parseArgs18(argv) {
   return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, dbPath, fallbackModel, auditFailureThreshold, allowSkills, allowSkillsRoots, reloadPollMs, readinessCanaryMode, readinessRequiredPiFlags, readinessCanarySpecialist, readinessCanaryTimeoutMs, logLevel };
 }
 function checkPiHelpForFlags(flags = DEFAULT_REQUIRED_PI_FLAGS) {
-  const result = spawnSync26("pi", ["--help"], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  const result = spawnSync27("pi", ["--help"], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
   if (result.error || result.status === 127)
     return "pi_binary_missing";
   const help = `${result.stdout ?? ""}
@@ -64703,7 +64882,7 @@ __export(exports_script, {
   parseArgs: () => parseArgs19,
   mapExitCode: () => mapExitCode
 });
-import { spawnSync as spawnSync27 } from "child_process";
+import { spawnSync as spawnSync28 } from "child_process";
 function parseVar(entry) {
   const index = entry.indexOf("=");
   if (index <= 0)
@@ -64833,7 +65012,7 @@ function printResult(result, json) {
   console.error(result.error);
 }
 function runUnderLock(lockPath, argv) {
-  const flock = spawnSync27("flock", ["-n", lockPath, "env", "SP_SCRIPT_NO_LOCK=1", process.execPath, process.argv[1], "script", ...argv], {
+  const flock = spawnSync28("flock", ["-n", lockPath, "env", "SP_SCRIPT_NO_LOCK=1", process.execPath, process.argv[1], "script", ...argv], {
     encoding: "utf-8",
     stdio: "inherit"
   });
@@ -65053,7 +65232,7 @@ var init_help = __esm(() => {
 });
 
 // src/index.ts
-import { spawnSync as spawnSync28 } from "child_process";
+import { spawnSync as spawnSync29 } from "child_process";
 
 // ../../../node_modules/zod/v4/core/core.js
 var NEVER2 = Object.freeze({
@@ -73849,7 +74028,7 @@ async function run42() {
   }
   if (sub === "release") {
     console.error("Deprecated. Use `xt release prepare/publish`. This alias will be removed in v4.0.");
-    const result = spawnSync28("xt", ["release", ...process.argv.slice(3)], { stdio: "inherit" });
+    const result = spawnSync29("xt", ["release", ...process.argv.slice(3)], { stdio: "inherit" });
     if (result.error) {
       console.error(`Failed to run xt release: ${result.error.message}`);
       process.exit(1);

@@ -1,6 +1,7 @@
 type BunDb = any;
 import type { TimelineEvent, TimelineEventTool } from './timeline-events.js';
 import { type ForensicEvent } from './forensic-events.js';
+import type { BranchIntegrationEvent } from './branch-integration-events.js';
 import type { SupervisorStatus } from './supervisor.js';
 import type { EpicChainRecord, EpicRunRecord } from './epic-lifecycle.js';
 import type { PersistedChainIdentity } from './chain-identity.js';
@@ -228,6 +229,16 @@ export interface PrDriftState {
 }
 /** Partial update of {@link PrDriftState}. Omitted keys are left unchanged; explicit `null` clears. */
 export type PrDriftStatePatch = Partial<PrDriftState>;
+export interface ListBranchIntegrationFilters {
+    targetBranch?: string;
+    sourceJobId?: string;
+    limit?: number;
+}
+export interface BranchIntegrationEventRecord {
+    id: number;
+    t: number;
+    event: BranchIntegrationEvent;
+}
 export interface ObservabilitySqliteClient {
     upsertStatus(status: SupervisorStatus): void;
     markSpecialistJobCancelled(jobId: string, reason: string): void;
@@ -237,6 +248,8 @@ export interface ObservabilitySqliteClient {
     upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string): void;
     appendEvent(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void;
     appendForensicEvent(jobId: string, specialist: string, beadId: string | undefined, forensicEvent: ForensicEvent): void;
+    recordBranchIntegration(event: BranchIntegrationEvent): void;
+    listBranchIntegrations(filters?: ListBranchIntegrationFilters): BranchIntegrationEventRecord[];
     claimJobStart(status: SupervisorStatus, event: TimelineEvent): {
         ok: true;
     } | {

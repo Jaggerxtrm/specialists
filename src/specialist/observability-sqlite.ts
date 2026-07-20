@@ -22,6 +22,7 @@ import { resolveObservabilityDbLocation } from './observability-db.js';
 import { resolveJobsDir } from './job-root.js';
 import type { TimelineEvent, TimelineEventTool } from './timeline-events.js';
 import { forensicEventFromTimelineEvent, type ForensicEvent } from './forensic-events.js';
+import type { BranchIntegrationEvent } from './branch-integration-events.js';
 import type { SupervisorStatus } from './supervisor.js';
 import type { EpicChainRecord, EpicRunRecord } from './epic-lifecycle.js';
 import type { PersistedChainIdentity } from './chain-identity.js';
@@ -520,6 +521,7 @@ export function initSchema(db: BunDb): void {
   migrateToV11(db);
   migrateToV12(db);
   migrateToV13(db);
+  migrateToV14(db);
   verifyWalMode(db);
 }
 
@@ -559,6 +561,40 @@ function migrateToV13(db: BunDb): void {
   db.run(`
     INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
       VALUES (13, strftime('%s', 'now') * 1000);
+  `);
+}
+
+// V14 — branch_integration_events: append-only RESULT records for
+// `xtrm.branch.integration.v1` (audit 11.md §P2-04). Observation only; git
+// remains the merge authority. unitAI-cnpvd.2.
+function migrateToV14(db: BunDb): void {
+  const hasV14 = db.query('SELECT 1 FROM schema_version WHERE version = 14 LIMIT 1').get() as { 1?: number } | undefined;
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS branch_integration_events (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      t                 INTEGER NOT NULL,
+      schema_version    TEXT NOT NULL,
+      source_job_id     TEXT NOT NULL,
+      source_branch     TEXT NOT NULL,
+      source_worktree   TEXT NOT NULL,
+      target_role       TEXT,
+      target_branch     TEXT NOT NULL,
+      target_worktree   TEXT NOT NULL,
+      status            TEXT NOT NULL,
+      commit_sha        TEXT NOT NULL,
+      event_json        TEXT NOT NULL
+    );
+  `);
+  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_branch_integration_source_commit ON branch_integration_events(source_branch, commit_sha)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_branch_integration_target ON branch_integration_events(target_branch, t)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_branch_integration_source_job ON branch_integration_events(source_job_id, t)');
+
+  if (hasV14) return;
+
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (14, strftime('%s', 'now') * 1000);
   `);
 }
 
@@ -1152,6 +1188,18 @@ export interface PrDriftState {
 /** Partial update of {@link PrDriftState}. Omitted keys are left unchanged; explicit `null` clears. */
 export type PrDriftStatePatch = Partial<PrDriftState>;
 
+export interface ListBranchIntegrationFilters {
+  targetBranch?: string;
+  sourceJobId?: string;
+  limit?: number;
+}
+
+export interface BranchIntegrationEventRecord {
+  id: number;
+  t: number;
+  event: BranchIntegrationEvent;
+}
+
 export interface ObservabilitySqliteClient {
   upsertStatus(status: SupervisorStatus): void;
   markSpecialistJobCancelled(jobId: string, reason: string): void;
@@ -1161,6 +1209,8 @@ export interface ObservabilitySqliteClient {
   upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string): void;
   appendEvent(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void;
   appendForensicEvent(jobId: string, specialist: string, beadId: string | undefined, forensicEvent: ForensicEvent): void;
+  recordBranchIntegration(event: BranchIntegrationEvent): void;
+  listBranchIntegrations(filters?: ListBranchIntegrationFilters): BranchIntegrationEventRecord[];
   claimJobStart(status: SupervisorStatus, event: TimelineEvent): { ok: true } | { ok: false; existingJobId: string; existingStatus: string };
   findActiveJob(beadId: string | null, specialist: string): { job_id?: string; status?: string; pid?: number; updated_at_ms?: number } | undefined;
   upsertResult(jobId: string, output: string): void;
@@ -1759,6 +1809,48 @@ class SqliteClient implements ObservabilitySqliteClient {
       const seq = typeof forensicEvent.seq === 'number' && forensicEvent.seq > 0 ? forensicEvent.seq : this.getNextSpecialistEventSeq(jobId);
       this.insertForensicEventRow(jobId, seq, forensicEvent);
     }, 'appendForensicEvent');
+  }
+
+  recordBranchIntegration(event: BranchIntegrationEvent): void {
+    withRetry(() => {
+      this.db.run(`
+        INSERT OR IGNORE INTO branch_integration_events (
+          t, schema_version,
+          source_job_id, source_branch, source_worktree,
+          target_role, target_branch, target_worktree,
+          status, commit_sha, event_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        event.t_unix_ms,
+        event.schema_version,
+        event.source.job_id,
+        event.source.branch,
+        event.source.worktree,
+        event.target.role ?? null,
+        event.target.branch,
+        event.target.worktree,
+        event.status,
+        event.commit,
+        JSON.stringify(event),
+      ]);
+    }, 'recordBranchIntegration');
+  }
+
+  listBranchIntegrations(filters: ListBranchIntegrationFilters = {}): BranchIntegrationEventRecord[] {
+    const clauses: string[] = [];
+    const params: Array<string | number> = [];
+    if (filters.targetBranch) { clauses.push('target_branch = ?'); params.push(filters.targetBranch); }
+    if (filters.sourceJobId) { clauses.push('source_job_id = ?'); params.push(filters.sourceJobId); }
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const limit = filters.limit && filters.limit > 0 ? ` LIMIT ${Math.floor(filters.limit)}` : '';
+    const rows = this.db.query(
+      `SELECT id, t, event_json FROM branch_integration_events ${where} ORDER BY t DESC, id DESC${limit}`,
+    ).all(...params) as Array<{ id: number; t: number; event_json: string }>;
+    return rows.map((row) => ({
+      id: row.id,
+      t: row.t,
+      event: JSON.parse(row.event_json) as BranchIntegrationEvent,
+    }));
   }
 
   upsertResult(jobId: string, output: string): void {
