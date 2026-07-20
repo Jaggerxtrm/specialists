@@ -95,3 +95,10 @@ __pycache__/
 .xtrm/*
 !.xtrm/reports/
 !.xtrm/reports/**
+
+# xtrm runtime state (per-machine, do not track)
+.xtrm/skills/state.json
+.xtrm/worktrees/
+.xtrm/cache/
+.xtrm/statusline-claim
+.pi/skills/
