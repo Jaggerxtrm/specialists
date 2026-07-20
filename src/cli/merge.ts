@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { createBranchIntegrationEvent } from '../specialist/branch-integration-events.js';
 import { loadEpicReadinessSummary } from '../specialist/epic-readiness.js';
 import { syncEpicState } from '../specialist/epic-reconciler.js';
 import { isEpicUnresolvedState, type EpicState } from '../specialist/epic-lifecycle.js';
@@ -945,6 +946,43 @@ function syncEpicStateAfterMerge(target: ChainMergeTarget): void {
   }
 }
 
+// Record a `xtrm.branch.integration.v1` RESULT event after a successful merge
+// (audit 11.md §P2-04). Best-effort observation — never throws into the merge
+// path, never a second git authority.
+//
+// NOTE (Cluster B / Core xtrm-3xgs5): this is the only in-code branch-merge
+// point, so it fires for programmatic `sp merge`. Auto-emission for MANUAL
+// merges (the sanctioned operator path today) and populating target.role for
+// coordinator integration branches depend on coordinator-launch semantics
+// still evolving in Core. Until those land, target.role stays undefined here.
+function recordBranchIntegrationAfterMerge(
+  target: ChainMergeTarget,
+  mainRepoRoot: string,
+  targetBranch: string | undefined,
+): void {
+  try {
+    const head = runCommand('git', ['rev-parse', 'HEAD'], mainRepoRoot);
+    if (head.status !== 0) return;
+    const commit = head.stdout.trim();
+    if (!commit) return;
+
+    const client = createObservabilitySqliteClient(mainRepoRoot);
+    if (!client) return;
+    try {
+      client.recordBranchIntegration(createBranchIntegrationEvent({
+        source: { job_id: target.jobId, branch: target.branch, worktree: target.worktreePath },
+        target: { branch: targetBranch ?? resolveDefaultBranchName(mainRepoRoot), worktree: mainRepoRoot },
+        status: 'merged',
+        commit,
+      }));
+    } finally {
+      client.close();
+    }
+  } catch {
+    // Observation is best-effort; a recording failure must not fail the merge.
+  }
+}
+
 export function runMergePlan(
   targets: readonly ChainMergeTarget[],
   options: MergeExecutionOptions,
@@ -985,6 +1023,7 @@ ${formatDirtyConflictMessage(dirtyState.overlappingPaths)}
       mergeBranch(target.branch, mainRepoRoot);
       runTypecheckGate(mainRepoRoot);
       syncEpicStateAfterMerge(target);
+      recordBranchIntegrationAfterMerge(target, mainRepoRoot, targetBranch);
       mergedSteps.push({
         beadId: target.beadId,
         branch: target.branch,

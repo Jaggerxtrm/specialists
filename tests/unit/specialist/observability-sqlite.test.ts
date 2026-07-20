@@ -12,6 +12,7 @@ import {
   verifyWalMode,
 } from '../../../src/specialist/observability-sqlite.js';
 import { createForensicEvent } from '../../../src/specialist/forensic-events.js';
+import { createBranchIntegrationEvent } from '../../../src/specialist/branch-integration-events.js';
 import { loadEpicReadinessSummary } from '../../../src/specialist/epic-readiness.js';
 import {
   OBSERVABILITY_SCHEMA_VERSION,
@@ -119,7 +120,7 @@ describe('observability-sqlite', () => {
       const tableRows = db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('node_runs', 'node_members', 'node_events', 'node_memory') ORDER BY name").all() as Array<{ name: string }>;
       expect(tableRows.map((row) => row.name)).toEqual(['node_events', 'node_members', 'node_memory', 'node_runs']);
 
-      expect(OBSERVABILITY_SCHEMA_VERSION).toBe(13);
+      expect(OBSERVABILITY_SCHEMA_VERSION).toBe(14);
 
       const schemaVersionRow = db.query('SELECT version FROM schema_version WHERE version = 10 LIMIT 1').get() as { version?: number };
       expect(schemaVersionRow.version).toBe(10);
@@ -1233,6 +1234,46 @@ describe('observability-sqlite', () => {
       sqliteClient = client;
       const written = client.updatePrDriftState('noop-job', {});
       expect(written).toBe(false);
+    });
+  });
+
+  describe('branch integration events (xtrm.branch.integration.v1)', () => {
+    const mkEvent = (overrides: Partial<{ branch: string; commit: string; role: string }> = {}) =>
+      createBranchIntegrationEvent({
+        source: { job_id: 'job-exec', branch: overrides.branch ?? 'sp/exec-1', worktree: '/wt/sp-exec-1' },
+        target: { branch: 'xt/coord-epic', worktree: '/wt/coord', role: overrides.role },
+        commit: overrides.commit ?? 'deadbeef',
+      });
+
+    it('records a result event and reads it back', () => {
+      const client = createClient();
+      client.recordBranchIntegration(mkEvent({ role: 'chain-coordinator' }));
+
+      const rows = client.listBranchIntegrations();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].event.schema_version).toBe('xtrm.branch.integration.v1');
+      expect(rows[0].event.source.branch).toBe('sp/exec-1');
+      expect(rows[0].event.target.branch).toBe('xt/coord-epic');
+      expect(rows[0].event.target.role).toBe('chain-coordinator');
+      expect(rows[0].event.status).toBe('merged');
+      expect(rows[0].event.commit).toBe('deadbeef');
+    });
+
+    it('is idempotent on (source_branch, commit) — no duplicate rows', () => {
+      const client = createClient();
+      client.recordBranchIntegration(mkEvent());
+      client.recordBranchIntegration(mkEvent());
+      expect(client.listBranchIntegrations()).toHaveLength(1);
+    });
+
+    it('filters by target branch and source job', () => {
+      const client = createClient();
+      client.recordBranchIntegration(mkEvent({ branch: 'sp/a', commit: 'c1' }));
+      client.recordBranchIntegration(mkEvent({ branch: 'sp/b', commit: 'c2' }));
+
+      expect(client.listBranchIntegrations({ targetBranch: 'xt/coord-epic' })).toHaveLength(2);
+      expect(client.listBranchIntegrations({ targetBranch: 'nope' })).toHaveLength(0);
+      expect(client.listBranchIntegrations({ sourceJobId: 'job-exec', limit: 1 })).toHaveLength(1);
     });
   });
 });
