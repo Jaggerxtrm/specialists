@@ -5,6 +5,13 @@ export interface WorktreeInfo {
     worktreePath: string;
     /** True when the worktree already existed and was reused; false when freshly created. */
     reused: boolean;
+    /**
+     * The coordinator integration branch this worktree's branch was based on,
+     * when a coordinator context was present at creation time. Undefined when the
+     * job was dispatched with no coordinator context (branch starts at the git
+     * common root's HEAD, i.e. today's default).
+     */
+    baseBranch?: string;
 }
 export interface WorktreeOptions {
     /** Bead identifier (e.g. "hgpu.2"). Used as the slug prefix. */
@@ -53,6 +60,25 @@ export declare function listWorktrees(cwd?: string): Map<string, string>;
  * Returns `undefined` when no matching worktree exists.
  */
 export declare function findExistingWorktree(branch: string, cwd?: string): string | undefined;
+/**
+ * Resolve the dispatching coordinator's integration branch, if any.
+ *
+ * xtrm Core publishes the branch of every launched session two ways (see core
+ * PR #465 / xtrm-6hey0.2):
+ *   1. `XTMUX_AGENT_BRANCH` env var  — survives re-execs, inherited by children.
+ *   2. `@agent_branch` tmux pane option — matches the xtrm.runtime-origin.v1
+ *      contract shape.
+ *
+ * Env wins because it is inherited by the whole process tree; the pane option is
+ * the fallback for callers whose env was scrubbed. `@agent_worktree` is
+ * deliberately NOT consulted — the branch is the contract, the path is
+ * informational.
+ *
+ * Returns undefined when there is no coordinator context, or when the published
+ * branch does not resolve to a local branch in `cwd`'s repository. Absence is
+ * benign: the caller keeps today's base.
+ */
+export declare function resolveCoordinatorBase(cwd?: string): string | undefined;
 /**
  * Ensure an isolated worktree exists for the given bead + specialist pair.
  *

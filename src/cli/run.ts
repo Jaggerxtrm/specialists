@@ -383,7 +383,8 @@ function resolveWorkingDirectory(
     if (info.reused) {
       process.stderr.write(dim(`[worktree reused: ${info.worktreePath}  branch: ${info.branch}]\n`));
     } else {
-      process.stderr.write(dim(`[worktree created: ${info.worktreePath}  branch: ${info.branch}]\n`));
+      const baseNote = info.baseBranch ? `  base: ${info.baseBranch}` : '';
+      process.stderr.write(dim(`[worktree created: ${info.worktreePath}  branch: ${info.branch}${baseNote}]\n`));
     }
     return {
       workingDirectory: info.worktreePath,

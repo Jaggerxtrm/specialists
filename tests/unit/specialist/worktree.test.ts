@@ -9,6 +9,7 @@ import {
   listWorktrees,
   findExistingWorktree,
   provisionWorktree,
+  resolveCoordinatorBase,
   type WorktreeOptions,
 } from '../../../src/specialist/worktree.js';
 import { spawnSync, execSync } from 'node:child_process';
@@ -298,5 +299,249 @@ describe('provisionWorktree', () => {
     const second = provisionWorktree(options);
     expect(second.reused).toBe(true);
     expect(existsSync(join(result.worktreePath, '.beads'))).toBe(false);
+  }, 15000);
+});
+
+// ── Coordinator branch ancestry (core xtrm-6hey0.6 / audit P1-03) ─────────────
+//
+// Core publishes the dispatching coordinator's integration branch as both the
+// XTMUX_AGENT_BRANCH env var and the @agent_branch tmux pane option. These
+// tests pin the consumption contract: present → the job branch descends from
+// the coordinator branch; absent → today's behaviour is unchanged.
+
+/** Snapshot + restore the two env vars these tests manipulate. */
+function withEnv(vars: Record<string, string | undefined>, fn: () => void): void {
+  const saved: Record<string, string | undefined> = {};
+  for (const key of Object.keys(vars)) saved[key] = process.env[key];
+  try {
+    for (const [key, value] of Object.entries(vars)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fn();
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+function bdAvailable(): boolean {
+  try {
+    execSync('which bd', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+describe('resolveCoordinatorBase', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'wt-coord-base-'));
+    spawnSync('git', ['init'], { cwd: tempDir, stdio: 'ignore' });
+    spawnSync('git', ['config', 'user.email', 'test@test.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Test'], { cwd: tempDir });
+    spawnSync('git', ['commit', '--allow-empty', '-m', 'init'], { cwd: tempDir, stdio: 'ignore' });
+    spawnSync('git', ['branch', 'xt/coordinator'], { cwd: tempDir, stdio: 'ignore' });
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('reads the branch from XTMUX_AGENT_BRANCH', () => {
+    withEnv({ XTMUX_AGENT_BRANCH: 'xt/coordinator' }, () => {
+      expect(resolveCoordinatorBase(tempDir)).toBe('xt/coordinator');
+    });
+  });
+
+  it('returns undefined with no coordinator context', () => {
+    withEnv({ XTMUX_AGENT_BRANCH: undefined, TMUX: undefined }, () => {
+      expect(resolveCoordinatorBase(tempDir)).toBeUndefined();
+    });
+  });
+
+  it('returns undefined when the published branch does not exist locally', () => {
+    withEnv({ XTMUX_AGENT_BRANCH: 'xt/never-created' }, () => {
+      expect(resolveCoordinatorBase(tempDir)).toBeUndefined();
+    });
+  });
+
+  it('ignores a blank XTMUX_AGENT_BRANCH and falls through to the pane option', () => {
+    withEnv({ XTMUX_AGENT_BRANCH: '   ', TMUX: undefined }, () => {
+      expect(resolveCoordinatorBase(tempDir)).toBeUndefined();
+    });
+  });
+
+  it('reads the branch from the @agent_branch pane option when env is absent', () => {
+    if (!process.env.TMUX) {
+      console.log('[SKIP] not running under tmux - skipping pane-option path');
+      return;
+    }
+    const saved = spawnSync('tmux', ['show-options', '-p', '-qv', '@agent_branch'], {
+      encoding: 'utf-8',
+    }).stdout.trim();
+    spawnSync('tmux', ['set-option', '-p', '@agent_branch', 'xt/coordinator'], { stdio: 'ignore' });
+    try {
+      withEnv({ XTMUX_AGENT_BRANCH: undefined }, () => {
+        expect(resolveCoordinatorBase(tempDir)).toBe('xt/coordinator');
+      });
+    } finally {
+      if (saved) spawnSync('tmux', ['set-option', '-p', '@agent_branch', saved], { stdio: 'ignore' });
+      else spawnSync('tmux', ['set-option', '-p', '-u', '@agent_branch'], { stdio: 'ignore' });
+    }
+  });
+
+  it('prefers the env var over the pane option', () => {
+    if (!process.env.TMUX) {
+      console.log('[SKIP] not running under tmux - skipping env-precedence check');
+      return;
+    }
+    const saved = spawnSync('tmux', ['show-options', '-p', '-qv', '@agent_branch'], {
+      encoding: 'utf-8',
+    }).stdout.trim();
+    spawnSync('git', ['branch', 'xt/from-pane'], { cwd: tempDir, stdio: 'ignore' });
+    spawnSync('tmux', ['set-option', '-p', '@agent_branch', 'xt/from-pane'], { stdio: 'ignore' });
+    try {
+      withEnv({ XTMUX_AGENT_BRANCH: 'xt/coordinator' }, () => {
+        expect(resolveCoordinatorBase(tempDir)).toBe('xt/coordinator');
+      });
+    } finally {
+      if (saved) spawnSync('tmux', ['set-option', '-p', '@agent_branch', saved], { stdio: 'ignore' });
+      else spawnSync('tmux', ['set-option', '-p', '-u', '@agent_branch'], { stdio: 'ignore' });
+    }
+  });
+});
+
+describe('provisionWorktree coordinator ancestry', () => {
+  let tempDir: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'wt-ancestry-test-'));
+    originalCwd = process.cwd();
+    spawnSync('git', ['init'], { cwd: tempDir, stdio: 'ignore' });
+    spawnSync('git', ['config', 'user.email', 'test@test.com'], { cwd: tempDir });
+    spawnSync('git', ['config', 'user.name', 'Test'], { cwd: tempDir });
+    spawnSync('git', ['commit', '--allow-empty', '-m', 'init'], { cwd: tempDir, stdio: 'ignore' });
+    process.chdir(tempDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  /** Create a coordinator branch carrying one commit the default HEAD lacks. */
+  function createCoordinatorBranch(name: string): string {
+    spawnSync('git', ['checkout', '-b', name], { cwd: tempDir, stdio: 'ignore' });
+    spawnSync('git', ['commit', '--allow-empty', '-m', 'coordinator work'], {
+      cwd: tempDir,
+      stdio: 'ignore',
+    });
+    const sha = spawnSync('git', ['rev-parse', name], { cwd: tempDir, encoding: 'utf8' })
+      .stdout.trim();
+    spawnSync('git', ['checkout', '-'], { cwd: tempDir, stdio: 'ignore' });
+    return sha;
+  }
+
+  function isAncestor(ancestor: string, descendant: string): boolean {
+    return spawnSync('git', ['merge-base', '--is-ancestor', ancestor, descendant], {
+      cwd: tempDir,
+      stdio: 'ignore',
+    }).status === 0;
+  }
+
+  it('bases the job branch on the coordinator branch from XTMUX_AGENT_BRANCH', () => {
+    if (!bdAvailable()) {
+      console.log('[SKIP] bd not available');
+      return;
+    }
+    spawnSync('bd', ['init'], { cwd: tempDir, stdio: 'ignore' });
+    createCoordinatorBranch('xt/coordinator');
+
+    const options: WorktreeOptions = {
+      beadId: 'anc.1',
+      specialistName: 'executor',
+      worktreeBase: join(tempDir, '.worktrees', 'anc.1'),
+      cwd: tempDir,
+    };
+
+    withEnv({ XTMUX_AGENT_BRANCH: 'xt/coordinator' }, () => {
+      const result = provisionWorktree(options);
+      expect(result.reused).toBe(false);
+      expect(result.baseBranch).toBe('xt/coordinator');
+      // The success criterion straight out of the bead.
+      expect(isAncestor('xt/coordinator', result.branch)).toBe(true);
+    });
+  }, 15000);
+
+  it('keeps the existing behaviour when no coordinator context is published', () => {
+    if (!bdAvailable()) {
+      console.log('[SKIP] bd not available');
+      return;
+    }
+    spawnSync('bd', ['init'], { cwd: tempDir, stdio: 'ignore' });
+    const coordinatorSha = createCoordinatorBranch('xt/coordinator');
+    const headSha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: tempDir, encoding: 'utf8' })
+      .stdout.trim();
+
+    const options: WorktreeOptions = {
+      beadId: 'anc.2',
+      specialistName: 'executor',
+      worktreeBase: join(tempDir, '.worktrees', 'anc.2'),
+      cwd: tempDir,
+    };
+
+    withEnv({ XTMUX_AGENT_BRANCH: undefined, TMUX: undefined }, () => {
+      const result = provisionWorktree(options);
+      expect(result.baseBranch).toBeUndefined();
+      const branchSha = spawnSync('git', ['rev-parse', result.branch], {
+        cwd: tempDir,
+        encoding: 'utf8',
+      }).stdout.trim();
+      expect(branchSha).toBe(headSha);
+      expect(branchSha).not.toBe(coordinatorSha);
+      expect(isAncestor('xt/coordinator', result.branch)).toBe(false);
+    });
+  }, 15000);
+
+  it('does not re-base a reused worktree', () => {
+    if (!bdAvailable()) {
+      console.log('[SKIP] bd not available');
+      return;
+    }
+    spawnSync('bd', ['init'], { cwd: tempDir, stdio: 'ignore' });
+
+    const options: WorktreeOptions = {
+      beadId: 'anc.3',
+      specialistName: 'executor',
+      worktreeBase: join(tempDir, '.worktrees', 'anc.3'),
+      cwd: tempDir,
+    };
+
+    let firstSha = '';
+    withEnv({ XTMUX_AGENT_BRANCH: undefined, TMUX: undefined }, () => {
+      const first = provisionWorktree(options);
+      firstSha = spawnSync('git', ['rev-parse', first.branch], { cwd: tempDir, encoding: 'utf8' })
+        .stdout.trim();
+    });
+
+    // A coordinator appears only on the second dispatch; the existing worktree
+    // must be handed back untouched rather than reset onto the new base.
+    createCoordinatorBranch('xt/late-coordinator');
+    withEnv({ XTMUX_AGENT_BRANCH: 'xt/late-coordinator' }, () => {
+      const second = provisionWorktree(options);
+      expect(second.reused).toBe(true);
+      expect(second.baseBranch).toBeUndefined();
+      const secondSha = spawnSync('git', ['rev-parse', second.branch], {
+        cwd: tempDir,
+        encoding: 'utf8',
+      }).stdout.trim();
+      expect(secondSha).toBe(firstSha);
+    });
   }, 15000);
 });
