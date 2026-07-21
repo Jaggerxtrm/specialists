@@ -51993,7 +51993,8 @@ function resolveWorkingDirectory(args, jobsDir, permissionRequired, readStatus) 
 `));
     }
     return {
-      workingDirectory: info.worktreePath
+      workingDirectory: info.worktreePath,
+      ...info.baseBranch ? { coordinatorBase: info.baseBranch } : {}
     };
   }
   if (args.reuseJobId !== undefined) {
@@ -52176,16 +52177,19 @@ function runGitForBasePin(cwd, args, runArgs) {
     throw new Error(JSON.stringify(envelope));
   }
 }
-function resolveBasePin(args, worktreePath) {
+function resolveBasePin(args, worktreePath, coordinatorBase) {
   if (!worktreePath || !args.worktree && !args.baseSha)
     return;
   const baseRef = args.baseRef?.trim();
-  if (baseRef) {
-    runGitForBasePin(worktreePath, ["fetch", "origin", baseRef], args);
-  } else {
-    runGitForBasePin(worktreePath, ["fetch", "origin"], args);
+  const pinToCoordinator = Boolean(coordinatorBase) && !baseRef && !args.baseSha;
+  if (!pinToCoordinator) {
+    if (baseRef) {
+      runGitForBasePin(worktreePath, ["fetch", "origin", baseRef], args);
+    } else {
+      runGitForBasePin(worktreePath, ["fetch", "origin"], args);
+    }
   }
-  const baseShaObserved = runGitForBasePin(worktreePath, ["rev-parse", baseRef ? "FETCH_HEAD" : "refs/remotes/origin/HEAD"], args);
+  const baseShaObserved = pinToCoordinator ? runGitForBasePin(worktreePath, ["rev-parse", `refs/heads/${coordinatorBase}`], args) : runGitForBasePin(worktreePath, ["rev-parse", baseRef ? "FETCH_HEAD" : "refs/remotes/origin/HEAD"], args);
   const baseShaPinned = args.baseSha ?? baseShaObserved;
   const currentSha = runGitForBasePin(worktreePath, ["rev-parse", "HEAD"], args);
   const branch = runGitForBasePin(worktreePath, ["rev-parse", "--abbrev-ref", "HEAD"], args);
@@ -52514,8 +52518,8 @@ async function run18() {
     jobsDir
   });
   const effectiveArgs = { ...args, worktree: useWorktree };
-  const { workingDirectory, reusedFromJobId, worktreeOwnerJobId, inferredBeadId } = resolveWorkingDirectory(effectiveArgs, jobsDir, perm, (jobId) => statusReader.readStatus(jobId));
-  const basePin = resolveBasePin(effectiveArgs, workingDirectory);
+  const { workingDirectory, reusedFromJobId, worktreeOwnerJobId, inferredBeadId, coordinatorBase } = resolveWorkingDirectory(effectiveArgs, jobsDir, perm, (jobId) => statusReader.readStatus(jobId));
+  const basePin = resolveBasePin(effectiveArgs, workingDirectory, coordinatorBase);
   await statusReader.dispose();
   if (!effectiveBeadId && inferredBeadId) {
     effectiveBeadId = inferredBeadId;

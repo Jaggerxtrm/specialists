@@ -59,6 +59,49 @@ describe('run CLI base pinning', () => {
     }));
   });
 
+  // ── Coordinator branch ancestry (core xtrm-6hey0.6 / audit P1-03) ──────────
+  //
+  // provisionWorktree bases a job branch on the dispatching coordinator's
+  // integration branch. That branch — not origin/HEAD — is then the job's
+  // declared base; pinning against origin/HEAD would report every
+  // coordinator-dispatched job as stale_base and refuse the dispatch.
+
+  /** Branch off `main`, add a commit, and leave HEAD on it (as a job worktree would sit). */
+  function addCoordinatorBranch(repoDir: string, name = 'xt/coordinator'): string {
+    childProcess.execSync(`git checkout -q -b ${name}`, { cwd: repoDir });
+    fs.writeFileSync(`${repoDir}/coord.md`, 'coordinator work\n');
+    childProcess.execSync('git add coord.md && git commit -m coordinator', { cwd: repoDir, shell: '/bin/bash' as never });
+    return childProcess.execSync(`git rev-parse ${name}`, { cwd: repoDir, encoding: 'utf8' }).trim();
+  }
+
+  it('pins to the coordinator branch instead of origin/HEAD', () => {
+    const { repoDir } = createBasePinRepo();
+    const coordinatorSha = addCoordinatorBranch(repoDir);
+    expect(resolveBasePin(makeRunArgs(), repoDir, 'xt/coordinator')).toEqual(expect.objectContaining({
+      baseShaPinned: coordinatorSha,
+      baseShaObserved: coordinatorSha,
+      currentSha: coordinatorSha,
+      commitsBehind: 0,
+      override: false,
+    }));
+  });
+
+  it('would refuse the same worktree without the coordinator base', () => {
+    const { repoDir } = createBasePinRepo();
+    addCoordinatorBranch(repoDir);
+    // Same repo state, coordinator base omitted -> pins origin/HEAD -> stale.
+    // This is the regression the coordinator-base argument exists to prevent.
+    expect(() => resolveBasePin(makeRunArgs(), repoDir)).toThrow('"error_code":"stale_base"');
+  });
+
+  it('lets an explicit --base-sha override the coordinator base', () => {
+    const { repoDir, baseSha } = createBasePinRepo();
+    addCoordinatorBranch(repoDir);
+    // Direct operator intent wins over the inherited coordinator base.
+    expect(() => resolveBasePin(makeRunArgs({ baseSha }), repoDir, 'xt/coordinator'))
+      .toThrow('"error_code":"stale_base"');
+  });
+
   it('refuses stale base by default', () => {
     const { repoDir, baseSha } = createBasePinRepo();
     fs.writeFileSync(`${repoDir}/README.md`, 'base\nchange\n');
