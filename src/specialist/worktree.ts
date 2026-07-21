@@ -20,6 +20,13 @@ export interface WorktreeInfo {
   worktreePath: string;
   /** True when the worktree already existed and was reused; false when freshly created. */
   reused: boolean;
+  /**
+   * The coordinator integration branch this worktree's branch was based on,
+   * when a coordinator context was present at creation time. Undefined when the
+   * job was dispatched with no coordinator context (branch starts at the git
+   * common root's HEAD, i.e. today's default).
+   */
+  baseBranch?: string;
 }
 
 export interface WorktreeOptions {
@@ -105,6 +112,82 @@ export function findExistingWorktree(branch: string, cwd = process.cwd()): strin
   return listWorktrees(cwd).get(branch);
 }
 
+// ── Coordinator branch ancestry ────────────────────────────────────────────────
+
+/**
+ * Resolve the dispatching coordinator's integration branch, if any.
+ *
+ * xtrm Core publishes the branch of every launched session two ways (see core
+ * PR #465 / xtrm-6hey0.2):
+ *   1. `XTMUX_AGENT_BRANCH` env var  — survives re-execs, inherited by children.
+ *   2. `@agent_branch` tmux pane option — matches the xtrm.runtime-origin.v1
+ *      contract shape.
+ *
+ * Env wins because it is inherited by the whole process tree; the pane option is
+ * the fallback for callers whose env was scrubbed. `@agent_worktree` is
+ * deliberately NOT consulted — the branch is the contract, the path is
+ * informational.
+ *
+ * Returns undefined when there is no coordinator context, or when the published
+ * branch does not resolve to a local branch in `cwd`'s repository. Absence is
+ * benign: the caller keeps today's base.
+ */
+export function resolveCoordinatorBase(cwd = process.cwd()): string | undefined {
+  const candidate = (process.env.XTMUX_AGENT_BRANCH ?? '').trim() || readPaneAgentBranch();
+  if (!candidate) return undefined;
+  return localBranchExists(candidate, cwd) ? candidate : undefined;
+}
+
+/** Read the `@agent_branch` option off the current tmux pane. */
+function readPaneAgentBranch(): string | undefined {
+  if (!process.env.TMUX) return undefined;
+  const result = spawnSync('tmux', ['show-options', '-p', '-qv', '@agent_branch'], {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  if (result.status !== 0) return undefined;
+  return (result.stdout ?? '').trim() || undefined;
+}
+
+/** True when `branch` names an existing local branch head in `cwd`'s repository. */
+function localBranchExists(branch: string, cwd: string): boolean {
+  const result = spawnSync(
+    'git',
+    ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`],
+    { cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] },
+  );
+  return result.status === 0 && (result.stdout ?? '').trim().length > 0;
+}
+
+/**
+ * Point the freshly created `branch` at `base`.
+ *
+ * `bd worktree create` has no start-point flag, so the new branch always starts
+ * at the git common root's HEAD. Re-pointing it immediately afterwards is what
+ * makes `git merge-base --is-ancestor <base> <branch>` hold.
+ *
+ * Only ever called on a brand-new worktree that has no commits and no working
+ * tree changes of its own, so `checkout -B` cannot discard work.
+ *
+ * Throws on failure: a coordinator asked for this ancestry, and silently
+ * branching from the common root's HEAD instead would reintroduce the exact bug
+ * this guards against.
+ */
+function rebaseNewBranchOnto(worktreePath: string, branch: string, base: string): void {
+  const result = spawnSync('git', ['checkout', '-B', branch, base], {
+    cwd: worktreePath,
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (result.status !== 0) {
+    const detail = (result.stderr ?? '').trim() || (result.stdout ?? '').trim() || 'unknown error';
+    throw new Error(
+      `failed to base branch "${branch}" on coordinator branch "${base}" ` +
+      `at "${worktreePath}": ${detail}`,
+    );
+  }
+}
+
 // ── Provisioning ───────────────────────────────────────────────────────────────
 
 /**
@@ -139,6 +222,15 @@ export function provisionWorktree(options: WorktreeOptions): WorktreeInfo {
 
   // ── 3. Create via bd worktree create (hard — no git fallback) ──────────────
   createWorktreeViaBd(worktreePath, branch, commonRoot);
+
+  // ── 3z. Base the new branch on the dispatching coordinator's branch ────────
+  // Must run before the .beads/ surgery below: checkout rewrites the index, and
+  // the skip-worktree bits set afterwards would otherwise be dropped.
+  const coordinatorBase = resolveCoordinatorBase(commonRoot);
+  const baseBranch = coordinatorBase && coordinatorBase !== branch ? coordinatorBase : undefined;
+  if (baseBranch) {
+    rebaseNewBranchOnto(worktreePath, branch, baseBranch);
+  }
 
   // ── 3a. Symlink .beads/ to parent so bd shares the parent's dolt server ───
   // bd's post-checkout/pre-commit/post-merge git hooks (registered via the
@@ -182,7 +274,7 @@ export function provisionWorktree(options: WorktreeOptions): WorktreeInfo {
   // Sharing the main checkout's npm cache skips that startup cost.
   symlinkPiNpmCache(commonRoot, worktreePath);
 
-  return { branch, worktreePath, reused: false };
+  return { branch, worktreePath, reused: false, ...(baseBranch ? { baseBranch } : {}) };
 }
 
 // ── Internal ───────────────────────────────────────────────────────────────────

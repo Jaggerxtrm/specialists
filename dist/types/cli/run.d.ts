@@ -45,7 +45,17 @@ interface BasePinResult {
     commitsBehind: number;
     override: boolean;
 }
-export declare function resolveBasePin(args: RunArgs, worktreePath?: string): BasePinResult | undefined;
+/**
+ * @param coordinatorBase When the worktree's branch was based on a dispatching
+ *   coordinator's integration branch (see provisionWorktree), that branch — not
+ *   `origin/HEAD` — is this job's declared base. Pinning against `origin/HEAD`
+ *   instead would report every coordinator-dispatched job as `stale_base` and
+ *   refuse the dispatch. Explicit `--base-sha` / `--base-ref` still win: they
+ *   are direct operator intent. Whether the coordinator branch is itself
+ *   current with origin is coordinator judgement (the P1-04 ladder), not this
+ *   guard's call.
+ */
+export declare function resolveBasePin(args: RunArgs, worktreePath?: string, coordinatorBase?: string): BasePinResult | undefined;
 export declare function buildInjectedReviewerDiffVariables(cwd: string, maxFiles?: number): Record<string, string>;
 export declare function buildInjectedWriterDiffVariables(cwd: string, maxFiles?: number): Record<string, string>;
 export declare function run(): Promise<void>;

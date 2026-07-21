@@ -371,6 +371,8 @@ function resolveWorkingDirectory(
   reusedFromJobId?: string;
   worktreeOwnerJobId?: string;
   inferredBeadId?: string;
+  /** Coordinator integration branch the worktree's branch was based on, if any. */
+  coordinatorBase?: string;
 } {
   if (args.worktree) {
     // args.beadId is guaranteed non-null here (parseArgs validates this)
@@ -383,10 +385,12 @@ function resolveWorkingDirectory(
     if (info.reused) {
       process.stderr.write(dim(`[worktree reused: ${info.worktreePath}  branch: ${info.branch}]\n`));
     } else {
-      process.stderr.write(dim(`[worktree created: ${info.worktreePath}  branch: ${info.branch}]\n`));
+      const baseNote = info.baseBranch ? `  base: ${info.baseBranch}` : '';
+      process.stderr.write(dim(`[worktree created: ${info.worktreePath}  branch: ${info.branch}${baseNote}]\n`));
     }
     return {
       workingDirectory: info.worktreePath,
+      ...(info.baseBranch ? { coordinatorBase: info.baseBranch } : {}),
     };
   }
 
@@ -628,15 +632,35 @@ function runGitForBasePin(cwd: string, args: string[], runArgs: RunArgs): string
   }
 }
 
-export function resolveBasePin(args: RunArgs, worktreePath?: string): BasePinResult | undefined {
+/**
+ * @param coordinatorBase When the worktree's branch was based on a dispatching
+ *   coordinator's integration branch (see provisionWorktree), that branch — not
+ *   `origin/HEAD` — is this job's declared base. Pinning against `origin/HEAD`
+ *   instead would report every coordinator-dispatched job as `stale_base` and
+ *   refuse the dispatch. Explicit `--base-sha` / `--base-ref` still win: they
+ *   are direct operator intent. Whether the coordinator branch is itself
+ *   current with origin is coordinator judgement (the P1-04 ladder), not this
+ *   guard's call.
+ */
+export function resolveBasePin(
+  args: RunArgs,
+  worktreePath?: string,
+  coordinatorBase?: string,
+): BasePinResult | undefined {
   if (!worktreePath || (!args.worktree && !args.baseSha)) return undefined;
   const baseRef = args.baseRef?.trim();
-  if (baseRef) {
-    runGitForBasePin(worktreePath, ['fetch', 'origin', baseRef], args);
-  } else {
-    runGitForBasePin(worktreePath, ['fetch', 'origin'], args);
+  // A coordinator base is a local branch; there is nothing to fetch for it.
+  const pinToCoordinator = Boolean(coordinatorBase) && !baseRef && !args.baseSha;
+  if (!pinToCoordinator) {
+    if (baseRef) {
+      runGitForBasePin(worktreePath, ['fetch', 'origin', baseRef], args);
+    } else {
+      runGitForBasePin(worktreePath, ['fetch', 'origin'], args);
+    }
   }
-  const baseShaObserved = runGitForBasePin(worktreePath, ['rev-parse', baseRef ? 'FETCH_HEAD' : 'refs/remotes/origin/HEAD'], args);
+  const baseShaObserved = pinToCoordinator
+    ? runGitForBasePin(worktreePath, ['rev-parse', `refs/heads/${coordinatorBase}`], args)
+    : runGitForBasePin(worktreePath, ['rev-parse', baseRef ? 'FETCH_HEAD' : 'refs/remotes/origin/HEAD'], args);
   const baseShaPinned = args.baseSha ?? baseShaObserved;
   const currentSha = runGitForBasePin(worktreePath, ['rev-parse', 'HEAD'], args);
   const branch = runGitForBasePin(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD'], args);
@@ -1030,13 +1054,13 @@ export async function run(): Promise<void> {
   });
 
   const effectiveArgs = { ...args, worktree: useWorktree };
-  const { workingDirectory, reusedFromJobId, worktreeOwnerJobId, inferredBeadId } = resolveWorkingDirectory(
+  const { workingDirectory, reusedFromJobId, worktreeOwnerJobId, inferredBeadId, coordinatorBase } = resolveWorkingDirectory(
     effectiveArgs,
     jobsDir,
     perm,
     (jobId) => statusReader.readStatus(jobId),
   );
-  const basePin = resolveBasePin(effectiveArgs, workingDirectory);
+  const basePin = resolveBasePin(effectiveArgs, workingDirectory, coordinatorBase);
   await statusReader.dispose();
 
   if (!effectiveBeadId && inferredBeadId) {

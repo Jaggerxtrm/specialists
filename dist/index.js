@@ -50424,6 +50424,38 @@ function listWorktrees(cwd = process.cwd()) {
 function findExistingWorktree(branch, cwd = process.cwd()) {
   return listWorktrees(cwd).get(branch);
 }
+function resolveCoordinatorBase(cwd = process.cwd()) {
+  const candidate = (process.env.XTMUX_AGENT_BRANCH ?? "").trim() || readPaneAgentBranch();
+  if (!candidate)
+    return;
+  return localBranchExists(candidate, cwd) ? candidate : undefined;
+}
+function readPaneAgentBranch() {
+  if (!process.env.TMUX)
+    return;
+  const result = spawnSync17("tmux", ["show-options", "-p", "-qv", "@agent_branch"], {
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (result.status !== 0)
+    return;
+  return (result.stdout ?? "").trim() || undefined;
+}
+function localBranchExists(branch, cwd) {
+  const result = spawnSync17("git", ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
+  return result.status === 0 && (result.stdout ?? "").trim().length > 0;
+}
+function rebaseNewBranchOnto(worktreePath, branch, base) {
+  const result = spawnSync17("git", ["checkout", "-B", branch, base], {
+    cwd: worktreePath,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (result.status !== 0) {
+    const detail = (result.stderr ?? "").trim() || (result.stdout ?? "").trim() || "unknown error";
+    throw new Error(`failed to base branch "${branch}" on coordinator branch "${base}" ` + `at "${worktreePath}": ${detail}`);
+  }
+}
 function provisionWorktree(options2) {
   const cwd = options2.cwd ?? process.cwd();
   const commonRoot = resolveCommonRoot(cwd);
@@ -50436,13 +50468,18 @@ function provisionWorktree(options2) {
   const worktreeName = deriveWorktreeName(options2.beadId, options2.specialistName);
   const worktreePath = resolve9(join30(worktreeBase, worktreeName));
   createWorktreeViaBd(worktreePath, branch, commonRoot);
+  const coordinatorBase = resolveCoordinatorBase(commonRoot);
+  const baseBranch = coordinatorBase && coordinatorBase !== branch ? coordinatorBase : undefined;
+  if (baseBranch) {
+    rebaseNewBranchOnto(worktreePath, branch, baseBranch);
+  }
   normalizeParentHooksPath(commonRoot);
   try {
     rmSync5(join30(worktreePath, ".beads"), { recursive: true, force: true });
     markBeadsSkipWorktree(worktreePath);
   } catch {}
   symlinkPiNpmCache(commonRoot, worktreePath);
-  return { branch, worktreePath, reused: false };
+  return { branch, worktreePath, reused: false, ...baseBranch ? { baseBranch } : {} };
 }
 function normalizeParentHooksPath(mainRepoRoot) {
   try {
@@ -51951,11 +51988,13 @@ function resolveWorkingDirectory(args, jobsDir, permissionRequired, readStatus) 
       process.stderr.write(dim11(`[worktree reused: ${info.worktreePath}  branch: ${info.branch}]
 `));
     } else {
-      process.stderr.write(dim11(`[worktree created: ${info.worktreePath}  branch: ${info.branch}]
+      const baseNote = info.baseBranch ? `  base: ${info.baseBranch}` : "";
+      process.stderr.write(dim11(`[worktree created: ${info.worktreePath}  branch: ${info.branch}${baseNote}]
 `));
     }
     return {
-      workingDirectory: info.worktreePath
+      workingDirectory: info.worktreePath,
+      ...info.baseBranch ? { coordinatorBase: info.baseBranch } : {}
     };
   }
   if (args.reuseJobId !== undefined) {
@@ -52138,16 +52177,19 @@ function runGitForBasePin(cwd, args, runArgs) {
     throw new Error(JSON.stringify(envelope));
   }
 }
-function resolveBasePin(args, worktreePath) {
+function resolveBasePin(args, worktreePath, coordinatorBase) {
   if (!worktreePath || !args.worktree && !args.baseSha)
     return;
   const baseRef = args.baseRef?.trim();
-  if (baseRef) {
-    runGitForBasePin(worktreePath, ["fetch", "origin", baseRef], args);
-  } else {
-    runGitForBasePin(worktreePath, ["fetch", "origin"], args);
+  const pinToCoordinator = Boolean(coordinatorBase) && !baseRef && !args.baseSha;
+  if (!pinToCoordinator) {
+    if (baseRef) {
+      runGitForBasePin(worktreePath, ["fetch", "origin", baseRef], args);
+    } else {
+      runGitForBasePin(worktreePath, ["fetch", "origin"], args);
+    }
   }
-  const baseShaObserved = runGitForBasePin(worktreePath, ["rev-parse", baseRef ? "FETCH_HEAD" : "refs/remotes/origin/HEAD"], args);
+  const baseShaObserved = pinToCoordinator ? runGitForBasePin(worktreePath, ["rev-parse", `refs/heads/${coordinatorBase}`], args) : runGitForBasePin(worktreePath, ["rev-parse", baseRef ? "FETCH_HEAD" : "refs/remotes/origin/HEAD"], args);
   const baseShaPinned = args.baseSha ?? baseShaObserved;
   const currentSha = runGitForBasePin(worktreePath, ["rev-parse", "HEAD"], args);
   const branch = runGitForBasePin(worktreePath, ["rev-parse", "--abbrev-ref", "HEAD"], args);
@@ -52476,8 +52518,8 @@ async function run18() {
     jobsDir
   });
   const effectiveArgs = { ...args, worktree: useWorktree };
-  const { workingDirectory, reusedFromJobId, worktreeOwnerJobId, inferredBeadId } = resolveWorkingDirectory(effectiveArgs, jobsDir, perm, (jobId) => statusReader.readStatus(jobId));
-  const basePin = resolveBasePin(effectiveArgs, workingDirectory);
+  const { workingDirectory, reusedFromJobId, worktreeOwnerJobId, inferredBeadId, coordinatorBase } = resolveWorkingDirectory(effectiveArgs, jobsDir, perm, (jobId) => statusReader.readStatus(jobId));
+  const basePin = resolveBasePin(effectiveArgs, workingDirectory, coordinatorBase);
   await statusReader.dispose();
   if (!effectiveBeadId && inferredBeadId) {
     effectiveBeadId = inferredBeadId;
