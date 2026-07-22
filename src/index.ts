@@ -138,6 +138,39 @@ async function run() {
     return handler();
   }
 
+  if (sub === 'render-bead') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists render-bead <id> [options]',
+        '',
+        'Roleless sibling of `render-task`: render the initial user prompt for a bead',
+        'with NO specialist, for bare launches (`xt claude worker --bead <id>` without',
+        '--role). Same bead context, boundary rules, MANDATORY_RULES, and envelope.',
+        'Read-only: creates no job, worktree, session, bead, or status row.',
+        '',
+        'Options:',
+        '  --bead <id>            Alternative to the positional id',
+        '  --cwd <path>           Project cwd for boundary rules (default: cwd)',
+        '  --context-depth <n>    Completed-blocker depth (default: 3)',
+        '  --surface pi|claude    Interactive surface being launched (default: pi)',
+        '',
+        'Output: the `render-task` envelope with specialist: null, skills: [], and',
+        'skill_prefix: "" — a roleless render declares no skills, so consumers keep',
+        'their position-0 body-safety fallback for the bead-derived body.',
+        'Errors: JSON { ok: false, error: { code, message } } with exit 1.',
+        '',
+        'Examples:',
+        '  specialists render-bead unitAI-6639v',
+        '  specialists render-bead unitAI-6639v --surface claude',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/render-bead.js');
+    return handler();
+  }
+
   if (sub === 'render-skill-prefix') {
     if (wantsHelp()) {
       console.log([

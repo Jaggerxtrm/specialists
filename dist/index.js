@@ -29529,14 +29529,17 @@ var init_list = __esm(() => {
 // src/cli/render-task.ts
 var exports_render_task = {};
 __export(exports_render_task, {
-  run: () => run5
+  run: () => run5,
+  renderAndEmit: () => renderAndEmit,
+  parseRenderArgs: () => parseRenderArgs,
+  fail: () => fail
 });
 function fail(code, message) {
   process.stdout.write(`${JSON.stringify({ ok: false, error: { code, message } }, null, 2)}
 `);
   process.exit(1);
 }
-function parseArgs3(argv) {
+function parseRenderArgs(argv) {
   const positional = [];
   let beadId = "";
   let cwd = process.cwd();
@@ -29555,23 +29558,15 @@ function parseArgs3(argv) {
     else if (!arg.startsWith("-"))
       positional.push(arg);
   }
-  const name = positional[0] ?? "";
-  if (!name || !beadId) {
-    fail("usage", "Usage: specialists render-task <name> --bead <id> [--cwd <path>] [--context-depth <n>] [--surface pi|claude]");
-  }
   if (surface !== "pi" && surface !== "claude") {
     fail("usage", `--surface must be 'pi' or 'claude' (got '${surface}')`);
   }
   if (!Number.isFinite(contextDepth) || contextDepth < 0) {
     fail("usage", `--context-depth must be a non-negative number (got '${contextDepth}')`);
   }
-  return { name, beadId, cwd, contextDepth: Math.trunc(contextDepth), surface };
+  return { beadId, cwd, contextDepth: Math.trunc(contextDepth), surface, positional };
 }
-async function run5() {
-  const args = parseArgs3(process.argv.slice(3));
-  const spec = await new SpecialistLoader().get(args.name).catch((error2) => {
-    fail("specialist_not_found", `specialist '${args.name}': ${error2?.message ?? String(error2)}`);
-  });
+function renderAndEmit(specialist, specialistName, args) {
   const beads = new BeadsClient;
   const bead = beads.readBead(args.beadId);
   if (!bead)
@@ -29580,7 +29575,7 @@ async function run5() {
   let rendered;
   try {
     rendered = renderTaskPrompt({
-      specialist: spec.specialist,
+      specialist,
       cwd: args.cwd,
       beadId: args.beadId,
       bead,
@@ -29607,7 +29602,7 @@ async function run5() {
   ];
   process.stdout.write(`${JSON.stringify({
     ok: true,
-    specialist: spec.specialist.metadata.name,
+    specialist: specialistName,
     bead_id: args.beadId,
     surface: args.surface,
     cwd: args.cwd,
@@ -29622,27 +29617,71 @@ async function run5() {
       inline_rules_count: rendered.mandatoryRules.inlineRulesCount,
       globals_disabled: rendered.mandatoryRules.globalsDisabled
     } : null,
-    skills: spec.specialist.skills?.paths ?? []
+    skills: specialist.skills?.paths ?? []
   }, null, 2)}
 `);
 }
+async function run5() {
+  const args = parseRenderArgs(process.argv.slice(3));
+  const name = args.positional[0] ?? "";
+  if (!name || !args.beadId)
+    fail("usage", USAGE);
+  const spec = await new SpecialistLoader().get(name).catch((error2) => {
+    fail("specialist_not_found", `specialist '${name}': ${error2?.message ?? String(error2)}`);
+  });
+  renderAndEmit(spec.specialist, spec.specialist.metadata.name, args);
+}
+var USAGE = "Usage: specialists render-task <name> --bead <id> [--cwd <path>] [--context-depth <n>] [--surface pi|claude]";
 var init_render_task = __esm(() => {
   init_loader();
   init_beads();
   init_task_prompt();
 });
 
+// src/cli/render-bead.ts
+var exports_render_bead = {};
+__export(exports_render_bead, {
+  run: () => run6,
+  rolelessSpecialist: () => rolelessSpecialist
+});
+function rolelessSpecialist() {
+  return SpecialistSchema.parse({
+    specialist: {
+      metadata: {
+        name: "roleless",
+        version: "1.0.0",
+        description: "Synthetic roleless render target for `sp render-bead`.",
+        category: "internal"
+      },
+      execution: { model: null },
+      prompt: { task_template: "$prompt" }
+    }
+  }).specialist;
+}
+function run6() {
+  const args = parseRenderArgs(process.argv.slice(3));
+  const beadId = args.beadId || args.positional[0] || "";
+  if (!beadId)
+    fail("usage", USAGE2);
+  renderAndEmit(rolelessSpecialist(), null, { ...args, beadId });
+}
+var USAGE2 = "Usage: specialists render-bead <id> [--cwd <path>] [--context-depth <n>] [--surface pi|claude]";
+var init_render_bead = __esm(() => {
+  init_schema();
+  init_render_task();
+});
+
 // src/cli/render-skill-prefix.ts
 var exports_render_skill_prefix = {};
 __export(exports_render_skill_prefix, {
-  run: () => run6
+  run: () => run7
 });
 function fail2(code, message) {
   process.stdout.write(`${JSON.stringify({ ok: false, error: { code, message } }, null, 2)}
 `);
   process.exit(1);
 }
-async function run6() {
+async function run7() {
   const argv = process.argv.slice(3);
   const positional = [];
   let surface = "pi";
@@ -29678,9 +29717,9 @@ var init_render_skill_prefix = __esm(() => {
 // src/cli/view.ts
 var exports_view = {};
 __export(exports_view, {
-  run: () => run7,
+  run: () => run8,
   resolveSurfaceModel: () => resolveSurfaceModel,
-  parseArgs: () => parseArgs4
+  parseArgs: () => parseArgs3
 });
 import readline2 from "readline/promises";
 import { stdin as input, stdout as output } from "process";
@@ -29693,7 +29732,7 @@ function permissionBadge2(permission) {
     return yellow3("[MEDIUM]");
   return magenta2("[HIGH]");
 }
-function parseArgs4(argv) {
+function parseArgs3(argv) {
   const parsed = { raw: false, all: false };
   for (let index = 0;index < argv.length; index++) {
     const token = argv[index];
@@ -29880,10 +29919,10 @@ async function printRaw(summary, loader, surface) {
   }
   console.log(JSON.stringify(withSurfaceModel(spec, surface), null, 2));
 }
-async function run7() {
+async function run8() {
   let args;
   try {
-    args = parseArgs4(process.argv.slice(3));
+    args = parseArgs3(process.argv.slice(3));
   } catch (error2) {
     if (error2 instanceof ArgParseError2) {
       console.error(`Error: ${error2.message}`);
@@ -29954,7 +29993,7 @@ var init_view = __esm(() => {
 // src/cli/models.ts
 var exports_models = {};
 __export(exports_models, {
-  run: () => run8
+  run: () => run9
 });
 import { spawnSync as spawnSync11 } from "child_process";
 function parsePiModels() {
@@ -29978,7 +30017,7 @@ function parsePiModels() {
     };
   }).filter((m) => m.provider && m.model);
 }
-function parseArgs5(argv) {
+function parseArgs4(argv) {
   const out = {};
   for (let i = 0;i < argv.length; i++) {
     if (argv[i] === "--provider" && argv[i + 1]) {
@@ -29992,8 +30031,8 @@ function parseArgs5(argv) {
   }
   return out;
 }
-async function run8() {
-  const args = parseArgs5(process.argv.slice(3));
+async function run9() {
+  const args = parseArgs4(process.argv.slice(3));
   const loader = new SpecialistLoader;
   const specialists = await loader.list();
   const usedBy = new Map;
@@ -30060,7 +30099,7 @@ var init_models = __esm(() => {
 var exports_init = {};
 __export(exports_init, {
   runGlobal: () => runGlobal,
-  run: () => run9
+  run: () => run10
 });
 import { copyFileSync, cpSync, existsSync as existsSync15, lstatSync, mkdirSync as mkdirSync8, readdirSync as readdirSync4, readFileSync as readFileSync13, readlinkSync, renameSync as renameSync3, rmSync as rmSync3, symlinkSync, unlinkSync, writeFileSync as writeFileSync7 } from "fs";
 import { spawnSync as spawnSync12 } from "child_process";
@@ -30782,7 +30821,7 @@ ${bold5("Done!")}
   console.log(`  ${dim5("\u2022 for preset refs, set model/fallback entries to")} ${yellow5("@preset/cheap")} ${dim5("(or medium, power)")}
 `);
 }
-async function run9(opts = {}) {
+async function run10(opts = {}) {
   if (opts.global) {
     return runGlobal();
   }
@@ -30914,7 +30953,7 @@ Add custom specialists to \`.specialists/user/\` to extend defaults.
 // src/cli/memory.ts
 var exports_memory = {};
 __export(exports_memory, {
-  run: () => run10
+  run: () => run11
 });
 function printUsage2() {
   console.log([
@@ -30928,7 +30967,7 @@ function printUsage2() {
   ].join(`
 `));
 }
-async function run10(args = []) {
+async function run11(args = []) {
   const command = args[0] ?? "sync";
   const force = args.includes("--force");
   const asJson = args.includes("--json");
@@ -30958,7 +30997,7 @@ var init_memory = __esm(() => {
 // src/cli/db.ts
 var exports_db = {};
 __export(exports_db, {
-  run: () => run11
+  run: () => run12
 });
 import { existsSync as existsSync16, mkdirSync as mkdirSync9, readdirSync as readdirSync5, readFileSync as readFileSync14, writeFileSync as writeFileSync8 } from "fs";
 import { dirname as dirname10, join as join16, resolve as resolve7 } from "path";
@@ -31651,7 +31690,7 @@ function runSetup() {
   const gitignoreResult = ensureGitignoreHasObservabilityDbEntries(location.gitRoot);
   printSetupResult(setupResult.created, gitignoreResult.changed, location);
 }
-async function run11(argv = process.argv.slice(3)) {
+async function run12(argv = process.argv.slice(3)) {
   const subcommand = argv[0];
   if (!subcommand || subcommand === "--help" || subcommand === "-h" || argv.slice(1).some((arg) => arg === "--help" || arg === "-h")) {
     printDbHelp();
@@ -31734,7 +31773,7 @@ var BRANCH_INTEGRATION_SCHEMA_VERSION = "xtrm.branch.integration.v1";
 // src/cli/integration.ts
 var exports_integration = {};
 __export(exports_integration, {
-  run: () => run12
+  run: () => run13
 });
 import { resolve as resolve8 } from "path";
 function fail3(code, message, json) {
@@ -31746,7 +31785,7 @@ function fail3(code, message, json) {
   }
   process.exit(1);
 }
-function parseArgs6(argv) {
+function parseArgs5(argv) {
   const values = new Map;
   let json = false;
   for (let i = 0;i < argv.length; i++) {
@@ -31760,7 +31799,7 @@ function parseArgs6(argv) {
     const value = values.get(name)?.trim();
     if (!value)
       fail3("usage", `--${name} is required
-${USAGE}`, json);
+${USAGE3}`, json);
     return value;
   };
   const commit = required2("commit");
@@ -31783,8 +31822,8 @@ ${USAGE}`, json);
     json
   };
 }
-function run12() {
-  const args = parseArgs6(process.argv.slice(4));
+function run13() {
+  const args = parseArgs5(process.argv.slice(4));
   const client = createObservabilitySqliteClient(args.cwd);
   if (!client) {
     fail3("observability_db_missing", `no observability db at ${resolveObservabilityDbLocation(args.cwd).dbPath} (run a specialist first)`, args.json);
@@ -31809,12 +31848,12 @@ function run12() {
   }
   console.log(`recorded ${event.schema_version}: ${event.source.branch} \u2192 ${event.target.branch} @ ${event.commit}`);
 }
-var MANUAL_JOB_ID = "manual", COMMIT_PATTERN, USAGE;
+var MANUAL_JOB_ID = "manual", COMMIT_PATTERN, USAGE3;
 var init_integration = __esm(() => {
   init_observability_sqlite();
   init_observability_db();
   COMMIT_PATTERN = /^[0-9a-f]{7,40}$/i;
-  USAGE = "Usage: specialists integration record --source-branch <b> --source-worktree <p> " + "--target-branch <b> --target-worktree <p> --commit <sha> " + "[--source-job-id <id>] [--target-role <role>] [--status merged] [--cwd <path>] [--json]";
+  USAGE3 = "Usage: specialists integration record --source-branch <b> --source-worktree <p> " + "--target-branch <b> --target-worktree <p> --commit <sha> " + "[--source-job-id <id>] [--target-role <role>] [--status merged] [--cwd <path>] [--json]";
 });
 
 // src/specialist/script-runner.ts
@@ -32841,13 +32880,13 @@ var init_script_runner = __esm(() => {
 // src/cli/validate.ts
 var exports_validate = {};
 __export(exports_validate, {
-  run: () => run13,
-  parseArgs: () => parseArgs7,
+  run: () => run14,
+  parseArgs: () => parseArgs6,
   ArgParseError: () => ArgParseError3
 });
 import { readFile as readFile2 } from "fs/promises";
 import { existsSync as existsSync18 } from "fs";
-function parseArgs7(argv) {
+function parseArgs6(argv) {
   const value = argv[0];
   if (!value || value.startsWith("--")) {
     throw new ArgParseError3("Usage: specialists validate <name|path> [--target=<surface>] [--json]");
@@ -32883,10 +32922,10 @@ function formatCompatGuardError(message) {
     return "compatGuard: scripts";
   return `compatGuard: ${message}`;
 }
-async function run13() {
+async function run14() {
   let args;
   try {
-    args = parseArgs7(process.argv.slice(3));
+    args = parseArgs6(process.argv.slice(3));
   } catch (err) {
     if (err instanceof ArgParseError3) {
       console.error(`Error: ${err.message}`);
@@ -32986,7 +33025,7 @@ var init_validate = __esm(() => {
 // src/cli/edit.ts
 var exports_edit = {};
 __export(exports_edit, {
-  run: () => run14
+  run: () => run15
 });
 import { existsSync as existsSync19, mkdirSync as mkdirSync10, readFileSync as readFileSync16, writeFileSync as writeFileSync9 } from "fs";
 import { spawnSync as spawnSync13 } from "child_process";
@@ -33027,7 +33066,7 @@ function fail4(message) {
   console.error(message);
   process.exit(1);
 }
-function parseArgs8(argv) {
+function parseArgs7(argv) {
   if (argv.includes("--list-presets")) {
     return { all: false, dryRun: false, action: "list-presets", global: false };
   }
@@ -33608,8 +33647,8 @@ ${errorList}`);
   writeFileSync9(location.path, updatedJson, "utf-8");
   console.log(`${green7("\u2713")} ${bold9(resolvedPath.specialistName)}.${yellow8(resolvedPath.fieldSegments.join("."))} = ${formatOutputValue(nextValue)}` + dim7(` (${location.path})`));
 }
-async function run14() {
-  const args = parseArgs8(process.argv.slice(3));
+async function run15() {
+  const args = parseArgs7(process.argv.slice(3));
   if (args.global) {
     return runGlobalEdit(args);
   }
@@ -33895,7 +33934,7 @@ var init_resolution_diagnostics = __esm(() => {
 // src/cli/config.ts
 var exports_config = {};
 __export(exports_config, {
-  run: () => run15
+  run: () => run16
 });
 import { readFileSync as readFileSync17 } from "fs";
 import { spawnSync as spawnSync14 } from "child_process";
@@ -34065,7 +34104,7 @@ ${usage2()}`);
   const report = await loadResolvedConfigReport({ specialistName, projectDir, catalogsPath });
   console.log(formatResolvedConfigReport(report));
 }
-async function run15() {
+async function run16() {
   const originalArgs = process.argv.slice(3);
   const command = originalArgs[0];
   if (command === "show") {
@@ -34075,7 +34114,7 @@ async function run15() {
   const editArgs = buildEditArgv(originalArgs);
   console.error(`${yellow9("\u26A0 DEPRECATED")} specialists config is deprecated. Use ${yellow9("specialists edit")} instead.`);
   process.argv = [process.argv[0] ?? "node", process.argv[1] ?? "specialists", "edit", ...editArgs];
-  await run14();
+  await run15();
 }
 var yellow9 = (s) => `\x1B[33m${s}\x1B[0m`;
 var init_config = __esm(() => {
@@ -45078,7 +45117,7 @@ var exports_chat = {};
 __export(exports_chat, {
   startChatEventTailer: () => startChatEventTailer,
   silenceStderrDuringTui: () => silenceStderrDuringTui,
-  run: () => run16,
+  run: () => run17,
   handleSubmittedInput: () => handleSubmittedInput,
   formatChatShow: () => formatChatShow,
   createCleanup: () => createCleanup
@@ -45094,9 +45133,9 @@ function dbg(msg, extra) {
     appendFileSync4(DEBUG_LOG_PATH, line);
   } catch {}
 }
-async function run16() {
+async function run17() {
   dbg("run() start", { argv: process.argv.slice(3), stdoutTTY: process.stdout.isTTY === true, stdinTTY: process.stdin.isTTY === true });
-  const args = parseArgs9(process.argv.slice(3));
+  const args = parseArgs8(process.argv.slice(3));
   dbg("parsed args", { name: args.name, beadId: args.beadId, hasPrompt: !!args.prompt });
   const ephemeralTitle = args.beadId ? "" : buildEphemeralBeadTitle(args.prompt);
   const beadId = args.beadId ?? createEphemeralBead(args.prompt);
@@ -45257,7 +45296,7 @@ async function run16() {
       process.exit(0);
   }
 }
-function parseArgs9(argv) {
+function parseArgs8(argv) {
   const name = argv[0];
   if (!name)
     throw new Error("Usage: sp chat <specialist> [prompt...] [--bead <id>] [--prompt <text>] [--context-depth N] [--model M]");
@@ -49263,28 +49302,28 @@ class SourceQueue {
   constructor(onError) {
     this.onError = onError;
   }
-  enqueue(sourceKey, run17) {
+  enqueue(sourceKey, run18) {
     this.queued = true;
     if (this.running || this.timer)
       return;
     this.timer = setTimeout(() => {
       this.timer = null;
-      this.drain(sourceKey, run17);
+      this.drain(sourceKey, run18);
     }, COALESCE_MS);
   }
-  async drain(sourceKey, run17) {
+  async drain(sourceKey, run18) {
     if (!this.queued || this.running)
       return;
     this.running = true;
     this.queued = false;
     try {
-      await run17();
+      await run18();
     } catch (error2) {
       this.onError?.(sourceKey, error2);
     } finally {
       this.running = false;
       if (this.queued)
-        this.enqueue(sourceKey, run17);
+        this.enqueue(sourceKey, run18);
     }
   }
   cancel() {
@@ -50463,9 +50502,9 @@ var init_components = __esm(() => {
 // src/cli/console.ts
 var exports_console = {};
 __export(exports_console, {
-  run: () => run17
+  run: () => run18
 });
-async function run17() {
+async function run18() {
   const terminal = new ProcessTerminal;
   const tui = new TUI(terminal);
   const root = new Container;
@@ -50894,7 +50933,7 @@ __export(exports_merge, {
   runTypecheckGate: () => runTypecheckGate,
   runRebuild: () => runRebuild,
   runMergePlan: () => runMergePlan,
-  run: () => run18,
+  run: () => run19,
   resolveMergeTargetsForBeadIds: () => resolveMergeTargetsForBeadIds,
   resolveMergeTargets: () => resolveMergeTargets,
   resolveChainEpicMembership: () => resolveChainEpicMembership,
@@ -51729,7 +51768,7 @@ function executePublicationPlan(targets, options2) {
     throw error2;
   }
 }
-async function run18() {
+async function run19() {
   let options2;
   try {
     options2 = parseOptions(process.argv.slice(3));
@@ -51760,7 +51799,7 @@ var init_merge = __esm(() => {
 // src/cli/run.ts
 var exports_run = {};
 __export(exports_run, {
-  run: () => run19,
+  run: () => run20,
   resolveBasePin: () => resolveBasePin,
   buildTmuxLiveFeedCommand: () => buildTmuxLiveFeedCommand,
   buildInjectedWriterDiffVariables: () => buildInjectedWriterDiffVariables,
@@ -51770,7 +51809,7 @@ import { join as join33 } from "path";
 import { existsSync as existsSync28, readFileSync as readFileSync26, readdirSync as readdirSync12, statSync as statSync10 } from "fs";
 import { randomBytes } from "crypto";
 import { spawn as cpSpawn, execSync as execSync5 } from "child_process";
-async function parseArgs10(argv) {
+async function parseArgs9(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
     console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] ' + "[--worktree] [--job <id>] [--force-job] [--epic <id>] [--base-sha <sha>] [--base-ref <branch>] [--accept-stale-base --reason <text>] [--context-depth <n>] [--model <model>] " + "[--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--json|--raw]");
@@ -52434,8 +52473,8 @@ function buildInjectedWriterDiffVariables(cwd, maxFiles = 20) {
 `)
   };
 }
-async function run19() {
-  const args = await parseArgs10(process.argv.slice(3));
+async function run20() {
+  const args = await parseArgs9(process.argv.slice(3));
   ensureObservabilityDb2(process.cwd());
   const loader = new SpecialistLoader;
   const specialist = await loader.get(args.name).catch((err) => {
@@ -56002,15 +56041,15 @@ function evaluateReadiness(epicId, state, chainRecords, sqlite) {
 }
 function gatherEpicList(sqlite, unresolvedOnly) {
   const epicRuns = sqlite.listEpicRuns();
-  return epicRuns.filter((run20) => !unresolvedOnly || isEpicUnresolvedState(run20.status)).map((run20) => {
-    const chainRecords = sqlite.listEpicChains(run20.epic_id);
-    const readiness = evaluateReadiness(run20.epic_id, run20.status, chainRecords, sqlite);
+  return epicRuns.filter((run21) => !unresolvedOnly || isEpicUnresolvedState(run21.status)).map((run21) => {
+    const chainRecords = sqlite.listEpicChains(run21.epic_id);
+    const readiness = evaluateReadiness(run21.epic_id, run21.status, chainRecords, sqlite);
     return {
-      epic_id: run20.epic_id,
-      state: run20.status,
+      epic_id: run21.epic_id,
+      state: run21.status,
       chain_count: chainRecords.length,
       readiness,
-      updated_at_ms: run20.updated_at_ms
+      updated_at_ms: run21.updated_at_ms
     };
   });
 }
@@ -56547,7 +56586,7 @@ var init_epic = __esm(() => {
 // src/cli/status.ts
 var exports_status = {};
 __export(exports_status, {
-  run: () => run20,
+  run: () => run21,
   detectJobOutputMode: () => detectJobOutputMode
 });
 import { spawnSync as spawnSync21 } from "child_process";
@@ -56765,7 +56804,7 @@ ${bold11("specialists status")}
     console.log(`  error        ${red2(job.error)}`);
   console.log();
 }
-async function run20() {
+async function run21() {
   const argv = process.argv.slice(3);
   let parsedArgs;
   try {
@@ -56963,7 +57002,7 @@ var init_status2 = __esm(() => {
 // src/cli/ps.ts
 var exports_ps = {};
 __export(exports_ps, {
-  run: () => run21,
+  run: () => run22,
   formatSpawnedByLine: () => formatSpawnedByLine
 });
 import { spawnSync as spawnSync22 } from "child_process";
@@ -56995,7 +57034,7 @@ function parseSinceArg(value) {
   const ms = unit === "s" ? n * 1000 : unit === "m" ? n * 60000 : unit === "h" ? n * 3600000 : n * 86400000;
   return Date.now() - ms;
 }
-function parseArgs11(argv) {
+function parseArgs10(argv) {
   const allowedBooleanFlags = new Set([
     "--json",
     "--all",
@@ -57997,8 +58036,8 @@ async function follow(args) {
     interval = setInterval(drawFrame, 1000);
   });
 }
-async function run21() {
-  const args = parseArgs11(process.argv.slice(3));
+async function run22() {
+  const args = parseArgs10(process.argv.slice(3));
   const sqliteClient = createObservabilitySqliteClient();
   try {
     const resolvedArgs = {
@@ -58045,11 +58084,11 @@ var init_ps = __esm(() => {
 // src/cli/result.ts
 var exports_result = {};
 __export(exports_result, {
-  run: () => run22
+  run: () => run23
 });
 import { existsSync as existsSync32, readFileSync as readFileSync30 } from "fs";
 import { join as join37 } from "path";
-function parseArgs12(argv) {
+function parseArgs11(argv) {
   let jobId;
   let nodeId;
   let memberKey;
@@ -58264,8 +58303,8 @@ function formatStartupSnapshot(snapshot) {
 `)}
 `;
 }
-async function run22() {
-  const args = parseArgs12(process.argv.slice(3));
+async function run23() {
+  const args = parseArgs11(process.argv.slice(3));
   const emitJson = (status, output2, error2, startupContext = null) => {
     console.log(JSON.stringify({
       job: status ? {
@@ -58688,7 +58727,7 @@ var init_timeline_query = __esm(() => {
 // src/cli/feed.ts
 var exports_feed = {};
 __export(exports_feed, {
-  run: () => run23
+  run: () => run24
 });
 import {
   closeSync as closeSync2,
@@ -58944,7 +58983,7 @@ function makeJobMetaReader(sqliteClient, jobsDir, options2 = {}) {
     return meta;
   };
 }
-function parseArgs13(argv) {
+function parseArgs12(argv) {
   let jobId;
   let specialist;
   let nodeId;
@@ -59360,8 +59399,8 @@ async function followMerged(sqliteClient, jobsDir, options2) {
     }, 750);
   });
 }
-async function run23() {
-  const options2 = parseArgs13(process.argv.slice(3));
+async function run24() {
+  const options2 = parseArgs12(process.argv.slice(3));
   const sqliteClient = createObservabilitySqliteClient();
   try {
     const jobsDir = join39(process.cwd(), ".specialists", "jobs");
@@ -59414,9 +59453,9 @@ var init_feed2 = __esm(() => {
 // src/cli/forensic.ts
 var exports_forensic = {};
 __export(exports_forensic, {
-  run: () => run24
+  run: () => run25
 });
-function parseArgs14(argv) {
+function parseArgs13(argv) {
   const options2 = { json: true, limit: 1000 };
   for (let i = 0;i < argv.length; i += 1) {
     const token = argv[i];
@@ -59482,8 +59521,8 @@ function parseSince2(value) {
   const ms = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
   return Date.now() - n * ms[unit];
 }
-async function run24() {
-  const options2 = parseArgs14(process.argv.slice(3));
+async function run25() {
+  const options2 = parseArgs13(process.argv.slice(3));
   const client = createObservabilitySqliteClient();
   if (!client)
     throw new Error("Observability SQLite is unavailable; run under Bun with an initialized specialists database.");
@@ -60248,9 +60287,9 @@ var init_prometheus_projection = __esm(() => {
 // src/cli/metrics.ts
 var exports_metrics = {};
 __export(exports_metrics, {
-  run: () => run25
+  run: () => run26
 });
-function parseArgs15(argv) {
+function parseArgs14(argv) {
   let format = "prometheus";
   let sinceMs;
   for (let i = 0;i < argv.length; i += 1) {
@@ -60286,8 +60325,8 @@ function parseSince3(value) {
   const ms = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
   return Date.now() - n * ms[unit];
 }
-async function run25() {
-  const options2 = parseArgs15(process.argv.slice(3));
+async function run26() {
+  const options2 = parseArgs14(process.argv.slice(3));
   if (options2.format !== "prometheus")
     throw new Error(`Unsupported metrics format: ${options2.format}`);
   process.stdout.write(collectPrometheusProjection({ sinceMs: options2.sinceMs }));
@@ -60299,7 +60338,7 @@ var init_metrics = __esm(() => {
 // src/cli/log.ts
 var exports_log = {};
 __export(exports_log, {
-  run: () => run26
+  run: () => run27
 });
 import { existsSync as existsSync35, readdirSync as readdirSync16, statSync as statSync12 } from "fs";
 import { basename as basename12, join as join40 } from "path";
@@ -60314,7 +60353,7 @@ function parseSince4(value) {
   const ms = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
   return Date.now() - n * ms[unit];
 }
-function parseArgs16(argv) {
+function parseArgs15(argv) {
   let jobId;
   let specialist;
   let beadId;
@@ -60716,10 +60755,10 @@ function printRow(row, json) {
   ].filter(Boolean).join(" ");
   console.log(`${head} ${eventDetail(row.event)}`.trim());
 }
-async function run26(argv = process.argv.slice(3)) {
+async function run27(argv = process.argv.slice(3)) {
   let options2;
   try {
-    options2 = parseArgs16(argv);
+    options2 = parseArgs15(argv);
   } catch (error2) {
     console.error(error2 instanceof Error ? error2.message : String(error2));
     console.error("Usage: specialists|sp log [job-id] [--specialist <name>] [--bead <id>] [--node <id>] [--since <5m|iso>] [--limit <n>] [-f|--follow] [--json] [--all-events] [--legacy]");
@@ -60909,10 +60948,10 @@ var init_log2 = __esm(() => {
 // src/cli/steer.ts
 var exports_steer = {};
 __export(exports_steer, {
-  run: () => run27
+  run: () => run28
 });
 import { writeFileSync as writeFileSync17 } from "fs";
-async function run27() {
+async function run28() {
   const jobId = process.argv[3];
   const message = process.argv[4];
   if (!jobId || !message) {
@@ -60969,10 +61008,10 @@ var init_steer = __esm(() => {
 // src/cli/resume.ts
 var exports_resume = {};
 __export(exports_resume, {
-  run: () => run28
+  run: () => run29
 });
 import { writeFileSync as writeFileSync18 } from "fs";
-async function run28() {
+async function run29() {
   const jobId = process.argv[3];
   const task = process.argv[4];
   if (!jobId || !task) {
@@ -61037,9 +61076,9 @@ var init_resume = __esm(() => {
 // src/cli/follow-up.ts
 var exports_follow_up = {};
 __export(exports_follow_up, {
-  run: () => run29
+  run: () => run30
 });
-async function run29() {
+async function run30() {
   process.stderr.write("\x1B[33m\u26A0 DEPRECATED:\x1B[0m `specialists follow-up` is deprecated. Use `specialists resume` instead.\n\n");
   const { run: resumeRun } = await Promise.resolve().then(() => (init_resume(), exports_resume));
   return resumeRun();
@@ -61148,7 +61187,7 @@ var init_worktree_gc = __esm(() => {
 // src/cli/clean.ts
 var exports_clean = {};
 __export(exports_clean, {
-  run: () => run30
+  run: () => run31
 });
 import { existsSync as existsSync37, readFileSync as readFileSync34, readdirSync as readdirSync18, rmSync as rmSync7, statSync as statSync13 } from "fs";
 import { join as join42 } from "path";
@@ -61660,7 +61699,7 @@ function removeStaleProcesses(statuses, dryRun) {
   }
   return updatedCount;
 }
-async function run30() {
+async function run31() {
   let options2;
   try {
     options2 = parseOptions2(process.argv.slice(3));
@@ -61765,7 +61804,7 @@ var init_clean = __esm(() => {
 // src/cli/end.ts
 var exports_end = {};
 __export(exports_end, {
-  run: () => run31
+  run: () => run32
 });
 import { spawnSync as spawnSync24 } from "child_process";
 function parseOptions3(argv) {
@@ -61849,7 +61888,7 @@ async function publishChain(beadId, options2) {
     console.log("Publication mode: direct merge");
   }
 }
-async function run31() {
+async function run32() {
   let options2;
   try {
     options2 = parseOptions3(process.argv.slice(3));
@@ -61890,7 +61929,7 @@ var init_end = __esm(() => {
 // src/cli/stop.ts
 var exports_stop = {};
 __export(exports_stop, {
-  run: () => run32
+  run: () => run33
 });
 function parseStopArgs(argv) {
   let jobId;
@@ -61913,7 +61952,7 @@ function parseStopArgs(argv) {
   }
   return { jobId, force, closeBeadAnyway };
 }
-async function run32() {
+async function run33() {
   let parsed;
   try {
     parsed = parseStopArgs(process.argv.slice(3));
@@ -61941,13 +61980,13 @@ var init_stop = __esm(() => {
 // src/cli/finalize.ts
 var exports_finalize = {};
 __export(exports_finalize, {
-  run: () => run33
+  run: () => run34
 });
 function parseFinalizeArgs(argv) {
   const jobId = argv.find((token) => !token.startsWith("-"));
   return { jobId };
 }
-async function run33() {
+async function run34() {
   const parsed = parseFinalizeArgs(process.argv.slice(3));
   const jobId = parsed.jobId;
   if (!jobId) {
@@ -61969,9 +62008,9 @@ var init_finalize = __esm(() => {
 // src/cli/attach-tui.ts
 var exports_attach_tui = {};
 __export(exports_attach_tui, {
-  run: () => run34
+  run: () => run35
 });
-async function run34(target, deps = {}) {
+async function run35(target, deps = {}) {
   const piTui = await Promise.resolve().then(() => (init_dist2(), exports_dist));
   const { TUI: TUI2, ProcessTerminal: ProcessTerminal2, Container: Container2, Input: Input2, matchesKey: matchesKey2, Key: Key2 } = piTui;
   const terminal = new ProcessTerminal2;
@@ -62091,7 +62130,7 @@ var init_attach_tui = __esm(() => {
 // src/cli/attach.ts
 var exports_attach = {};
 __export(exports_attach, {
-  run: () => run35
+  run: () => run36
 });
 import readline3 from "readline";
 function exitWithError(message) {
@@ -62208,7 +62247,7 @@ function pickTarget(targets) {
     render2();
   });
 }
-async function run35(deps = {}) {
+async function run36(deps = {}) {
   const [jobId] = process.argv.slice(3);
   if (!jobId) {
     if (!process.stdout.isTTY || !process.stdin.isTTY)
@@ -62224,8 +62263,8 @@ async function run35(deps = {}) {
 }
 async function attachTarget(target, deps) {
   const runTui = deps.runTui ?? (async (resolvedTarget) => {
-    const { run: run36 } = await Promise.resolve().then(() => (init_attach_tui(), exports_attach_tui));
-    return run36(resolvedTarget, deps);
+    const { run: run37 } = await Promise.resolve().then(() => (init_attach_tui(), exports_attach_tui));
+    return run37(resolvedTarget, deps);
   });
   return runTui(target);
 }
@@ -62348,10 +62387,10 @@ var init_drift_detector = __esm(() => {
 // src/cli/prune-stale-defaults.ts
 var exports_prune_stale_defaults = {};
 __export(exports_prune_stale_defaults, {
-  run: () => run36
+  run: () => run37
 });
 import { resolve as resolve13 } from "path";
-function parseArgs17(argv) {
+function parseArgs16(argv) {
   let dryRun = false;
   let root = process.cwd();
   let help = false;
@@ -62388,8 +62427,8 @@ function printHelp() {
   console.log("  --keep-diverged   Preserve diverged .specialists/default entries");
   console.log("  --root            Repo root to scan");
 }
-async function run36(argv = process.argv.slice(3)) {
-  const { dryRun, root, help, keepDiverged } = parseArgs17(argv);
+async function run37(argv = process.argv.slice(3)) {
+  const { dryRun, root, help, keepDiverged } = parseArgs16(argv);
   if (help) {
     printHelp();
     return;
@@ -62420,7 +62459,7 @@ var init_prune_stale_defaults = __esm(() => {
 // src/cli/quickstart.ts
 var exports_quickstart = {};
 __export(exports_quickstart, {
-  run: () => run37
+  run: () => run38
 });
 function section2(title) {
   const bar = "\u2500".repeat(60);
@@ -62434,7 +62473,7 @@ function cmd2(s) {
 function flag(s) {
   return green13(s);
 }
-async function run37() {
+async function run38() {
   const lines = [
     "",
     bold12("specialists  \xB7  Quick Start Guide"),
@@ -62812,7 +62851,7 @@ var init_dead_job_audit = __esm(() => {
 var exports_doctor = {};
 __export(exports_doctor, {
   setStatusError: () => setStatusError,
-  run: () => run38,
+  run: () => run39,
   resolvePackageAssetDir: () => resolvePackageAssetDir,
   renderProcessSummary: () => renderProcessSummary,
   parseVersionTuple: () => parseVersionTuple,
@@ -63601,7 +63640,7 @@ ${bold13("specialists doctor --reap-dead-jobs")}
     client.close();
   }
 }
-async function run38(argv = process.argv.slice(3)) {
+async function run39(argv = process.argv.slice(3)) {
   const subcommand = argv[0];
   if (subcommand === "orphans") {
     runDoctorOrphans();
@@ -63845,8 +63884,8 @@ async function runAgenticFollowthroughProbe(model, specName, opts = {}) {
   mkdirSync17(probeDir, { recursive: true, mode: 448 });
   writeFileSync21(join46(probeDir, "probe-notes.md"), `# Probe notes
 `, { mode: 384 });
-  const run39 = opts.runSpecialist ?? runScriptSpecialist;
-  const result = await withTimeout(run39({
+  const run40 = opts.runSpecialist ?? runScriptSpecialist;
+  const result = await withTimeout(run40({
     specialist: specName,
     model_override: model,
     template: PROBE_TEMPLATE,
@@ -63977,7 +64016,7 @@ __export(exports_setup, {
   runFetchBenchmarks: () => runFetchBenchmarks,
   runDiscovery: () => runDiscovery,
   runApply: () => runApply,
-  run: () => run39
+  run: () => run40
 });
 import { spawnSync as spawnSync26 } from "child_process";
 import { readFileSync as readFileSync39 } from "fs";
@@ -63993,7 +64032,7 @@ function usage3() {
   ].join(`
 `);
 }
-function parseArgs18(argv) {
+function parseArgs17(argv) {
   let mode;
   let json = false;
   let offline = false;
@@ -64064,8 +64103,8 @@ function pickMode(current, next) {
     throw new Error("Choose exactly one setup mode");
   return next;
 }
-async function run39(argv = process.argv.slice(3)) {
-  const args = parseArgs18(argv);
+async function run40(argv = process.argv.slice(3)) {
+  const args = parseArgs17(argv);
   switch (args.mode) {
     case "discovery":
       await runDiscovery(args);
@@ -64581,7 +64620,7 @@ var init_serve_hot_reload = () => {};
 var exports_serve = {};
 __export(exports_serve, {
   startServe: () => startServe,
-  run: () => run40,
+  run: () => run41,
   recordAuditFailure: () => recordAuditFailure,
   evaluateReadiness: () => evaluateReadiness2,
   createReadinessState: () => createReadinessState,
@@ -64666,7 +64705,7 @@ async function evaluateReadiness2(opts) {
     return { ready: false, reason: "invalid_spec_in_user_dir" };
   return warning ? { ready: true, warning } : { ready: true };
 }
-function parseArgs19(argv) {
+function parseArgs18(argv) {
   let port = 8000;
   let concurrency = 4;
   let queueTimeoutMs = 5000;
@@ -64795,7 +64834,7 @@ async function waitForSlot(limit, timeoutMs, getActive) {
   return true;
 }
 async function startServe(argv = process.argv.slice(3)) {
-  const args = parseArgs19(argv);
+  const args = parseArgs18(argv);
   const loader = new SpecialistLoader({ projectDir: args.projectDir });
   const dbLocation = resolveObservabilityDbLocation(args.projectDir);
   const dbPath = args.dbPath ?? dbLocation.dbPath;
@@ -64987,7 +65026,7 @@ async function startServe(argv = process.argv.slice(3)) {
   console.log(`sp serve listening on ${args.port}`);
   return { server, args, db, readinessState };
 }
-async function run40(argv = process.argv.slice(3)) {
+async function run41(argv = process.argv.slice(3)) {
   await startServe(argv);
 }
 var AUDIT_WINDOW_MS = 60000, DEFAULT_REQUIRED_PI_FLAGS;
@@ -65006,8 +65045,8 @@ var init_serve = __esm(() => {
 var exports_script = {};
 __export(exports_script, {
   scriptCli: () => scriptCli,
-  run: () => run41,
-  parseArgs: () => parseArgs20,
+  run: () => run42,
+  parseArgs: () => parseArgs19,
   mapExitCode: () => mapExitCode
 });
 import { spawnSync as spawnSync28 } from "child_process";
@@ -65017,7 +65056,7 @@ function parseVar(entry) {
     throw new Error(`Invalid --vars entry: ${entry}`);
   return [entry.slice(0, index), entry.slice(index + 1)];
 }
-function parseArgs20(argv) {
+function parseArgs19(argv) {
   if (argv.length === 0)
     throw new Error("Missing specialist name");
   const specialist = argv[0];
@@ -65150,8 +65189,8 @@ function runUnderLock(lockPath, argv) {
     return 75;
   return flock.status ?? 1;
 }
-async function run41(argv = process.argv.slice(3)) {
-  const args = parseArgs20(argv);
+async function run42(argv = process.argv.slice(3)) {
+  const args = parseArgs19(argv);
   if (args.singleInstance && !process.env.SP_SCRIPT_NO_LOCK) {
     process.exit(runUnderLock(args.singleInstance, argv));
   }
@@ -65176,19 +65215,19 @@ var scriptCli;
 var init_script = __esm(() => {
   init_loader();
   init_script_runner();
-  scriptCli = { parseArgs: parseArgs20, mapExitCode };
+  scriptCli = { parseArgs: parseArgs19, mapExitCode };
 });
 
 // src/cli/help.ts
 var exports_help2 = {};
 __export(exports_help2, {
-  run: () => run42
+  run: () => run43
 });
 function formatCommands(entries) {
   const width = Math.max(...entries.map(([cmd3]) => cmd3.length));
   return entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(width)}   ${desc}`);
 }
-async function run42() {
+async function run43() {
   const lines = [
     "",
     "Specialists lets you run project-scoped specialist agents with a bead-first workflow.",
@@ -72926,7 +72965,7 @@ var next = process.argv[3];
 function wantsHelp() {
   return next === "--help" || next === "-h";
 }
-async function run43() {
+async function run44() {
   if (sub === "install") {
     if (wantsHelp()) {
       console.log([
@@ -73023,6 +73062,39 @@ async function run43() {
       return;
     }
     const { run: handler } = await Promise.resolve().then(() => (init_render_task(), exports_render_task));
+    return handler();
+  }
+  if (sub === "render-bead") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists render-bead <id> [options]",
+        "",
+        "Roleless sibling of `render-task`: render the initial user prompt for a bead",
+        "with NO specialist, for bare launches (`xt claude worker --bead <id>` without",
+        "--role). Same bead context, boundary rules, MANDATORY_RULES, and envelope.",
+        "Read-only: creates no job, worktree, session, bead, or status row.",
+        "",
+        "Options:",
+        "  --bead <id>            Alternative to the positional id",
+        "  --cwd <path>           Project cwd for boundary rules (default: cwd)",
+        "  --context-depth <n>    Completed-blocker depth (default: 3)",
+        "  --surface pi|claude    Interactive surface being launched (default: pi)",
+        "",
+        "Output: the `render-task` envelope with specialist: null, skills: [], and",
+        'skill_prefix: "" \u2014 a roleless render declares no skills, so consumers keep',
+        "their position-0 body-safety fallback for the bead-derived body.",
+        "Errors: JSON { ok: false, error: { code, message } } with exit 1.",
+        "",
+        "Examples:",
+        "  specialists render-bead unitAI-6639v",
+        "  specialists render-bead unitAI-6639v --surface claude",
+        ""
+      ].join(`
+`));
+      return;
+    }
+    const { run: handler } = await Promise.resolve().then(() => (init_render_bead(), exports_render_bead));
     return handler();
   }
   if (sub === "render-skill-prefix") {
@@ -74228,7 +74300,7 @@ Run 'specialists help' to see available commands.`);
   const server = new SpecialistsServer;
   await server.start();
 }
-run43().then(() => {
+run44().then(() => {
   if (sub && sub !== "serve")
     process.exit(process.exitCode ?? 0);
 }).catch((error2) => {
