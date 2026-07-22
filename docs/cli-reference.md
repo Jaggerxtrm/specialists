@@ -1715,6 +1715,48 @@ no-op, so a retrying caller cannot double-count.
 With `--json`, failures print `{ "ok": false, "error": { "code", "message" } }`; otherwise they go to
 stderr. Source: `src/cli/integration.ts`.
 
+## `specialists integration list`
+
+**Read** surface for `xtrm.branch.integration.v1` — the mirror of `record` above. Until this verb
+existed the store had a producer and no consumer, so nobody could tell whether the recorded
+`job_id → commit_sha` lineage was correct.
+
+Query-only: it never writes, and nothing consults it to drive a merge. Git remains the merge
+authority.
+
+```bash
+specialists integration list [--target-branch <b>] [--job <job-id>] [--limit <n>] [--json]
+```
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--target-branch <b>` | | Only integrations into this target branch |
+| `--job <job-id>` | | Only integrations sourced from this specialist job |
+| `--limit <n>` | 100 | Maximum rows, newest first |
+| `--json` | off | Emit the stored event payload as NDJSON |
+
+```bash
+sp integration list
+sp integration list --target-branch master --limit 20
+sp integration list --job 49adda --json
+```
+
+Rows are ordered newest-first. Without `--json`, one line each:
+
+```
+2026-07-22T04:27:49.144Z merged sp/exec-smoke -> xt/coord-smoke role=chain-coordinator commit=0123456789ab job=job-smoke
+```
+
+With `--json`, each line is the **stored event verbatim** — the output *is* the recorded
+`xtrm.branch.integration.v1` payload, not a re-projection of it:
+
+```json
+{"schema_version":"xtrm.branch.integration.v1","timestamp":"2026-07-22T04:27:49.144Z","t_unix_ms":1784694469144,"source":{"job_id":"job-smoke","branch":"sp/exec-smoke","worktree":"/wt/a"},"target":{"branch":"xt/coord-smoke","worktree":"/wt/b","role":"chain-coordinator"},"status":"merged","commit":"0123456789abcdef"}
+```
+
+An empty store prints `No branch integrations recorded.` (and nothing at all under `--json`).
+Source: `src/cli/integration.ts`.
+
 ## Releases (skill-driven)
 
 `sp release prepare/publish` remain as deprecated aliases. Releases now flow through
