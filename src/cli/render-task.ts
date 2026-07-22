@@ -7,34 +7,41 @@
 // prompt.system is deliberately NOT part of the output: the launcher owns the
 // system prompt via `sp view <name> --raw`, and bead content must never be
 // promoted into it.
+//
+// The parsing/rendering/emission below is shared verbatim with the roleless
+// sibling `sp render-bead` (src/cli/render-bead.ts) — there is exactly one
+// task-side assembly path, and both verbs emit the same envelope shape.
 import { SpecialistLoader } from '../specialist/loader.js';
 import { BeadsClient } from '../specialist/beads.js';
 import { renderTaskPrompt } from '../specialist/task-prompt.js';
+import type { Specialist } from '../specialist/schema.js';
 
-type Surface = 'pi' | 'claude';
+export type Surface = 'pi' | 'claude';
 
-interface Args {
-  name: string;
+/** Flags shared by every render verb. `render-task` adds a positional specialist name. */
+export interface RenderArgs {
   beadId: string;
   cwd: string;
   contextDepth: number;
   surface: Surface;
+  positional: string[];
 }
 
 // Stable, machine-readable failure codes. The core consumer branches on these.
-type ErrorCode =
+export type ErrorCode =
   | 'usage'
   | 'specialist_not_found'
   | 'bead_not_found'
   | 'template_render_failed'
   | 'mandatory_rules_failed';
 
-function fail(code: ErrorCode, message: string): never {
+export function fail(code: ErrorCode, message: string): never {
   process.stdout.write(`${JSON.stringify({ ok: false, error: { code, message } }, null, 2)}\n`);
   process.exit(1);
 }
 
-function parseArgs(argv: string[]): Args {
+/** Shared flag parsing. Each verb enforces its own required-argument shape. */
+export function parseRenderArgs(argv: string[]): RenderArgs {
   const positional: string[] = [];
   let beadId = '';
   let cwd = process.cwd();
@@ -50,26 +57,27 @@ function parseArgs(argv: string[]): Args {
     else if (!arg.startsWith('-')) positional.push(arg);
   }
 
-  const name = positional[0] ?? '';
-  if (!name || !beadId) {
-    fail('usage', 'Usage: specialists render-task <name> --bead <id> [--cwd <path>] [--context-depth <n>] [--surface pi|claude]');
-  }
   if (surface !== 'pi' && surface !== 'claude') {
     fail('usage', `--surface must be 'pi' or 'claude' (got '${surface}')`);
   }
   if (!Number.isFinite(contextDepth) || contextDepth < 0) {
     fail('usage', `--context-depth must be a non-negative number (got '${contextDepth}')`);
   }
-  return { name, beadId, cwd, contextDepth: Math.trunc(contextDepth), surface };
+
+  return { beadId, cwd, contextDepth: Math.trunc(contextDepth), surface, positional };
 }
 
-export async function run(): Promise<void> {
-  const args = parseArgs(process.argv.slice(3));
-
-  const spec = await new SpecialistLoader().get(args.name).catch((error: unknown) => {
-    fail('specialist_not_found', `specialist '${args.name}': ${(error as Error)?.message ?? String(error)}`);
-  });
-
+/**
+ * Read the bead, run the one shared task-side assembly, and emit the envelope.
+ *
+ * `specialistName` is null for the roleless render — the key stays present so a
+ * single consumer parser covers both verbs.
+ */
+export function renderAndEmit(
+  specialist: Specialist['specialist'],
+  specialistName: string | null,
+  args: RenderArgs,
+): void {
   const beads = new BeadsClient();
   const bead = beads.readBead(args.beadId);
   if (!bead) fail('bead_not_found', `bead '${args.beadId}' not found`);
@@ -81,7 +89,7 @@ export async function run(): Promise<void> {
   let rendered;
   try {
     rendered = renderTaskPrompt({
-      specialist: spec.specialist,
+      specialist,
       cwd: args.cwd,
       beadId: args.beadId,
       bead,
@@ -116,7 +124,7 @@ export async function run(): Promise<void> {
 
   process.stdout.write(`${JSON.stringify({
     ok: true,
-    specialist: spec.specialist.metadata.name,
+    specialist: specialistName,
     bead_id: args.beadId,
     surface: args.surface,
     cwd: args.cwd,
@@ -134,6 +142,20 @@ export async function run(): Promise<void> {
           globals_disabled: rendered.mandatoryRules.globalsDisabled,
         }
       : null,
-    skills: spec.specialist.skills?.paths ?? [],
+    skills: specialist.skills?.paths ?? [],
   }, null, 2)}\n`);
+}
+
+const USAGE = 'Usage: specialists render-task <name> --bead <id> [--cwd <path>] [--context-depth <n>] [--surface pi|claude]';
+
+export async function run(): Promise<void> {
+  const args = parseRenderArgs(process.argv.slice(3));
+  const name = args.positional[0] ?? '';
+  if (!name || !args.beadId) fail('usage', USAGE);
+
+  const spec = await new SpecialistLoader().get(name).catch((error: unknown) => {
+    fail('specialist_not_found', `specialist '${name}': ${(error as Error)?.message ?? String(error)}`);
+  });
+
+  renderAndEmit(spec.specialist, spec.specialist.metadata.name, args);
 }
