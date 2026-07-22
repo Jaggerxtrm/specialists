@@ -51862,9 +51862,201 @@ var init_merge = __esm(() => {
   ];
 });
 
+// src/cli/pi-json-output.ts
+function modelName(model, backend) {
+  if (!model || !backend || !model.startsWith(`${backend}/`))
+    return model;
+  return model.slice(backend.length + 1);
+}
+function usage3(tokens) {
+  if (!tokens)
+    return;
+  const input2 = tokens.input_tokens ?? 0;
+  const output2 = tokens.output_tokens ?? 0;
+  const cacheRead = tokens.cache_read_tokens ?? 0;
+  const cacheWrite = tokens.cache_creation_tokens ?? 0;
+  return {
+    input: input2,
+    output: output2,
+    cacheRead,
+    cacheWrite,
+    ...tokens.reasoning_tokens !== undefined ? { reasoning: tokens.reasoning_tokens } : {},
+    totalTokens: tokens.total_tokens ?? input2 + output2 + cacheRead + cacheWrite,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+  };
+}
+function createPiJsonProjector(context) {
+  let started = false;
+  let cycleComplete = false;
+  let messageOpen = false;
+  let messageStarted = false;
+  let text = "";
+  let model = context.model;
+  let backend = context.backend;
+  let tokenUsage;
+  let messageTimestamp = context.startedAtMs ?? 0;
+  const toolArgs = new Map;
+  const toolResults = [];
+  const assistantMessage = (timestamp) => ({
+    role: "assistant",
+    content: text ? [{ type: "text", text }] : [],
+    ...backend ? { provider: backend } : {},
+    ...modelName(model, backend) ? { model: modelName(model, backend) } : {},
+    ...usage3(tokenUsage) ? { usage: usage3(tokenUsage) } : {},
+    stopReason: cycleComplete ? "stop" : undefined,
+    timestamp
+  });
+  const ensureStarted = (timestamp) => {
+    if (started)
+      return [];
+    started = true;
+    const startedAt = context.startedAtMs ?? timestamp;
+    return [
+      {
+        type: "session",
+        version: 3,
+        id: context.sessionId ?? context.jobId,
+        timestamp: new Date(startedAt).toISOString(),
+        cwd: context.cwd ?? process.cwd()
+      },
+      { type: "agent_start" }
+    ];
+  };
+  const ensureMessageStarted = (timestamp) => {
+    if (messageStarted)
+      return [];
+    messageStarted = true;
+    messageOpen = true;
+    messageTimestamp = timestamp;
+    return [{ type: "message_start", message: assistantMessage(timestamp) }];
+  };
+  const resetTurn = () => {
+    messageOpen = false;
+    messageStarted = false;
+    text = "";
+    tokenUsage = undefined;
+    toolArgs.clear();
+    toolResults.length = 0;
+  };
+  return (event) => {
+    if (event.type === "turn" && event.phase === "start") {
+      const restarting = cycleComplete;
+      cycleComplete = false;
+      resetTurn();
+      return [
+        ...restarting ? [{ type: "agent_start" }] : ensureStarted(event.t),
+        { type: "turn_start" }
+      ];
+    }
+    if (cycleComplete)
+      return [];
+    if (event.type === "meta") {
+      if (event.backend !== "injected")
+        backend = event.backend;
+      if (event.model !== "meta" && event.model !== "memory_injection")
+        model = event.model;
+      return messageOpen && !messageStarted ? [...ensureStarted(event.t), ...ensureMessageStarted(event.t)] : [];
+    }
+    if (event.type === "token_usage") {
+      tokenUsage = event.token_usage;
+      return [];
+    }
+    if (event.type === "run_start")
+      return ensureStarted(event.t);
+    if (event.type === "turn") {
+      return [...ensureStarted(event.t), { type: "turn_end", message: assistantMessage(event.t), toolResults: [...toolResults] }];
+    }
+    if (event.type === "message") {
+      if (event.role !== "assistant")
+        return [];
+      if (event.phase === "start") {
+        messageOpen = true;
+        messageTimestamp = event.t;
+        return [];
+      }
+      const prefix = [...ensureStarted(event.t), ...ensureMessageStarted(messageTimestamp || event.t)];
+      messageOpen = false;
+      return [...prefix, { type: "message_end", message: assistantMessage(event.t) }];
+    }
+    if (event.type === "text") {
+      if (!event.content)
+        return [];
+      text = event.content;
+      const prefix = [...ensureStarted(event.t), ...ensureMessageStarted(messageTimestamp || event.t)];
+      const message = assistantMessage(event.t);
+      return [
+        ...prefix,
+        { type: "message_update", message, assistantMessageEvent: { type: "text_start", contentIndex: 0, partial: message } },
+        { type: "message_update", message, assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: event.content, partial: message } },
+        { type: "message_update", message, assistantMessageEvent: { type: "text_end", contentIndex: 0, content: event.content, partial: message } }
+      ];
+    }
+    if (event.type === "tool") {
+      const prefix = ensureStarted(event.t);
+      const toolCallId = event.tool_call_id ?? `uncorrelated-${event.seq ?? event.t}`;
+      if (event.phase === "start") {
+        const args = event.args ?? {};
+        toolArgs.set(toolCallId, args);
+        return [...prefix, { type: "tool_execution_start", toolCallId, toolName: event.tool, args }];
+      }
+      if (event.phase === "update") {
+        return [...prefix, {
+          type: "tool_execution_update",
+          toolCallId,
+          toolName: event.tool,
+          args: toolArgs.get(toolCallId) ?? {},
+          partialResult: undefined
+        }];
+      }
+      const result = event.result_raw ?? event.result_summary;
+      toolResults.push({
+        role: "toolResult",
+        toolCallId,
+        toolName: event.tool,
+        content: result === undefined ? [] : [{ type: "text", text: typeof result === "string" ? result : JSON.stringify(result) }],
+        isError: event.is_error ?? false,
+        timestamp: event.t
+      });
+      return [...prefix, {
+        type: "tool_execution_end",
+        toolCallId,
+        toolName: event.tool,
+        result,
+        isError: event.is_error ?? false
+      }];
+    }
+    if (event.type === "compaction") {
+      const prefix = ensureStarted(event.t);
+      return event.phase === "start" ? [...prefix, { type: "compaction_start", reason: "threshold" }] : [...prefix, { type: "compaction_end", reason: "threshold", result: event.summary ? { summary: event.summary } : undefined, aborted: false, willRetry: false }];
+    }
+    if (event.type === "retry") {
+      const prefix = ensureStarted(event.t);
+      return event.phase === "start" ? [...prefix, { type: "auto_retry_start", attempt: event.attempt ?? 1, maxAttempts: event.max_attempts ?? 1, delayMs: event.delay_ms ?? 0, errorMessage: event.error_message ?? "" }] : [...prefix, { type: "auto_retry_end", success: !event.error_message, attempt: event.attempt ?? 1, ...event.error_message ? { finalError: event.error_message } : {} }];
+    }
+    if (event.type === "run_complete") {
+      const output2 = ensureStarted(event.t);
+      model = event.model ?? model;
+      backend = event.backend ?? backend;
+      tokenUsage = event.token_usage ?? event.metrics?.token_usage ?? tokenUsage;
+      text = event.output ?? text;
+      cycleComplete = true;
+      const message = assistantMessage(event.t);
+      if (messageOpen && !messageStarted)
+        output2.push(...ensureMessageStarted(messageTimestamp || event.t));
+      if (messageOpen)
+        output2.push({ type: "message_end", message });
+      output2.push({ type: "agent_end", messages: text ? [message] : [], willRetry: false });
+      output2.push({ type: "agent_settled" });
+      return output2;
+    }
+    return [];
+  };
+}
+
 // src/cli/run.ts
 var exports_run = {};
 __export(exports_run, {
+  startEventTailer: () => startEventTailer,
   run: () => run19,
   resolveBasePin: () => resolveBasePin,
   buildTmuxLiveFeedCommand: () => buildTmuxLiveFeedCommand,
@@ -52224,64 +52416,80 @@ function resolveWorkingDirectory(args, jobsDir, permissionRequired, readStatus) 
   }
   return {};
 }
-function startEventTailer(jobId, jobsDir, mode, specialist, beadId) {
+function startEventTailer(jobId, jobsDir, mode, _specialist, _beadId) {
   const eventsPath = join33(jobsDir, jobId, "events.jsonl");
-  const statusPath = join33(jobsDir, jobId, "status.json");
+  const sqliteClient = createObservabilitySqliteClient(process.cwd());
   let linesRead = 0;
+  let lastSeq = 0;
   let activeInlinePhase = null;
-  const readPayloadBreakdown = () => {
-    try {
-      const statusRaw = readFileSync26(statusPath, "utf-8");
-      const status = JSON.parse(statusRaw);
-      return status.startup_payload_json ? JSON.parse(status.startup_payload_json) : undefined;
-    } catch {
-      return;
-    }
+  let projectPiJson;
+  const getPiJsonProjector = () => {
+    if (projectPiJson)
+      return projectPiJson;
+    const status = (() => {
+      try {
+        return sqliteClient?.readStatus(jobId);
+      } catch {
+        return null;
+      }
+    })();
+    projectPiJson = createPiJsonProjector({
+      jobId,
+      sessionId: status?.session_id,
+      cwd: process.cwd(),
+      startedAtMs: status?.started_at_ms,
+      model: status?.model,
+      backend: status?.backend
+    });
+    return projectPiJson;
   };
-  const drain = () => {
+  const readFileEvents = () => {
     let content;
     try {
       content = readFileSync26(eventsPath, "utf-8");
     } catch {
-      return;
+      return [];
     }
-    if (!content)
-      return;
     const lastNl = content.lastIndexOf(`
 `);
     if (lastNl < 0)
-      return;
-    const complete = content.slice(0, lastNl);
-    const lines = complete.split(`
+      return [];
+    const lines = content.slice(0, lastNl).split(`
 `);
+    const events = [];
     for (let i = linesRead;i < lines.length; i++) {
       linesRead++;
-      const line = lines[i].trim();
-      if (!line)
-        continue;
-      let event;
       try {
-        event = JSON.parse(line);
-      } catch {
-        continue;
-      }
+        events.push(JSON.parse(lines[i]));
+      } catch {}
+    }
+    return events;
+  };
+  const drain = () => {
+    let events;
+    try {
+      events = sqliteClient ? sqliteClient.readEventsAfterSeq(jobId, lastSeq) : readFileEvents();
+    } catch {
+      events = readFileEvents();
+    }
+    for (const event of events) {
+      lastSeq = Math.max(lastSeq, event.seq ?? 0);
       if (mode === "json") {
-        const payloadBreakdown = event.type === "run_start" ? readPayloadBreakdown() : undefined;
-        process.stdout.write(JSON.stringify({ jobId, specialist, beadId, ...payloadBreakdown ? { payload_breakdown: payloadBreakdown } : {}, ...event }) + `
-`);
-      } else {
-        if (event.type === "run_complete" && event.output) {
-          activeInlinePhase = null;
-          process.stdout.write(`
-` + event.output + `
-`);
-        } else {
-          const { line: line2, nextPhase } = formatEventInlineDebounced(event, activeInlinePhase);
-          activeInlinePhase = nextPhase;
-          if (line2)
-            process.stdout.write(line2 + `
+        for (const piEvent of getPiJsonProjector()(event)) {
+          process.stdout.write(JSON.stringify(piEvent) + `
 `);
         }
+      } else if (event.type === "run_complete" && event.output) {
+        activeInlinePhase = null;
+        process.stdout.write(`
+` + event.output + `
+`);
+      } else {
+        const { line, nextPhase } = formatEventInlineDebounced(event, activeInlinePhase);
+        activeInlinePhase = nextPhase;
+        if (line)
+          process.stdout.write(line + `
+`);
       }
     }
   };
@@ -52289,6 +52497,7 @@ function startEventTailer(jobId, jobsDir, mode, specialist, beadId) {
   return () => {
     clearInterval(intervalId);
     drain();
+    sqliteClient?.close();
   };
 }
 function formatFooterModel2(backend, model) {
@@ -56602,16 +56811,16 @@ async function handleEpicCommand(argv) {
 `));
     return;
   }
-  const usage3 = {
+  const usage4 = {
     list: "specialists epic list [--unresolved] [--json]",
     status: "specialists epic status <epic-id> [--json]",
     sync: "specialists epic sync <epic-id> [--apply] [--json]",
     abandon: "specialists epic abandon <epic-id> --reason <text> [--force] [--json]",
     merge: "specialists epic merge <epic-id> [--rebuild] [--pr] [--json] [--target-branch <name>]"
   };
-  if (argv.slice(1).some((arg) => arg === "--help" || arg === "-h") && usage3[subcommand]) {
+  if (argv.slice(1).some((arg) => arg === "--help" || arg === "-h") && usage4[subcommand]) {
     console.log(`
-Usage: ${usage3[subcommand]}
+Usage: ${usage4[subcommand]}
 `);
     return;
   }
@@ -58963,6 +59172,30 @@ function parseCursor(value, defaultJobId) {
     return;
   return { jobId: defaultJobId, seq };
 }
+function getPiJsonProjector(projectors, jobId, meta) {
+  const existing = projectors.get(jobId);
+  if (existing)
+    return existing;
+  const projector = createPiJsonProjector({
+    jobId,
+    sessionId: meta.sessionId,
+    cwd: process.cwd(),
+    startedAtMs: meta.startedAtMs,
+    model: meta.model,
+    backend: meta.backend
+  });
+  projectors.set(jobId, projector);
+  return projector;
+}
+function projectPiJson(projector, event, meta) {
+  const metadataEvents = meta.model || meta.backend ? projector({
+    t: event.t,
+    type: "meta",
+    model: meta.model ?? "meta",
+    backend: meta.backend ?? "injected"
+  }) : [];
+  return [...metadataEvents, ...projector(event)];
+}
 function readFileFresh(filePath) {
   let fd = null;
   try {
@@ -59111,7 +59344,7 @@ function parseArgs12(argv) {
     json
   };
 }
-function printSnapshot(sqliteClient, merged, options2, jobsDir) {
+function printSnapshot(sqliteClient, merged, options2, jobsDir, piProjectors = new Map) {
   if (merged.length === 0) {
     if (!options2.json) {
       if (options2.jobId && sqliteClient) {
@@ -59125,35 +59358,11 @@ function printSnapshot(sqliteClient, merged, options2, jobsDir) {
   const colorMap2 = new JobColorMap;
   if (options2.json) {
     const getJobMeta2 = jobsDir ? makeJobMetaReader(sqliteClient, jobsDir) : () => ({ startedAtMs: Date.now() });
-    for (const { jobId, specialist, beadId, event } of merged) {
+    for (const { jobId, event } of merged) {
       const meta = getJobMeta2(jobId);
-      const model = meta.model ?? (event.type === "meta" ? event.model : undefined);
-      const backend = meta.backend ?? (event.type === "meta" ? event.backend : undefined);
-      console.log(JSON.stringify({
-        jobId,
-        specialist,
-        specialist_model: formatSpecialistModel(specialist, model),
-        model,
-        backend,
-        beadId: meta.beadId ?? beadId,
-        metrics: meta.metrics,
-        elapsed_ms: Date.now() - meta.startedAtMs,
-        forensic_event: forensicEventFromTimelineEvent(event, {
-          jobId,
-          specialist,
-          beadId: meta.beadId ?? beadId,
-          nodeId: meta.nodeId,
-          serviceComponent: "cli.feed",
-          model,
-          backend,
-          sessionId: meta.sessionId,
-          conversationId: meta.conversationId,
-          traceId: meta.traceId,
-          spanId: meta.spanId,
-          parentSpanId: meta.parentSpanId
-        }),
-        ...event
-      }));
+      const projector = getPiJsonProjector(piProjectors, jobId, meta);
+      for (const piEvent of projectPiJson(projector, event, meta))
+        console.log(JSON.stringify(piEvent));
     }
     return;
   }
@@ -59338,6 +59547,7 @@ async function followMerged(sqliteClient, jobsDir, options2) {
     return !isTerminalStatus(status) && !(isGlobalFollow && isKeepAliveJobStatus(status));
   }));
   const completedJobs = new Set;
+  const piProjectors = new Map;
   const filteredBatches = () => readFilteredBatchesFresh(sqliteClient, jobsDir, options2);
   const initial = filterMergedEventsByCursor(filterMergedEventsByNode(sqliteClient, jobsDir, queryTimeline(jobsDir, {
     jobId: options2.jobId,
@@ -59345,7 +59555,7 @@ async function followMerged(sqliteClient, jobsDir, options2) {
     since: options2.since,
     limit: options2.limit
   }), options2.nodeId), options2.from);
-  printSnapshot(sqliteClient, initial, { ...options2, json: options2.json }, jobsDir);
+  printSnapshot(sqliteClient, initial, { ...options2, json: options2.json }, jobsDir, piProjectors);
   for (const batch of filteredBatches()) {
     const maxSeq = batch.events.reduce((max, event) => Math.max(max, event.seq ?? 0), 0);
     lastSeenSeq.set(batch.jobId, maxSeq);
@@ -59417,17 +59627,9 @@ async function followMerged(sqliteClient, jobsDir, options2) {
         const model = meta.model ?? (event.type === "meta" ? event.model : undefined);
         const backend = meta.backend ?? (event.type === "meta" ? event.backend : undefined);
         if (options2.json) {
-          console.log(JSON.stringify({
-            jobId,
-            specialist,
-            specialist_model: formatSpecialistModel(specialist, model),
-            model,
-            backend,
-            beadId: meta.beadId ?? beadId,
-            metrics: meta.metrics,
-            elapsed_ms: Date.now() - meta.startedAtMs,
-            ...event
-          }));
+          const projector = getPiJsonProjector(piProjectors, jobId, meta);
+          for (const piEvent of projectPiJson(projector, event, meta))
+            console.log(JSON.stringify(piEvent));
         } else {
           if (!shouldRenderHumanEvent2(event))
             continue;
@@ -59509,7 +59711,6 @@ async function run23() {
 }
 var init_feed2 = __esm(() => {
   init_timeline_events();
-  init_forensic_events();
   init_observability_sqlite();
   init_node_resolve();
   init_timeline_query();
@@ -64086,7 +64287,7 @@ __export(exports_setup, {
 });
 import { spawnSync as spawnSync26 } from "child_process";
 import { readFileSync as readFileSync39 } from "fs";
-function usage3() {
+function usage4() {
   return [
     "Usage: specialists setup <mode> [options]",
     "  specialists setup --discovery [--json]",
@@ -64155,7 +64356,7 @@ function parseArgs17(argv) {
     throw new Error(`Unknown option: ${token}`);
   }
   if (!mode)
-    throw new Error(usage3());
+    throw new Error(usage4());
   if (mode === "plan" && !planPreset)
     throw new Error("Missing <model-budget-preset> for --plan");
   if (mode === "apply" && !planPath)
@@ -65330,7 +65531,7 @@ async function run42() {
     "",
     "  Output modes",
     '    specialists run <name> --prompt "..."          # human (default): formatted event summary',
-    '    specialists run <name> --prompt "..." --json   # NDJSON event stream to stdout',
+    '    specialists run <name> --prompt "..." --json   # pi-compatible NDJSON event stream to stdout',
     '    specialists run <name> --prompt "..." --raw    # legacy: raw LLM text deltas',
     "",
     "  Async patterns",

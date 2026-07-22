@@ -13,7 +13,7 @@
  *   --limit <n>        Max recent events to show (default: 100)
  *   --follow, -f       Live follow mode (append new events at bottom)
  *   --forever          Stay open even when all jobs complete
- *   --json             Output as NDJSON
+ *   --json             Output as pi-compatible NDJSON
  */
 export declare function run(): Promise<void>;
 //# sourceMappingURL=feed.d.ts.map

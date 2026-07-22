@@ -14,7 +14,7 @@
  *   --limit <n>        Max recent events to show (default: 100)
  *   --follow, -f       Live follow mode (append new events at bottom)
  *   --forever          Stay open even when all jobs complete
- *   --json             Output as NDJSON
+ *   --json             Output as pi-compatible NDJSON
  */
 
 import {
@@ -31,7 +31,6 @@ import {
   isRunCompleteEvent,
   parseTimelineEvent,
 } from '../specialist/timeline-events.js';
-import { forensicEventFromTimelineEvent } from '../specialist/forensic-events.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import { resolveNodeRefWithClient } from '../specialist/node-resolve.js';
 import { queryTimeline } from '../specialist/timeline-query.js';
@@ -43,6 +42,7 @@ import {
   JobColorMap,
   formatEventLine,
 } from './format-helpers.js';
+import { createPiJsonProjector } from './pi-json-output.js';
 
 // ============================================================================
 // CLI Options
@@ -269,6 +269,38 @@ interface JobMeta {
 }
 
 type ObservabilitySqliteClient = ReturnType<typeof createObservabilitySqliteClient>;
+type PiJsonProjector = ReturnType<typeof createPiJsonProjector>;
+
+function getPiJsonProjector(
+  projectors: Map<string, PiJsonProjector>,
+  jobId: string,
+  meta: JobMeta,
+): PiJsonProjector {
+  const existing = projectors.get(jobId);
+  if (existing) return existing;
+  const projector = createPiJsonProjector({
+    jobId,
+    sessionId: meta.sessionId,
+    cwd: process.cwd(),
+    startedAtMs: meta.startedAtMs,
+    model: meta.model,
+    backend: meta.backend,
+  });
+  projectors.set(jobId, projector);
+  return projector;
+}
+
+function projectPiJson(projector: PiJsonProjector, event: TimelineEvent, meta: JobMeta): Array<Record<string, unknown>> {
+  const metadataEvents = meta.model || meta.backend
+    ? projector({
+      t: event.t,
+      type: 'meta',
+      model: meta.model ?? 'meta',
+      backend: meta.backend ?? 'injected',
+    })
+    : [];
+  return [...metadataEvents, ...projector(event)];
+}
 
 function readFileFresh(filePath: string): string | null {
   let fd: number | null = null;
@@ -455,7 +487,8 @@ function printSnapshot(
   sqliteClient: ObservabilitySqliteClient,
   merged: Array<{ jobId: string; specialist: string; beadId?: string; event: TimelineEvent }>,
   options: FeedOptions,
-  jobsDir?: string
+  jobsDir?: string,
+  piProjectors = new Map<string, PiJsonProjector>(),
 ): void {
   if (merged.length === 0) {
     if (!options.json) {
@@ -475,35 +508,10 @@ function printSnapshot(
     const getJobMeta = jobsDir
       ? makeJobMetaReader(sqliteClient, jobsDir)
       : (): JobMeta => ({ startedAtMs: Date.now() });
-    for (const { jobId, specialist, beadId, event } of merged) {
+    for (const { jobId, event } of merged) {
       const meta = getJobMeta(jobId);
-      const model = meta.model ?? (event.type === 'meta' ? event.model : undefined);
-      const backend = meta.backend ?? (event.type === 'meta' ? event.backend : undefined);
-      console.log(JSON.stringify({
-        jobId,
-        specialist,
-        specialist_model: formatSpecialistModel(specialist, model),
-        model,
-        backend,
-        beadId: meta.beadId ?? beadId,
-        metrics: meta.metrics,
-        elapsed_ms: Date.now() - meta.startedAtMs,
-        forensic_event: forensicEventFromTimelineEvent(event as unknown as { t: number; seq?: number; type: string; [key: string]: unknown }, {
-          jobId,
-          specialist,
-          beadId: meta.beadId ?? beadId,
-          nodeId: meta.nodeId,
-          serviceComponent: 'cli.feed',
-          model,
-          backend,
-          sessionId: meta.sessionId,
-          conversationId: meta.conversationId,
-          traceId: meta.traceId,
-          spanId: meta.spanId,
-          parentSpanId: meta.parentSpanId,
-        }),
-        ...event,
-      }));
+      const projector = getPiJsonProjector(piProjectors, jobId, meta);
+      for (const piEvent of projectPiJson(projector, event, meta)) console.log(JSON.stringify(piEvent));
     }
     return;
   }
@@ -754,6 +762,7 @@ async function followMerged(
     })
   );
   const completedJobs = new Set<string>();
+  const piProjectors = new Map<string, PiJsonProjector>();
 
   const filteredBatches = () => readFilteredBatchesFresh(sqliteClient, jobsDir, options);
 
@@ -772,7 +781,7 @@ async function followMerged(
     options.from,
   );
 
-  printSnapshot(sqliteClient, initial, { ...options, json: options.json }, jobsDir);
+  printSnapshot(sqliteClient, initial, { ...options, json: options.json }, jobsDir, piProjectors);
 
   for (const batch of filteredBatches()) {
     const maxSeq = batch.events.reduce((max, event) => Math.max(max, event.seq ?? 0), 0);
@@ -854,17 +863,8 @@ async function followMerged(
         const backend = meta.backend ?? (event.type === 'meta' ? event.backend : undefined);
 
         if (options.json) {
-          console.log(JSON.stringify({
-            jobId,
-            specialist,
-            specialist_model: formatSpecialistModel(specialist, model),
-            model,
-            backend,
-            beadId: meta.beadId ?? beadId,
-            metrics: meta.metrics,
-            elapsed_ms: Date.now() - meta.startedAtMs,
-            ...event,
-          }));
+          const projector = getPiJsonProjector(piProjectors, jobId, meta);
+          for (const piEvent of projectPiJson(projector, event, meta)) console.log(JSON.stringify(piEvent));
         } else {
           if (!shouldRenderHumanEvent(event)) continue;
           if (shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey)) continue;

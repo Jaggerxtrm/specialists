@@ -344,12 +344,19 @@ describe('feed CLI', () => {
     expect(combined).toContain('reason=policy_never');
   });
 
-  it('outputs JSON with --json flag', async () => {
+  it('outputs pi-compatible NDJSON with --json', async () => {
+    const now = Date.now();
     createJobDir('job1', 'test', [
-      { t: Date.now(), type: 'run_start', startup_snapshot: { job_id: 'job1' } },
-      { t: Date.now(), type: 'payload_breakdown', payload_breakdown: { components: [{ name: 'skill', tokens: 1200, bytes: 2048 }], totals: { tokens: 1200, bytes: 2048 } } },
-      { t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 5 },
-    ], { startup_payload_json: JSON.stringify({ components: [{ name: 'skill', tokens: 1200, bytes: 2048 }], totals: { tokens: 1200, bytes: 2048 } }), started_at_ms: Date.now() + 60_000 });
+      { t: now, type: 'run_start', startup_snapshot: { job_id: 'job1' } },
+      { t: now + 1, type: 'payload_breakdown', payload_breakdown: { components: [{ name: 'skill', tokens: 1200, bytes: 2048 }], totals: { tokens: 1200, bytes: 2048 } } },
+      { t: now + 2, type: 'turn', phase: 'start' },
+      { t: now + 3, type: 'message', phase: 'start', role: 'assistant' },
+      { t: now + 4, type: 'text', content: 'ok', char_count: 2 },
+      { t: now + 5, type: 'message', phase: 'end', role: 'assistant' },
+      { t: now + 6, type: 'turn', phase: 'end' },
+      { t: now + 7, type: 'run_complete', status: 'COMPLETE', elapsed_s: 5, output: 'ok' },
+      { t: now + 8, type: 'run_complete', status: 'COMPLETE', elapsed_s: 5, output: 'ok' },
+    ], { model: 'nano-gpt/kimi-k2.6', backend: 'nano-gpt', started_at_ms: now });
 
     process.argv = ['node', 'specialists', 'feed', '--json'];
 
@@ -361,15 +368,25 @@ describe('feed CLI', () => {
     const { run } = await import('../../../src/cli/feed.js');
     await run();
 
-    // Output should be valid JSON
-    const parsedLines = logs.filter((line) => line.trim()).map((line) => JSON.parse(line) as { type: string; payload_breakdown?: { totals: { bytes: number; tokens: number } } });
-    expect(parsedLines[0]?.type).toBe('run_start');
-    expect(parsedLines[1]?.type).toBe('payload_breakdown');
-    expect(parsedLines[1]?.payload_breakdown?.totals.bytes).toBe(2048);
-    expect(parsedLines[2]?.type).toBe('run_complete');
+    const parsedLines = logs.filter((line) => line.trim()).map((line) => JSON.parse(line) as { type: string; [key: string]: unknown });
+    expect(parsedLines.map((event) => event.type)).toEqual([
+      'session',
+      'agent_start',
+      'turn_start',
+      'message_start',
+      'message_update',
+      'message_update',
+      'message_update',
+      'message_end',
+      'turn_end',
+      'agent_end',
+      'agent_settled',
+    ]);
+    expect(parsedLines[0]).toMatchObject({ type: 'session', version: 3, id: 'job1', cwd: tempRoot });
+    expect(parsedLines.some((event) => 'forensic_event' in event || 'jobId' in event || event.type === 'payload_breakdown')).toBe(false);
   });
 
-  it('outputs auto-commit and GitNexus evidence unchanged in JSON mode', async () => {
+  it('omits specialist-only telemetry from pi-compatible JSON mode', async () => {
     createJobDir('job-json-auto', 'executor', [
       {
         t: Date.now(),
@@ -390,24 +407,14 @@ describe('feed CLI', () => {
     const { run } = await import('../../../src/cli/feed.js');
     await run();
 
-    const parsedLines = logs.filter((line) => line.trim()).map((line) => JSON.parse(line) as any);
-    expect(parsedLines[0]).toMatchObject({
-      type: 'auto_commit_success',
-      commit_sha: '54e2fa6c83323b8c50cf203ce59e13af0d922e10',
-      committed_files: ['src/cli/feed.ts'],
-    });
-    expect(parsedLines[1]).toMatchObject({
-      type: 'meta',
-      model: 'gitnexus_analyze_started',
-      backend: 'checkpoint',
-    });
+    expect(logs.filter((line) => line.trim())).toEqual([]);
   });
 
-  it('--json envelope includes model, backend, beadId, elapsed_ms from status.json', async () => {
+  it('--json uses status model metadata in pi assistant messages', async () => {
     createJobDir('job1', 'my-spec', [
-      { t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 5 },
+      { t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 5, output: 'done' },
     ], {
-      model: 'claude-haiku',
+      model: 'anthropic/claude-haiku',
       backend: 'anthropic',
       bead_id: 'unitAI-abc',
       started_at_ms: Date.now() - 5000,
@@ -423,21 +430,13 @@ describe('feed CLI', () => {
     const { run } = await import('../../../src/cli/feed.js');
     await run();
 
-    const line = logs.find((l) => l.trim());
-    expect(line).toBeDefined();
-    const parsed = JSON.parse(line!);
-    expect(parsed.jobId).toBe('job1');
-    expect(parsed.specialist).toBe('my-spec');
-    expect(parsed.specialist_model).toBe('my-spec/haiku');
-    expect(parsed.model).toBe('claude-haiku');
-    expect(parsed.backend).toBe('anthropic');
-    expect(parsed.beadId).toBe('unitAI-abc');
-    expect(parsed.elapsed_ms).toBeGreaterThanOrEqual(0);
-    expect(parsed.forensic_event.schema_version).toBe('xtrm.forensic.v1');
-    expect(parsed.forensic_event.resource.participant_role).toBe('my-spec');
-    expect(parsed.forensic_event.correlation.job_id).toBe('job1');
-    // Event fields still present
-    expect(parsed.type).toBe('run_complete');
+    const parsed = logs.filter((line) => line.trim()).map((line) => JSON.parse(line));
+    expect(parsed.map((event) => event.type)).toEqual(['session', 'agent_start', 'agent_end', 'agent_settled']);
+    expect(parsed[2]).toMatchObject({
+      type: 'agent_end',
+      messages: [{ provider: 'anthropic', model: 'claude-haiku', content: [{ type: 'text', text: 'done' }] }],
+    });
+    expect(parsed.some((event) => 'beadId' in event || 'elapsed_ms' in event || 'forensic_event' in event)).toBe(false);
   });
 
   it('filters by --job id', async () => {
@@ -646,7 +645,7 @@ describe('feed CLI', () => {
 
     appendFileSync(
       join(jobMetaDir, 'events.jsonl'),
-      `\n${JSON.stringify({ t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 1 })}`,
+      `\n${JSON.stringify({ t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 1, output: 'done' })}`,
       'utf-8'
     );
 
@@ -673,10 +672,10 @@ describe('feed CLI', () => {
       .filter((line) => line.startsWith('{'))
       .map((line) => JSON.parse(line));
 
-    const completionEvent = jsonLines.find((line) => line.type === 'run_complete');
+    const completionEvent = jsonLines.find((line) => line.type === 'agent_end');
     expect(completionEvent).toBeDefined();
-    expect(completionEvent.model).toBe('claude-haiku');
-    expect(completionEvent.backend).toBe('anthropic');
+    expect(completionEvent.messages[0].model).toBe('claude-haiku');
+    expect(completionEvent.messages[0].provider).toBe('anthropic');
   });
 
   // ── Regression tests for merged chronology ─────────────────────────────────
@@ -893,7 +892,7 @@ invalid json line here
   });
 
   it('uses SQLite metadata in --json mode when available', async () => {
-    createJobDir('sqlite-json', 'test', [{ t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 1 }], {
+    createJobDir('sqlite-json', 'test', [{ t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 1, output: 'done' }], {
       id: 'sqlite-json',
       specialist: 'test',
       status: 'done',
@@ -904,7 +903,7 @@ invalid json line here
 
     const seeded = await seedSqliteJob(
       'sqlite-json',
-      [{ t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 1 }],
+      [{ t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 1, output: 'done' }],
       {
         id: 'sqlite-json',
         specialist: 'test',
@@ -926,9 +925,10 @@ invalid json line here
     const { run } = await import('../../../src/cli/feed.js');
     await run();
 
-    const payload = JSON.parse(logs.find((line) => line.trim().startsWith('{')) ?? '{}');
-    expect(payload.model).toBe('sqlite-model');
-    expect(payload.backend).toBe('sqlite-backend');
+    const payloads = logs.filter((line) => line.trim().startsWith('{')).map((line) => JSON.parse(line));
+    const agentEnd = payloads.find((payload) => payload.type === 'agent_end');
+    expect(agentEnd.messages[0].model).toBe('sqlite-model');
+    expect(agentEnd.messages[0].provider).toBe('sqlite-backend');
   });
 
   it('falls back to events.jsonl when SQLite read fails', async () => {

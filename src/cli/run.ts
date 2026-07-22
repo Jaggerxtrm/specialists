@@ -25,6 +25,7 @@ import {
   type RuntimeOriginV1,
 } from '../specialist/runtime-origin.js';
 import { launchSpecialist } from '../specialist/launch.js';
+import { createPiJsonProjector } from './pi-json-output.js';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
 const bold  = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -35,7 +36,7 @@ const cyan  = (s: string) => `\x1b[36m${s}\x1b[0m`;
 // ── Output modes ───────────────────────────────────────────────────────────────
 /** Output mode for foreground runs.
  *  - 'human'  (default) formatted event summaries to stdout + final output
- *  - 'json'   NDJSON event stream to stdout, one event per line
+ *  - 'json'   pi-compatible NDJSON event stream to stdout, one event per line
  *  - 'raw'    legacy: stream raw onProgress deltas to stdout (backward compat)
  */
 type OutputMode = 'human' | 'json' | 'raw';
@@ -462,59 +463,71 @@ function resolveWorkingDirectory(
  * Polls every 100ms; safe for same-process use (no partial-line risk).
  * Returns a stop() function that does a final drain before returning.
  */
-function startEventTailer(
+export function startEventTailer(
   jobId: string,
   jobsDir: string,
   mode: 'json' | 'human',
-  specialist: string,
-  beadId?: string,
+  _specialist: string,
+  _beadId?: string,
 ): () => void {
   const eventsPath = join(jobsDir, jobId, 'events.jsonl');
-  const statusPath = join(jobsDir, jobId, 'status.json');
+  const sqliteClient = createObservabilitySqliteClient(process.cwd());
   let linesRead = 0;
+  let lastSeq = 0;
   let activeInlinePhase: InlineIndicatorPhase = null;
+  let projectPiJson: ReturnType<typeof createPiJsonProjector> | undefined;
+  const getPiJsonProjector = () => {
+    if (projectPiJson) return projectPiJson;
+    const status = (() => {
+      try { return sqliteClient?.readStatus(jobId); } catch { return null; }
+    })();
+    projectPiJson = createPiJsonProjector({
+      jobId,
+      sessionId: status?.session_id,
+      cwd: process.cwd(),
+      startedAtMs: status?.started_at_ms,
+      model: status?.model,
+      backend: status?.backend,
+    });
+    return projectPiJson;
+  };
 
-  const readPayloadBreakdown = (): unknown => {
-    try {
-      const statusRaw = readFileSync(statusPath, 'utf-8');
-      const status = JSON.parse(statusRaw) as { startup_payload_json?: string | null };
-      return status.startup_payload_json ? JSON.parse(status.startup_payload_json) : undefined;
-    } catch {
-      return undefined;
+  const readFileEvents = (): TimelineEvent[] => {
+    let content: string;
+    try { content = readFileSync(eventsPath, 'utf-8'); } catch { return []; }
+    const lastNl = content.lastIndexOf('\n');
+    if (lastNl < 0) return [];
+    const lines = content.slice(0, lastNl).split('\n');
+    const events: TimelineEvent[] = [];
+    for (let i = linesRead; i < lines.length; i++) {
+      linesRead++;
+      try { events.push(JSON.parse(lines[i]) as TimelineEvent); } catch { /* malformed line */ }
     }
+    return events;
   };
 
   const drain = () => {
-    let content: string;
-    try { content = readFileSync(eventsPath, 'utf-8'); } catch { return; }
-    if (!content) return;
-
-    // Only process up to the last complete line (ends with \n)
-    const lastNl = content.lastIndexOf('\n');
-    if (lastNl < 0) return;
-    const complete = content.slice(0, lastNl);
-    const lines = complete.split('\n');
-
-    for (let i = linesRead; i < lines.length; i++) {
-      linesRead++;
-      const line = lines[i].trim();
-      if (!line) continue;
-      let event: TimelineEvent;
-      try { event = JSON.parse(line) as TimelineEvent; } catch { continue; }
-
+    let events: TimelineEvent[];
+    try {
+      events = sqliteClient
+        ? sqliteClient.readEventsAfterSeq(jobId, lastSeq)
+        : readFileEvents();
+    } catch {
+      events = readFileEvents();
+    }
+    for (const event of events) {
+      lastSeq = Math.max(lastSeq, event.seq ?? 0);
       if (mode === 'json') {
-        const payloadBreakdown = event.type === 'run_start' ? readPayloadBreakdown() : undefined;
-        process.stdout.write(JSON.stringify({ jobId, specialist, beadId, ...(payloadBreakdown ? { payload_breakdown: payloadBreakdown } : {}), ...event }) + '\n');
-      } else {
-        // human mode: print output text from run_complete, debounce noisy phase indicators
-        if (event.type === 'run_complete' && (event as any).output) {
-          activeInlinePhase = null;
-          process.stdout.write('\n' + (event as any).output + '\n');
-        } else {
-          const { line, nextPhase } = formatEventInlineDebounced(event, activeInlinePhase);
-          activeInlinePhase = nextPhase;
-          if (line) process.stdout.write(line + '\n');
+        for (const piEvent of getPiJsonProjector()(event)) {
+          process.stdout.write(JSON.stringify(piEvent) + '\n');
         }
+      } else if (event.type === 'run_complete' && event.output) {
+        activeInlinePhase = null;
+        process.stdout.write('\n' + event.output + '\n');
+      } else {
+        const { line, nextPhase } = formatEventInlineDebounced(event, activeInlinePhase);
+        activeInlinePhase = nextPhase;
+        if (line) process.stdout.write(line + '\n');
       }
     }
   };
@@ -523,7 +536,8 @@ function startEventTailer(
 
   return () => {
     clearInterval(intervalId);
-    drain(); // final drain: catch events written just before supervisor.run() returned
+    drain();
+    sqliteClient?.close();
   };
 }
 

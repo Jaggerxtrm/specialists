@@ -1,6 +1,6 @@
 /** Output mode for foreground runs.
  *  - 'human'  (default) formatted event summaries to stdout + final output
- *  - 'json'   NDJSON event stream to stdout, one event per line
+ *  - 'json'   pi-compatible NDJSON event stream to stdout, one event per line
  *  - 'raw'    legacy: stream raw onProgress deltas to stdout (backward compat)
  */
 type OutputMode = 'human' | 'json' | 'raw';
@@ -31,6 +31,12 @@ export interface RunArgs {
     baseSha?: string;
     baseRef?: string;
 }
+/**
+ * Tail events.jsonl for a job and emit formatted output to stdout.
+ * Polls every 100ms; safe for same-process use (no partial-line risk).
+ * Returns a stop() function that does a final drain before returning.
+ */
+export declare function startEventTailer(jobId: string, jobsDir: string, mode: 'json' | 'human', _specialist: string, _beadId?: string): () => void;
 export declare function buildTmuxLiveFeedCommand(options: {
     cwd: string;
     runCommand: string;

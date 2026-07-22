@@ -91,7 +91,7 @@ specialists run <name> [--prompt "..."] [--bead <id>] [--worktree] [--job <id>] 
 - `--no-beads`: Disable tracking bead creation (does **not** disable bead reading when `--bead` is used).
 - `--keep-alive`: Keep session for follow-up `resume` turns (explicit enable).
 - `--no-keep-alive`: Force one-shot run even if specialist YAML has `execution.interactive: true`.
-- `--json`: NDJSON event stream to stdout.
+- `--json`: Pi-compatible NDJSON event stream to stdout (`session`, agent/message/turn/tool events).
 - `--raw`: Legacy raw token delta stream.
 
 ### Examples
