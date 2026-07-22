@@ -1626,6 +1626,95 @@ Diagnostics: beadId=unitAI-sync jobId=d4e5f6 branch=feature/unitAI-sync total=5 
 
 This enables doc-sync specialists and workflow-only changes to merge without false positives.
 
+---
+
+## `specialists integration record`
+
+Published **write** surface for `xtrm.branch.integration.v1`. Records exactly one branch-integration
+observation for a merge that happened **outside** `sp merge` — a manual `git merge --no-ff`,
+`xt merge`, or `gh pr merge`.
+
+This is the cross-repo counterpart of `sp ps --json`: `.specialists/db/observability.db` is private
+to this repo, so external consumers (xtrm-tools core, which carries no sqlite dependency) shell out
+to this verb instead of writing the schema themselves.
+
+Observation only — git remains the merge authority. The verb never inspects, verifies, or mutates
+git state, and the automatic emission inside `sp merge` is unaffected.
+
+### Synopsis
+
+```bash
+specialists integration record \
+  --source-branch <branch> --source-worktree <path> \
+  --target-branch <branch> --target-worktree <path> \
+  --commit <sha> [options]
+```
+
+### Flags
+
+| Flag | Required | Description |
+|------|:--------:|-------------|
+| `--source-branch <b>` | ✓ | Branch that was merged |
+| `--source-worktree <p>` | ✓ | Worktree the source branch lived in (resolved to absolute) |
+| `--target-branch <b>` | ✓ | Branch it was merged into |
+| `--target-worktree <p>` | ✓ | Worktree of the target branch (resolved to absolute) |
+| `--commit <sha>` | ✓ | Resulting commit; 7–40 hex chars |
+| `--source-job-id <id>` | | Specialist job that produced the branch. Defaults to `manual` — merges from outside a job have no job id, and the column is `NOT NULL` |
+| `--target-role <role>` | | Coordinator role when the target is a coordinator integration branch; omitted otherwise |
+| `--status merged` | | Only `merged` is defined by the schema today (default) |
+| `--cwd <path>` | | Repo whose observability DB is written (default: cwd) |
+| `--json` | | Emit `{ ok, event }` instead of a one-line confirmation |
+
+### Examples
+
+```bash
+# Manual merge recorded by an external tool
+sp integration record \
+  --source-branch feature/unitAI-55d --source-worktree /repo/.worktrees/unitAI-55d \
+  --target-branch master --target-worktree /repo \
+  --commit 73cf0e77 --json
+
+# Merge into a coordinator integration branch, attributed to the job that produced it
+sp integration record --source-job-id a1b2c3 \
+  --source-branch feature/unitAI-55d --source-worktree /repo/.worktrees/unitAI-55d \
+  --target-branch integration/wave-10 --target-worktree /repo/.xtrm/worktrees/wave-10 \
+  --target-role chain-coordinator --commit 9f860700
+```
+
+### Output
+
+```json
+{
+  "ok": true,
+  "event": {
+    "schema_version": "xtrm.branch.integration.v1",
+    "timestamp": "2026-07-22T10:00:00.000Z",
+    "t_unix_ms": 1784548800000,
+    "source": { "job_id": "manual", "branch": "feature/unitAI-55d", "worktree": "/repo/.worktrees/unitAI-55d" },
+    "target": { "branch": "master", "worktree": "/repo" },
+    "status": "merged",
+    "commit": "73cf0e77"
+  }
+}
+```
+
+Without `--json`, one line: `recorded xtrm.branch.integration.v1: feature/unitAI-55d → master @ 73cf0e77`.
+
+**Idempotent** — a unique index on `(source_branch, commit_sha)` makes re-recording the same pair a
+no-op, so a retrying caller cannot double-count.
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Event recorded (or already present) |
+| 1 | `usage` — missing/invalid flag, bad commit shape, unsupported `--status`, unknown subcommand |
+| 1 | `observability_db_missing` — no DB at the resolved path; the runtime creates it, an observation verb must not |
+| 1 | `record_failed` — the write itself failed |
+
+With `--json`, failures print `{ "ok": false, "error": { "code", "message" } }`; otherwise they go to
+stderr. Source: `src/cli/integration.ts`.
+
 ## Releases (skill-driven)
 
 `sp release prepare/publish` remain as deprecated aliases. Releases now flow through
