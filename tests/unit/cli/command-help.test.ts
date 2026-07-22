@@ -56,6 +56,12 @@ describe('command-specific --help', () => {
     expect(out).toContain('git stays the merge authority');
   });
 
+  // --help must be reachable at the verb level too, for both verbs.
+  it.each(['record', 'list'])('integration %s --help reaches the same help block', (verb) => {
+    expect(captureIndexHelp(['integration', verb, '--help']))
+      .toContain('specialists integration list');
+  });
+
   it('metrics --help documents Prometheus projection label discipline', () => {
     const out = captureIndexHelp(['metrics', '--help']);
     expect(out).toContain('Prometheus text format');
