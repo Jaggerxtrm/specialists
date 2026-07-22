@@ -59361,7 +59361,7 @@ function printSnapshot(sqliteClient, merged, options2, jobsDir, piProjectors = n
   const colorMap2 = new JobColorMap;
   if (options2.json) {
     const getJobMeta2 = jobsDir ? makeJobMetaReader(sqliteClient, jobsDir) : () => ({ startedAtMs: Date.now() });
-    for (const { jobId, event } of merged) {
+    for (const { jobId, event } of orderMergedEvents(merged)) {
       const meta = getJobMeta2(jobId);
       const projector = getPiJsonProjector(piProjectors, jobId, meta);
       for (const piEvent of projectPiJson(projector, event, meta))
@@ -59397,14 +59397,37 @@ function printSnapshot(sqliteClient, merged, options2, jobsDir, piProjectors = n
       console.log(startupContextLine);
   }
 }
-function compareMergedEvents(a, b) {
-  const timeDiff = a.event.t - b.event.t;
-  if (timeDiff !== 0)
-    return timeDiff;
-  const jobDiff = a.jobId.localeCompare(b.jobId);
-  if (jobDiff !== 0)
-    return jobDiff;
-  return (a.event.seq ?? 0) - (b.event.seq ?? 0);
+function orderMergedEvents(events) {
+  const byJob = new Map;
+  for (const event of events) {
+    const jobEvents = byJob.get(event.jobId) ?? [];
+    jobEvents.push(event);
+    byJob.set(event.jobId, jobEvents);
+  }
+  const queues = [...byJob.values()].map((jobEvents) => {
+    const hasSequences = jobEvents.every(({ event }) => event.seq !== undefined);
+    jobEvents.sort((a, b) => hasSequences ? (a.event.seq ?? 0) - (b.event.seq ?? 0) : a.event.t - b.event.t || (a.event.seq ?? 0) - (b.event.seq ?? 0));
+    return { events: jobEvents, index: 0 };
+  });
+  const ordered = [];
+  while (ordered.length < events.length) {
+    let nextQueue;
+    for (const queue of queues) {
+      const candidate = queue.events[queue.index];
+      if (!candidate)
+        continue;
+      const next = nextQueue?.events[nextQueue.index];
+      if (!next || compareChronologically(candidate, next) < 0)
+        nextQueue = queue;
+    }
+    if (!nextQueue)
+      break;
+    ordered.push(nextQueue.events[nextQueue.index++]);
+  }
+  return ordered;
+}
+function compareChronologically(a, b) {
+  return a.event.t - b.event.t || a.jobId.localeCompare(b.jobId) || (a.event.seq ?? 0) - (b.event.seq ?? 0);
 }
 function isEventAtOrAfterCursor(jobId, event, from) {
   if (!from)
@@ -59624,8 +59647,7 @@ async function followMerged(sqliteClient, jobsDir, options2) {
           }
         }
       }
-      newEvents.sort(compareMergedEvents);
-      for (const { jobId, specialist, beadId, event } of newEvents) {
+      for (const { jobId, specialist, beadId, event } of orderMergedEvents(newEvents)) {
         const meta = getJobMeta(jobId);
         const model = meta.model ?? (event.type === "meta" ? event.model : undefined);
         const backend = meta.backend ?? (event.type === "meta" ? event.backend : undefined);

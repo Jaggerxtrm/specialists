@@ -347,15 +347,15 @@ describe('feed CLI', () => {
   it('outputs pi-compatible NDJSON with --json', async () => {
     const now = Date.now();
     createJobDir('job1', 'test', [
-      { t: now, type: 'run_start', startup_snapshot: { job_id: 'job1' } },
-      { t: now + 1, type: 'payload_breakdown', payload_breakdown: { components: [{ name: 'skill', tokens: 1200, bytes: 2048 }], totals: { tokens: 1200, bytes: 2048 } } },
-      { t: now + 2, type: 'turn', phase: 'start' },
-      { t: now + 3, type: 'message', phase: 'start', role: 'assistant' },
-      { t: now + 4, type: 'text', content: 'ok', char_count: 2 },
-      { t: now + 5, type: 'message', phase: 'end', role: 'assistant' },
-      { t: now + 6, type: 'turn', phase: 'end' },
-      { t: now + 7, type: 'run_complete', status: 'COMPLETE', elapsed_s: 5, output: 'ok' },
-      { t: now + 8, type: 'run_complete', status: 'COMPLETE', elapsed_s: 5, output: 'ok' },
+      { t: now, seq: 1, type: 'run_start', startup_snapshot: { job_id: 'job1' } },
+      { t: now + 1, seq: 2, type: 'payload_breakdown', payload_breakdown: { components: [{ name: 'skill', tokens: 1200, bytes: 2048 }], totals: { tokens: 1200, bytes: 2048 } } },
+      { t: now + 2, seq: 3, type: 'turn', phase: 'start' },
+      { t: now + 3, seq: 4, type: 'message', phase: 'start', role: 'assistant' },
+      { t: now + 5, seq: 5, type: 'text', content: 'ok', char_count: 2 },
+      { t: now + 4, seq: 6, type: 'message', phase: 'end', role: 'assistant' },
+      { t: now + 6, seq: 7, type: 'turn', phase: 'end' },
+      { t: now + 7, seq: 8, type: 'run_complete', status: 'COMPLETE', elapsed_s: 5, output: 'ok' },
+      { t: now + 8, seq: 9, type: 'run_complete', status: 'COMPLETE', elapsed_s: 5, output: 'ok' },
     ], { model: 'nano-gpt/kimi-k2.6', backend: 'nano-gpt', started_at_ms: now });
 
     process.argv = ['node', 'specialists', 'feed', '--json'];
@@ -384,6 +384,39 @@ describe('feed CLI', () => {
     ]);
     expect(parsedLines[0]).toMatchObject({ type: 'session', version: 3, id: 'job1', cwd: tempRoot });
     expect(parsedLines.some((event) => 'forensic_event' in event || 'jobId' in event || event.type === 'payload_breakdown')).toBe(false);
+  });
+
+  it('preserves each job sequence while merging JSON events chronologically', async () => {
+    const now = Date.now();
+    createJobDir('job1', 'test1', [
+      { t: now, seq: 1, type: 'run_start' },
+      { t: now + 10, seq: 2, type: 'turn', phase: 'start' },
+      { t: now + 20, seq: 3, type: 'message', phase: 'start', role: 'assistant' },
+      { t: now + 50, seq: 4, type: 'text', content: 'one', char_count: 3 },
+      { t: now + 40, seq: 5, type: 'message', phase: 'end', role: 'assistant' },
+      { t: now + 60, seq: 6, type: 'turn', phase: 'end' },
+    ]);
+    createJobDir('job2', 'test2', [
+      { t: now + 30, seq: 1, type: 'run_start' },
+      { t: now + 45, seq: 2, type: 'run_complete', status: 'COMPLETE', elapsed_s: 1 },
+    ]);
+
+    process.argv = ['node', 'specialists', 'feed', '--json'];
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => logs.push(msg ?? ''));
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    const parsed = logs.filter((line) => line.trim()).map((line) => JSON.parse(line));
+    const updateIndex = parsed.findIndex(
+      (event) => event.type === 'message_update' && JSON.stringify(event).includes('one')
+    );
+    const endIndex = parsed.findIndex(
+      (event) => event.type === 'message_end' && JSON.stringify(event).includes('one')
+    );
+    expect(updateIndex).toBeGreaterThan(-1);
+    expect(endIndex).toBeGreaterThan(updateIndex);
   });
 
   it('omits specialist-only telemetry from pi-compatible JSON mode', async () => {
