@@ -43,6 +43,19 @@ describe('command-specific --help', () => {
     expect(out).toContain('--event-name <name>');
   });
 
+  it('integration --help documents BOTH the write and the read verb', () => {
+    const out = captureIndexHelp(['integration', '--help']);
+    expect(out).toContain('xtrm.branch.integration.v1');
+    // write verb (#201)
+    expect(out).toContain('specialists integration record');
+    expect(out).toContain('--source-branch <b>');
+    // read verb (#203)
+    expect(out).toContain('specialists integration list');
+    expect(out).toContain('--target-branch <b>');
+    expect(out).toContain('--job <job-id>');
+    expect(out).toContain('git stays the merge authority');
+  });
+
   it('metrics --help documents Prometheus projection label discipline', () => {
     const out = captureIndexHelp(['metrics', '--help']);
     expect(out).toContain('Prometheus text format');

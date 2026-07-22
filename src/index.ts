@@ -3,7 +3,7 @@
 /**
  * Specialists MCP Server — entry point
  * Subcommands: install, version, list, view, models, init, db, validate, edit, config, run,
- *              chat, console, status, ps, result, feed, log, forensic, metrics, clean, merge, epic, end, stop, attach, quickstart, setup, serve, script, release, help
+ *              chat, console, status, ps, result, feed, log, forensic, integration, metrics, clean, merge, epic, end, stop, attach, quickstart, setup, serve, script, release, help
  */
 
 // Suppress EBADF errors from bun's internal fd handling on named pipes.
@@ -365,10 +365,11 @@ async function run() {
 
   if (sub === 'integration') {
     const verb = process.argv[3];
-    // `--help` is accepted at both levels: `sp integration --help` and `sp integration record --help`.
+    // `--help` is accepted at both levels: `sp integration --help` and
+    // `sp integration <verb> --help`.
     const helpRequested = verb === undefined
       || process.argv.slice(3).some((arg) => arg === '--help' || arg === '-h');
-    if (helpRequested || verb !== 'record') {
+    if (helpRequested || (verb !== 'record' && verb !== 'list')) {
       const emit = helpRequested ? console.log : console.error;
       if (!helpRequested) console.error(`Unknown subcommand '${verb}'.`);
       emit([
@@ -376,8 +377,9 @@ async function run() {
         'Usage: specialists integration record --source-branch <b> --source-worktree <p> \\',
         '                                      --target-branch <b> --target-worktree <p> \\',
         '                                      --commit <sha> [options]',
+        '       specialists integration list [--target-branch <b>] [--job <id>] [--limit <n>] [--json]',
         '',
-        'Record one `xtrm.branch.integration.v1` observation from a MANUAL merge.',
+        'record — write one `xtrm.branch.integration.v1` observation from a MANUAL merge.',
         'Published write surface for consumers outside this repo (xtrm-tools shells out',
         'to it after `xt merge` / `gh pr merge`, the mirror of `sp ps --json`).',
         '',
@@ -406,12 +408,25 @@ async function run() {
         '  sp integration record --source-branch feature/x --source-worktree /repo/.worktrees/x \\',
         '    --target-branch master --target-worktree /repo --commit 73cf0e77 --json',
         '',
+        'list — read back the records written by `sp merge` and by `record` above.',
+        '',
+        'Options:',
+        '  --target-branch <b>  Only integrations into this target branch',
+        '  --job <job-id>       Only integrations sourced from this specialist job',
+        '  --limit <n>          Maximum rows, newest first (default 100)',
+        '  --json               Emit the stored event payload verbatim, as NDJSON',
+        '',
+        'Examples:',
+        '  sp integration list',
+        '  sp integration list --target-branch master --limit 20',
+        '  sp integration list --job 49adda --json',
+        '',
       ].join('\n'));
       if (!helpRequested) process.exit(1);
       return;
     }
-    const { run: handler } = await import('./cli/integration.js');
-    return handler();
+    const integration = await import('./cli/integration.js');
+    return verb === 'list' ? integration.runList() : integration.runRecord();
   }
 
   if (sub === 'validate') {

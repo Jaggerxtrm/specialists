@@ -6,6 +6,11 @@ import {
   createObservabilitySqliteClientAtPath,
   type ObservabilitySqliteClient,
 } from '../../../src/specialist/observability-sqlite.js';
+import {
+  BRANCH_INTEGRATION_SCHEMA_VERSION,
+  createBranchIntegrationEvent,
+} from '../../../src/specialist/branch-integration-events.js';
+import { parseIntegrationListArgs, renderIntegrationRows } from '../../../src/cli/integration.js';
 
 const originalArgv = [...process.argv];
 
@@ -30,8 +35,8 @@ function mkDb(): { dbPath: string; cwd: string } {
 
 async function record(...args: string[]): Promise<void> {
   argv(...args);
-  const { run } = await import('../../../src/cli/integration.js');
-  run();
+  const { runRecord } = await import('../../../src/cli/integration.js');
+  runRecord();
 }
 
 const REQUIRED = [
@@ -140,8 +145,8 @@ describe('sp integration record', () => {
   it('fails with `usage` when a required flag is missing', async () => {
     const { cwd } = mkDb();
     argv('--source-branch', 'feature/x', '--cwd', cwd, '--json');
-    const { run } = await import('../../../src/cli/integration.js');
-    expect(() => run()).toThrow('exit:1');
+    const { runRecord } = await import('../../../src/cli/integration.js');
+    expect(() => runRecord()).toThrow('exit:1');
 
     const emitted = JSON.parse(stdout.join(''));
     expect(emitted.ok).toBe(false);
@@ -157,32 +162,90 @@ describe('sp integration record', () => {
       '--target-branch', 'master', '--target-worktree', '/repo',
       '--commit', 'HEAD~1', '--cwd', cwd, '--json',
     );
-    const { run } = await import('../../../src/cli/integration.js');
-    expect(() => run()).toThrow('exit:1');
+    const { runRecord } = await import('../../../src/cli/integration.js');
+    expect(() => runRecord()).toThrow('exit:1');
     expect(JSON.parse(stdout.join('')).error.code).toBe('usage');
   });
 
   it('rejects a --status other than merged', async () => {
     const { cwd } = mkDb();
     argv(...REQUIRED, '--status', 'reverted', '--cwd', cwd, '--json');
-    const { run } = await import('../../../src/cli/integration.js');
-    expect(() => run()).toThrow('exit:1');
+    const { runRecord } = await import('../../../src/cli/integration.js');
+    expect(() => runRecord()).toThrow('exit:1');
     expect(JSON.parse(stdout.join('')).error.message).toContain("--status must be 'merged'");
   });
 
   it('fails with `observability_db_missing` instead of creating the DB', async () => {
     // No mkDb() — an observation verb must not provision the runtime's database.
     argv(...REQUIRED, '--cwd', tempRoot, '--json');
-    const { run } = await import('../../../src/cli/integration.js');
-    expect(() => run()).toThrow('exit:1');
+    const { runRecord } = await import('../../../src/cli/integration.js');
+    expect(() => runRecord()).toThrow('exit:1');
     expect(JSON.parse(stdout.join('')).error.code).toBe('observability_db_missing');
   });
 
   it('reports errors on stderr rather than stdout without --json', async () => {
     argv('--source-branch', 'feature/x', '--cwd', tempRoot);
-    const { run } = await import('../../../src/cli/integration.js');
-    expect(() => run()).toThrow('exit:1');
+    const { runRecord } = await import('../../../src/cli/integration.js');
+    expect(() => runRecord()).toThrow('exit:1');
     expect(stderr.join('')).toContain('error (usage)');
     expect(stdout.join('')).toBe('');
+  });
+});
+
+// ── list (core xtrm-vtqlg.6) ─────────────────────────────────────────────────
+//
+// The store's query layer (listBranchIntegrations filters, idempotence) is
+// covered in tests/unit/specialist/observability-sqlite.test.ts. What is new
+// here is the CLI glue: flags -> ListBranchIntegrationFilters, and rows -> output.
+
+const listEvent = createBranchIntegrationEvent({
+  source: { job_id: 'job-exec', branch: 'sp/exec-1', worktree: '/wt/sp-exec-1' },
+  target: { branch: 'xt/coord-epic', worktree: '/wt/coord', role: 'chain-coordinator' },
+  commit: 'deadbeefcafe1234',
+  t_unix_ms: 1_700_000_000_000,
+});
+const listRows = [{ t: listEvent.t_unix_ms, event: listEvent }];
+
+describe('sp integration list — arg parsing', () => {
+  it('defaults to human output with a bounded limit and no filters', () => {
+    expect(parseIntegrationListArgs([])).toEqual({ json: false, limit: 100 });
+  });
+
+  it('maps every flag onto a ListBranchIntegrationFilters field', () => {
+    expect(parseIntegrationListArgs(['--target-branch', 'master', '--job', '49adda', '--limit', '5', '--json']))
+      .toEqual({ json: true, limit: 5, targetBranch: 'master', sourceJobId: '49adda' });
+  });
+
+  it.each([
+    [['--target-branch'], /--target-branch requires a value/],
+    [['--job'], /--job requires a value/],
+    [['--limit'], /--limit requires a value/],
+    [['--limit', '0'], /Invalid --limit value/],
+    [['--limit', 'abc'], /Invalid --limit value/],
+    [['--nope'], /Unknown integration list option/],
+  ])('rejects %j', (args, message) => {
+    expect(() => parseIntegrationListArgs(args)).toThrow(message);
+  });
+});
+
+describe('sp integration list — rendering', () => {
+  it('emits the stored xtrm.branch.integration.v1 payload verbatim under --json', () => {
+    const [line, ...rest] = renderIntegrationRows(listRows, { json: true });
+    expect(rest).toEqual([]);
+    expect(JSON.parse(line)).toEqual(listEvent);
+    expect(JSON.parse(line).schema_version).toBe(BRANCH_INTEGRATION_SCHEMA_VERSION);
+  });
+
+  it('renders the job -> commit lineage git cannot answer on its own', () => {
+    const [line] = renderIntegrationRows(listRows, { json: false });
+    expect(line).toContain('merged sp/exec-1 -> xt/coord-epic');
+    expect(line).toContain('role=chain-coordinator');
+    expect(line).toContain('commit=deadbeefcafe');
+    expect(line).toContain('job=job-exec');
+  });
+
+  it('says so plainly when the store is empty', () => {
+    expect(renderIntegrationRows([], { json: false })).toEqual(['No branch integrations recorded.']);
+    expect(renderIntegrationRows([], { json: true })).toEqual([]);
   });
 });

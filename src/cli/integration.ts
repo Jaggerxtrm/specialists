@@ -1,5 +1,10 @@
-// `specialists integration record` — published write verb for
-// `xtrm.branch.integration.v1` (core xtrm-vtqlg.2, unblocks core xtrm-1pc8c).
+// `specialists integration` — the read/write surface for
+// `xtrm.branch.integration.v1`.
+//
+//   record  published WRITE verb (core xtrm-vtqlg.2, unblocks core xtrm-1pc8c)
+//   list    READ verb (core xtrm-vtqlg.6)
+//
+// ── record ───────────────────────────────────────────────────────────────────
 //
 // Core is barred from writing `.specialists/db/observability.db` directly: that
 // schema is private to this repo and core's CLI deliberately carries no sqlite
@@ -13,7 +18,7 @@
 // is never read back to drive a merge.
 import { resolve } from 'node:path';
 import { createBranchIntegrationEvent, type BranchIntegrationEvent } from '../specialist/branch-integration-events.js';
-import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { createObservabilitySqliteClient, type ListBranchIntegrationFilters } from '../specialist/observability-sqlite.js';
 import { resolveObservabilityDbLocation } from '../specialist/observability-db.js';
 
 /** Source job id recorded when the merge came from outside a specialist job. */
@@ -89,7 +94,7 @@ function parseArgs(argv: string[]): Args {
   };
 }
 
-export function run(): void {
+export function runRecord(): void {
   const args = parseArgs(process.argv.slice(4));
 
   // The db is created by the specialist runtime, never by an observation verb —
@@ -123,4 +128,88 @@ export function run(): void {
     return;
   }
   console.log(`recorded ${event.schema_version}: ${event.source.branch} → ${event.target.branch} @ ${event.commit}`);
+}
+
+// ── list ─────────────────────────────────────────────────────────────────────
+//
+// The store shipped with a single producer (`sp merge` ->
+// recordBranchIntegrationAfterMerge) and zero readers, so nobody could tell
+// whether the recorded job_id -> commit_sha lineage was correct. This verb is
+// that reader. Query-only: it never writes, and nothing consults it to drive a
+// merge — git remains the merge authority, exactly as `record` states above.
+
+export interface IntegrationListOptions extends ListBranchIntegrationFilters {
+  json: boolean;
+}
+
+const DEFAULT_LIMIT = 100;
+
+export function parseIntegrationListArgs(argv: readonly string[]): IntegrationListOptions {
+  const options: IntegrationListOptions = { json: false, limit: DEFAULT_LIMIT };
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+    if (token === '--json') { options.json = true; continue; }
+    if (token === '--target-branch') {
+      const value = argv[i + 1];
+      if (!value) throw new Error('--target-branch requires a value');
+      options.targetBranch = value;
+      i += 1;
+      continue;
+    }
+    if (token === '--job') {
+      const value = argv[i + 1];
+      if (!value) throw new Error('--job requires a value');
+      options.sourceJobId = value;
+      i += 1;
+      continue;
+    }
+    if (token === '--limit') {
+      const value = argv[i + 1];
+      if (!value) throw new Error('--limit requires a value');
+      const parsed = Number(value);
+      if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`Invalid --limit value: ${value}`);
+      options.limit = parsed;
+      i += 1;
+      continue;
+    }
+    throw new Error(`Unknown integration list option: ${token}`);
+  }
+  return options;
+}
+
+interface IntegrationRowView {
+  source: { job_id: string; branch: string };
+  target: { branch: string; role?: string };
+  status: string;
+  commit: string;
+}
+
+function formatIntegrationRow(t: number, event: IntegrationRowView): string {
+  const role = event.target.role ? ` role=${event.target.role}` : '';
+  return `${new Date(t).toISOString()} ${event.status} ${event.source.branch} -> ${event.target.branch}${role} commit=${event.commit.slice(0, 12)} job=${event.source.job_id}`;
+}
+
+/** Pure rendering seam: `--json` emits the stored event verbatim, so the output IS
+ *  the recorded xtrm.branch.integration.v1 payload rather than a re-projection. */
+export function renderIntegrationRows(
+  rows: ReadonlyArray<{ t: number; event: IntegrationRowView }>,
+  options: { json: boolean },
+): string[] {
+  if (options.json) return rows.map((row) => JSON.stringify(row.event));
+  if (rows.length === 0) return ['No branch integrations recorded.'];
+  return rows.map((row) => formatIntegrationRow(row.t, row.event));
+}
+
+export async function runList(): Promise<void> {
+  const options = parseIntegrationListArgs(process.argv.slice(4));
+
+  const client = createObservabilitySqliteClient();
+  if (!client) throw new Error('Observability SQLite is unavailable; run under Bun with an initialized specialists database.');
+  try {
+    for (const line of renderIntegrationRows(client.listBranchIntegrations(options), options)) {
+      console.log(line);
+    }
+  } finally {
+    client.close();
+  }
 }
