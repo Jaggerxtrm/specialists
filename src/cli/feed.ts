@@ -510,7 +510,7 @@ function printSnapshot(
     const getJobMeta = jobsDir
       ? makeJobMetaReader(sqliteClient, jobsDir)
       : (): JobMeta => ({ startedAtMs: Date.now() });
-    for (const { jobId, event } of [...merged].sort(compareMergedEvents)) {
+    for (const { jobId, event } of orderMergedEvents(merged)) {
       const meta = getJobMeta(jobId);
       const projector = getPiJsonProjector(piProjectors, jobId, meta);
       for (const piEvent of projectPiJson(projector, event, meta)) console.log(JSON.stringify(piEvent));
@@ -556,15 +556,45 @@ function printSnapshot(
 
 type MergedEvent = { jobId: string; specialist: string; beadId?: string; event: TimelineEvent };
 
-function compareMergedEvents(a: MergedEvent, b: MergedEvent): number {
-  if (a.jobId === b.jobId && a.event.seq !== undefined && b.event.seq !== undefined) {
-    return a.event.seq - b.event.seq;
+function orderMergedEvents(events: MergedEvent[]): MergedEvent[] {
+  const byJob = new Map<string, MergedEvent[]>();
+  for (const event of events) {
+    const jobEvents = byJob.get(event.jobId) ?? [];
+    jobEvents.push(event);
+    byJob.set(event.jobId, jobEvents);
   }
-  const timeDiff = a.event.t - b.event.t;
-  if (timeDiff !== 0) return timeDiff;
-  const jobDiff = a.jobId.localeCompare(b.jobId);
-  if (jobDiff !== 0) return jobDiff;
-  return (a.event.seq ?? 0) - (b.event.seq ?? 0);
+
+  const queues = [...byJob.values()].map((jobEvents) => {
+    const hasSequences = jobEvents.every(({ event }) => event.seq !== undefined);
+    jobEvents.sort((a, b) =>
+      hasSequences
+        ? (a.event.seq ?? 0) - (b.event.seq ?? 0)
+        : a.event.t - b.event.t || (a.event.seq ?? 0) - (b.event.seq ?? 0)
+    );
+    return { events: jobEvents, index: 0 };
+  });
+
+  const ordered: MergedEvent[] = [];
+  while (ordered.length < events.length) {
+    let nextQueue: (typeof queues)[number] | undefined;
+    for (const queue of queues) {
+      const candidate = queue.events[queue.index];
+      if (!candidate) continue;
+      const next = nextQueue?.events[nextQueue.index];
+      if (!next || compareChronologically(candidate, next) < 0) nextQueue = queue;
+    }
+    if (!nextQueue) break;
+    ordered.push(nextQueue.events[nextQueue.index++]);
+  }
+  return ordered;
+}
+
+function compareChronologically(a: MergedEvent, b: MergedEvent): number {
+  return (
+    a.event.t - b.event.t ||
+    a.jobId.localeCompare(b.jobId) ||
+    (a.event.seq ?? 0) - (b.event.seq ?? 0)
+  );
 }
 
 function isEventAtOrAfterCursor(jobId: string, event: TimelineEvent, from?: FeedCursor): boolean {
@@ -860,9 +890,7 @@ async function followMerged(
         }
       }
 
-      newEvents.sort(compareMergedEvents);
-
-      for (const { jobId, specialist, beadId, event } of newEvents) {
+      for (const { jobId, specialist, beadId, event } of orderMergedEvents(newEvents)) {
         const meta = getJobMeta(jobId);
         const model = meta.model ?? (event.type === 'meta' ? event.model : undefined);
         const backend = meta.backend ?? (event.type === 'meta' ? event.backend : undefined);
