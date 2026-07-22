@@ -330,6 +330,57 @@ async function run() {
     return handler(process.argv.slice(3));
   }
 
+  if (sub === 'integration') {
+    const verb = process.argv[3];
+    // `--help` is accepted at both levels: `sp integration --help` and `sp integration record --help`.
+    const helpRequested = verb === undefined
+      || process.argv.slice(3).some((arg) => arg === '--help' || arg === '-h');
+    if (helpRequested || verb !== 'record') {
+      const emit = helpRequested ? console.log : console.error;
+      if (!helpRequested) console.error(`Unknown subcommand '${verb}'.`);
+      emit([
+        '',
+        'Usage: specialists integration record --source-branch <b> --source-worktree <p> \\',
+        '                                      --target-branch <b> --target-worktree <p> \\',
+        '                                      --commit <sha> [options]',
+        '',
+        'Record one `xtrm.branch.integration.v1` observation from a MANUAL merge.',
+        'Published write surface for consumers outside this repo (xtrm-tools shells out',
+        'to it after `xt merge` / `gh pr merge`, the mirror of `sp ps --json`).',
+        '',
+        'Observation only: git stays the merge authority. This verb never inspects,',
+        'verifies, or mutates git state, and `sp merge` keeps emitting on its own.',
+        '',
+        'Required:',
+        '  --source-branch <b>    Branch that was merged',
+        '  --source-worktree <p>  Worktree the source branch lived in',
+        '  --target-branch <b>    Branch it was merged into',
+        '  --target-worktree <p>  Worktree of the target branch',
+        '  --commit <sha>         Resulting commit (7-40 hex chars)',
+        '',
+        'Options:',
+        '  --source-job-id <id>   Specialist job that produced the branch (default: manual)',
+        '  --target-role <role>   Coordinator role when the target is an integration branch',
+        '  --status merged        Only `merged` is defined today (default)',
+        '  --cwd <path>           Repo whose observability DB is written (default: cwd)',
+        '  --json                 Emit { ok, event } instead of a one-line confirmation',
+        '',
+        'Idempotent: re-recording the same (source-branch, commit) pair is a no-op.',
+        'Errors: JSON { ok: false, error: { code, message } } with --json, else stderr; exit 1.',
+        'Codes: usage | observability_db_missing | record_failed',
+        '',
+        'Example:',
+        '  sp integration record --source-branch feature/x --source-worktree /repo/.worktrees/x \\',
+        '    --target-branch master --target-worktree /repo --commit 73cf0e77 --json',
+        '',
+      ].join('\n'));
+      if (!helpRequested) process.exit(1);
+      return;
+    }
+    const { run: handler } = await import('./cli/integration.js');
+    return handler();
+  }
+
   if (sub === 'validate') {
     if (wantsHelp()) {
       console.log([
