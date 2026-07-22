@@ -30,6 +30,7 @@ const CORE_COMMANDS: CommandEntry[] = [
   ['clean', 'Clean job dirs, dashboard history (--ps), and orphan processes'],
   ['merge', 'Publish one standalone chain (refuses unresolved epic chains)'],
   ['end', 'Session-close publish helper; chain-aware and epic-aware with optional --pr mode'],
+  ['integration record', 'Record one xtrm.branch.integration.v1 observation for a merge made outside sp merge'],
   ['epic list', 'Enumerate epics with lifecycle state and merge readiness summary'],
   ['epic status', 'Show epic state and chain job statuses'],
   ['epic sync', 'Reconcile epic drift; dry-run unless --apply is passed'],
