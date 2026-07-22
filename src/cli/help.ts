@@ -111,7 +111,7 @@ export async function run(): Promise<void> {
     '',
     '  Output modes',
     '    specialists run <name> --prompt "..."          # human (default): formatted event summary',
-    '    specialists run <name> --prompt "..." --json   # NDJSON event stream to stdout',
+    '    specialists run <name> --prompt "..." --json   # pi-compatible NDJSON event stream to stdout',
     '    specialists run <name> --prompt "..." --raw    # legacy: raw LLM text deltas',
     '',
     '  Async patterns',

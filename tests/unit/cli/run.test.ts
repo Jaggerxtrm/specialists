@@ -3,6 +3,8 @@ import * as fs from 'node:fs';
 import * as crypto from 'node:crypto';
 import * as childProcess from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import * as tmuxUtils from '../../../src/cli/tmux-utils.js';
 import * as worktree from '../../../src/specialist/worktree.js';
 
@@ -10,7 +12,9 @@ import { BeadsClient } from '../../../src/specialist/beads.js';
 import { SpecialistLoader } from '../../../src/specialist/loader.js';
 import { SpecialistRunner } from '../../../src/specialist/runner.js';
 import { Supervisor } from '../../../src/specialist/supervisor.js';
-import { buildInjectedReviewerDiffVariables, buildInjectedWriterDiffVariables, buildTmuxLiveFeedCommand, resolveBasePin, run, type RunArgs } from '../../../src/cli/run.js';
+import { initSchema } from '../../../src/specialist/observability-sqlite.js';
+import { resolveObservabilityDbLocation } from '../../../src/specialist/observability-db.js';
+import { buildInjectedReviewerDiffVariables, buildInjectedWriterDiffVariables, buildTmuxLiveFeedCommand, resolveBasePin, run, startEventTailer, type RunArgs } from '../../../src/cli/run.js';
 
 function makeRunArgs(overrides: Partial<RunArgs> = {}): RunArgs {
   return {
@@ -154,6 +158,130 @@ describe('tmux live feed command', () => {
     expect(command).toContain('tmux live feed: %s');
     expect(command).toContain('bun /repo/src/index.ts feed "$job_id" --follow');
     expect(command).toContain('wait "$run_pid"');
+  });
+});
+
+describe('run JSON tailer', () => {
+  it('reads SQLite timeline events and emits pi-compatible NDJSON', () => {
+    const root = fs.mkdtempSync(join(tmpdir(), 'sp-run-json-'));
+    const jobsDir = join(root, '.specialists', 'jobs');
+    fs.mkdirSync(jobsDir, { recursive: true });
+    const location = resolveObservabilityDbLocation(root);
+    fs.mkdirSync(location.dbDirectory, { recursive: true });
+    const { Database } = require('bun:sqlite');
+    const db = new Database(location.dbPath);
+    initSchema(db);
+    const now = Date.now();
+    const worktreePath = join(root, 'job-worktree');
+    const status = { id: 'job-json', specialist: 'explorer', status: 'done', started_at_ms: now, model: 'nano-gpt/kimi-k2.6', backend: 'nano-gpt', worktree_path: worktreePath };
+    db.run(
+      `INSERT INTO specialist_jobs (job_id, specialist, status, status_json, updated_at_ms)
+       VALUES (?, ?, ?, ?, ?)`,
+      ['job-json', 'explorer', 'done', JSON.stringify(status), now],
+    );
+    const events = [
+      { t: now, seq: 1, type: 'run_start', specialist: 'explorer' },
+      { t: now + 1, seq: 2, type: 'text', content: 'ok', char_count: 2 },
+      { t: now + 2, seq: 3, type: 'run_complete', status: 'COMPLETE', elapsed_s: 1, output: 'ok' },
+    ];
+    for (const event of events) {
+      db.run(
+        `INSERT INTO specialist_events (job_id, seq, specialist, t, type, event_json)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        ['job-json', event.seq, 'explorer', event.t, event.type, JSON.stringify(event)],
+      );
+    }
+    db.close();
+
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(root);
+    const writes: string[] = [];
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: any) => {
+      writes.push(String(chunk));
+      return true;
+    });
+
+    const stop = startEventTailer('job-json', jobsDir, 'json', 'explorer');
+    stop();
+
+    const output = writes.join('').split('\n').filter(Boolean).map((line) => JSON.parse(line));
+    expect(output.map((event) => event.type)).toEqual([
+      'session',
+      'agent_start',
+      'message_start',
+      'message_update',
+      'message_update',
+      'message_update',
+      'message_end',
+      'agent_end',
+      'agent_settled',
+    ]);
+    expect(output[0]).toMatchObject({ type: 'session', cwd: worktreePath });
+    expect(output.find((event) => event.type === 'agent_end')).toMatchObject({
+      messages: [{ provider: 'nano-gpt', model: 'kimi-k2.6', content: [{ type: 'text', text: 'ok' }] }],
+    });
+
+    stdoutSpy.mockRestore();
+    cwdSpy.mockRestore();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('does not replay SQLite events when file fallback activates', () => {
+    vi.useFakeTimers();
+    const root = fs.mkdtempSync(join(tmpdir(), 'sp-run-json-fallback-'));
+    const jobsDir = join(root, '.specialists', 'jobs');
+    const jobDir = join(jobsDir, 'job-json');
+    fs.mkdirSync(jobDir, { recursive: true });
+    const location = resolveObservabilityDbLocation(root);
+    fs.mkdirSync(location.dbDirectory, { recursive: true });
+    const { Database } = require('bun:sqlite');
+    const now = Date.now();
+    const timeline = [
+      { t: now, seq: 1, type: 'run_start', specialist: 'explorer' },
+      { t: now + 1, seq: 2, type: 'text', content: 'ok', char_count: 2 },
+      { t: now + 2, seq: 3, type: 'tool', phase: 'start', tool: 'read', tool_call_id: 'call-1', args: { path: 'a.ts' } },
+    ];
+    fs.writeFileSync(join(jobDir, 'events.jsonl'), `${timeline.map((event) => JSON.stringify(event)).join('\n')}\n`);
+
+    const db = new Database(location.dbPath);
+    initSchema(db);
+    const status = { id: 'job-json', specialist: 'explorer', status: 'running', started_at_ms: now };
+    db.run(
+      `INSERT INTO specialist_jobs (job_id, specialist, status, status_json, updated_at_ms)
+       VALUES (?, ?, ?, ?, ?)`,
+      ['job-json', 'explorer', 'running', JSON.stringify(status), now],
+    );
+    for (const event of timeline.slice(0, 2)) {
+      db.run(
+        `INSERT INTO specialist_events (job_id, seq, specialist, t, type, event_json)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        ['job-json', event.seq, 'explorer', event.t, event.type, JSON.stringify(event)],
+      );
+    }
+    db.close();
+
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(root);
+    const writes: string[] = [];
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: any) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    const stop = startEventTailer('job-json', jobsDir, 'json', 'explorer');
+
+    vi.advanceTimersByTime(100);
+    const breaker = new Database(location.dbPath);
+    breaker.run('DROP TABLE specialist_events');
+    breaker.close();
+    vi.advanceTimersByTime(100);
+    stop();
+
+    const output = writes.join('').split('\n').filter(Boolean).map((line) => JSON.parse(line));
+    expect(output.filter((event) => event.type === 'message_update')).toHaveLength(3);
+    expect(output.filter((event) => event.type === 'tool_execution_start')).toHaveLength(1);
+
+    stdoutSpy.mockRestore();
+    cwdSpy.mockRestore();
+    vi.useRealTimers();
+    fs.rmSync(root, { recursive: true, force: true });
   });
 });
 
