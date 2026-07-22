@@ -347,15 +347,15 @@ describe('feed CLI', () => {
   it('outputs pi-compatible NDJSON with --json', async () => {
     const now = Date.now();
     createJobDir('job1', 'test', [
-      { t: now, type: 'run_start', startup_snapshot: { job_id: 'job1' } },
-      { t: now + 1, type: 'payload_breakdown', payload_breakdown: { components: [{ name: 'skill', tokens: 1200, bytes: 2048 }], totals: { tokens: 1200, bytes: 2048 } } },
-      { t: now + 2, type: 'turn', phase: 'start' },
-      { t: now + 3, type: 'message', phase: 'start', role: 'assistant' },
-      { t: now + 4, type: 'text', content: 'ok', char_count: 2 },
-      { t: now + 5, type: 'message', phase: 'end', role: 'assistant' },
-      { t: now + 6, type: 'turn', phase: 'end' },
-      { t: now + 7, type: 'run_complete', status: 'COMPLETE', elapsed_s: 5, output: 'ok' },
-      { t: now + 8, type: 'run_complete', status: 'COMPLETE', elapsed_s: 5, output: 'ok' },
+      { t: now, seq: 1, type: 'run_start', startup_snapshot: { job_id: 'job1' } },
+      { t: now + 1, seq: 2, type: 'payload_breakdown', payload_breakdown: { components: [{ name: 'skill', tokens: 1200, bytes: 2048 }], totals: { tokens: 1200, bytes: 2048 } } },
+      { t: now + 2, seq: 3, type: 'turn', phase: 'start' },
+      { t: now + 3, seq: 4, type: 'message', phase: 'start', role: 'assistant' },
+      { t: now + 5, seq: 5, type: 'text', content: 'ok', char_count: 2 },
+      { t: now + 4, seq: 6, type: 'message', phase: 'end', role: 'assistant' },
+      { t: now + 6, seq: 7, type: 'turn', phase: 'end' },
+      { t: now + 7, seq: 8, type: 'run_complete', status: 'COMPLETE', elapsed_s: 5, output: 'ok' },
+      { t: now + 8, seq: 9, type: 'run_complete', status: 'COMPLETE', elapsed_s: 5, output: 'ok' },
     ], { model: 'nano-gpt/kimi-k2.6', backend: 'nano-gpt', started_at_ms: now });
 
     process.argv = ['node', 'specialists', 'feed', '--json'];

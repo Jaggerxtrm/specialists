@@ -510,7 +510,7 @@ function printSnapshot(
     const getJobMeta = jobsDir
       ? makeJobMetaReader(sqliteClient, jobsDir)
       : (): JobMeta => ({ startedAtMs: Date.now() });
-    for (const { jobId, event } of merged) {
+    for (const { jobId, event } of [...merged].sort(compareMergedEvents)) {
       const meta = getJobMeta(jobId);
       const projector = getPiJsonProjector(piProjectors, jobId, meta);
       for (const piEvent of projectPiJson(projector, event, meta)) console.log(JSON.stringify(piEvent));
@@ -557,6 +557,9 @@ function printSnapshot(
 type MergedEvent = { jobId: string; specialist: string; beadId?: string; event: TimelineEvent };
 
 function compareMergedEvents(a: MergedEvent, b: MergedEvent): number {
+  if (a.jobId === b.jobId && a.event.seq !== undefined && b.event.seq !== undefined) {
+    return a.event.seq - b.event.seq;
+  }
   const timeDiff = a.event.t - b.event.t;
   if (timeDiff !== 0) return timeDiff;
   const jobDiff = a.jobId.localeCompare(b.jobId);

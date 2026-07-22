@@ -59361,7 +59361,7 @@ function printSnapshot(sqliteClient, merged, options2, jobsDir, piProjectors = n
   const colorMap2 = new JobColorMap;
   if (options2.json) {
     const getJobMeta2 = jobsDir ? makeJobMetaReader(sqliteClient, jobsDir) : () => ({ startedAtMs: Date.now() });
-    for (const { jobId, event } of merged) {
+    for (const { jobId, event } of [...merged].sort(compareMergedEvents)) {
       const meta = getJobMeta2(jobId);
       const projector = getPiJsonProjector(piProjectors, jobId, meta);
       for (const piEvent of projectPiJson(projector, event, meta))
@@ -59398,6 +59398,9 @@ function printSnapshot(sqliteClient, merged, options2, jobsDir, piProjectors = n
   }
 }
 function compareMergedEvents(a, b) {
+  if (a.jobId === b.jobId && a.event.seq !== undefined && b.event.seq !== undefined) {
+    return a.event.seq - b.event.seq;
+  }
   const timeDiff = a.event.t - b.event.t;
   if (timeDiff !== 0)
     return timeDiff;
