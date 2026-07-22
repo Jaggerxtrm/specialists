@@ -417,6 +417,7 @@ describe('feed CLI', () => {
       model: 'anthropic/claude-haiku',
       backend: 'anthropic',
       bead_id: 'unitAI-abc',
+      worktree_path: '/tmp/job-worktree',
       started_at_ms: Date.now() - 5000,
     });
 
@@ -432,6 +433,7 @@ describe('feed CLI', () => {
 
     const parsed = logs.filter((line) => line.trim()).map((line) => JSON.parse(line));
     expect(parsed.map((event) => event.type)).toEqual(['session', 'agent_start', 'agent_end', 'agent_settled']);
+    expect(parsed[0]).toMatchObject({ type: 'session', cwd: '/tmp/job-worktree' });
     expect(parsed[2]).toMatchObject({
       type: 'agent_end',
       messages: [{ provider: 'anthropic', model: 'claude-haiku', content: [{ type: 'text', text: 'done' }] }],

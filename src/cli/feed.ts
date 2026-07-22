@@ -256,6 +256,7 @@ function parseCursor(value: string, defaultJobId?: string): FeedCursor | undefin
 interface JobMeta {
   model?: string;
   backend?: string;
+  cwd?: string;
   beadId?: string;
   nodeId?: string;
   sessionId?: string;
@@ -281,7 +282,7 @@ function getPiJsonProjector(
   const projector = createPiJsonProjector({
     jobId,
     sessionId: meta.sessionId,
-    cwd: process.cwd(),
+    cwd: meta.cwd ?? process.cwd(),
     startedAtMs: meta.startedAtMs,
     model: meta.model,
     backend: meta.backend,
@@ -403,6 +404,7 @@ function readJobMeta(
   return {
     model: typeof status.model === 'string' ? status.model : undefined,
     backend: typeof status.backend === 'string' ? status.backend : undefined,
+    cwd: typeof status.worktree_path === 'string' ? status.worktree_path : undefined,
     beadId: typeof status.bead_id === 'string' ? status.bead_id : undefined,
     nodeId: typeof status.node_id === 'string' && status.node_id.trim() !== '' ? status.node_id : undefined,
     sessionId: typeof status.session_id === 'string' ? status.session_id : undefined,

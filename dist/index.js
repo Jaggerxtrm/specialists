@@ -52436,7 +52436,7 @@ function startEventTailer(jobId, jobsDir, mode, _specialist, _beadId) {
     projectPiJson = createPiJsonProjector({
       jobId,
       sessionId: status?.session_id,
-      cwd: process.cwd(),
+      cwd: status?.worktree_path ?? process.cwd(),
       startedAtMs: status?.started_at_ms,
       model: status?.model,
       backend: status?.backend
@@ -52460,7 +52460,9 @@ function startEventTailer(jobId, jobsDir, mode, _specialist, _beadId) {
     for (let i = linesRead;i < lines.length; i++) {
       linesRead++;
       try {
-        events.push(JSON.parse(lines[i]));
+        const event = JSON.parse(lines[i]);
+        if (event.seq === undefined || event.seq > lastSeq)
+          events.push(event);
       } catch {}
     }
     return events;
@@ -59179,7 +59181,7 @@ function getPiJsonProjector(projectors, jobId, meta) {
   const projector = createPiJsonProjector({
     jobId,
     sessionId: meta.sessionId,
-    cwd: process.cwd(),
+    cwd: meta.cwd ?? process.cwd(),
     startedAtMs: meta.startedAtMs,
     model: meta.model,
     backend: meta.backend
@@ -59255,6 +59257,7 @@ function readJobMeta(sqliteClient, jobsDir, jobId) {
   return {
     model: typeof status.model === "string" ? status.model : undefined,
     backend: typeof status.backend === "string" ? status.backend : undefined,
+    cwd: typeof status.worktree_path === "string" ? status.worktree_path : undefined,
     beadId: typeof status.bead_id === "string" ? status.bead_id : undefined,
     nodeId: typeof status.node_id === "string" && status.node_id.trim() !== "" ? status.node_id : undefined,
     sessionId: typeof status.session_id === "string" ? status.session_id : undefined,

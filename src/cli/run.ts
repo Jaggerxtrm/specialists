@@ -484,7 +484,7 @@ export function startEventTailer(
     projectPiJson = createPiJsonProjector({
       jobId,
       sessionId: status?.session_id,
-      cwd: process.cwd(),
+      cwd: status?.worktree_path ?? process.cwd(),
       startedAtMs: status?.started_at_ms,
       model: status?.model,
       backend: status?.backend,
@@ -501,7 +501,10 @@ export function startEventTailer(
     const events: TimelineEvent[] = [];
     for (let i = linesRead; i < lines.length; i++) {
       linesRead++;
-      try { events.push(JSON.parse(lines[i]) as TimelineEvent); } catch { /* malformed line */ }
+      try {
+        const event = JSON.parse(lines[i]) as TimelineEvent;
+        if (event.seq === undefined || event.seq > lastSeq) events.push(event);
+      } catch { /* malformed line */ }
     }
     return events;
   };
