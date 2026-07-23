@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * fix(feed): merge per-job streams transitively** ([5fa36e0](https://github.com/xtrm-dev/specialists/commit/5fa36e03d653a5b5a5dd3431c4802942276afeae))
 
+### Project maintenance
+
+- **Auto-refresh CHANGELOG.md — pre-push hook (xtrm-reyem.12)** ([3949e0b](https://github.com/xtrm-dev/specialists/commit/3949e0b58cf97f3c1c0a402336813e0d84775148))
+
 ## [v3.21.1] — 2026-07-22
 
 ## [v3.21.0] — 2026-07-18
