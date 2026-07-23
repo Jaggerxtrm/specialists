@@ -36,6 +36,7 @@ split_commits = false
 # message), not as a dumping ground.
 commit_parsers = [
   # ── noise: never user-facing ──────────────────────────────────────────────
+  { message = "^chore\\(changelog\\)", skip = true },    # meta-refresh commits (chase-tail)
   { message = "^checkpoint", skip = true },              # specialist chain checkpoints
   { message = "^(merge|Merge)", skip = true },           # merge commits restate their branch
   { message = "^release", skip = true },                 # version bump commits
