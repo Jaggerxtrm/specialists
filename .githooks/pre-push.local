@@ -4,3 +4,17 @@
 if command -v python3 &>/dev/null && [ -f "/home/dawid/dev/specialists/.claude/git-hooks/skill_staleness.py" ]; then
     python3 "/home/dawid/dev/specialists/.claude/git-hooks/skill_staleness.py" || true
 fi
+
+# CHANGELOG.md [Unreleased] freshness — abort push if stale (see /setup-git-cliff).
+# Bypass with SKIP_CHANGELOG_CHECK=1 if you know what you're doing.
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+if [ -z "${SKIP_CHANGELOG_CHECK:-}" ] && [ -f "$ROOT/package.json" ] && grep -q '"changelog:check"' "$ROOT/package.json"; then
+    if ! (cd "$ROOT" && npm run --silent changelog:check); then
+        echo ""
+        echo "  CHANGELOG.md [Unreleased] is out of date."
+        echo "  Run: npm run changelog"
+        echo "  Then re-stage CHANGELOG.md and re-push."
+        echo "  (Bypass one-off: SKIP_CHANGELOG_CHECK=1 git push ...)"
+        exit 1
+    fi
+fi

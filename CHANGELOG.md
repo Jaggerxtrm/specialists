@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Other changes
+
+- **Fix pi-compatible JSON output for run and feed (#206)
+
+* fix(cli): emit pi-compatible JSON events
+
+* fix(cli): preserve replay cwd and sequence** ([922d5d3](https://github.com/xtrm-dev/specialists/commit/922d5d32bc007e9ba440084109f254fdb2d99726))
+
+- **Fix per-job ordering in JSON feed replay (#207)
+
+* fix(feed): preserve per-job event sequence
+
+* fix(feed): merge per-job streams transitively** ([5fa36e0](https://github.com/xtrm-dev/specialists/commit/5fa36e03d653a5b5a5dd3431c4802942276afeae))
+
+### Project maintenance
+
+- **Auto-refresh CHANGELOG.md — pre-push hook (xtrm-reyem.12)** ([3949e0b](https://github.com/xtrm-dev/specialists/commit/3949e0b58cf97f3c1c0a402336813e0d84775148))
+
 ## [v3.21.1] — 2026-07-22
 
 ## [v3.21.0] — 2026-07-18
