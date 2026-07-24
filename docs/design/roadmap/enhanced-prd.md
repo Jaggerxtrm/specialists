@@ -2,14 +2,25 @@
 
 ## Product Requirements Document
 
-**Status:** Final consolidated implementation and decomposition PRD; includes the 13 July 2026 Beads v1.1/main capability reconciliation  
-**Date:** 13 July 2026  
+**Status:** Final consolidated implementation and decomposition PRD v3.1; includes the 13–17 July 2026 Beads v1.1/main capability reconciliations
+**Date:** 17 July 2026
 **Primary repository:** `xtrm-dev/specialists`  
 **Related repositories:** `xtrm-dev/core`, `Jaggerxtrm/xtmux`, `Jaggerxtrm/console` / Omniforge, `xtrm-dev/xtrm`  
 **Audience:** Specialists runtime maintainers, Core/launcher maintainers, xtmux maintainers, agent-orchestration engineers, Console maintainers, evaluation engineers and platform/observability engineers  
 **Scope:** Prompt and rule modernization for reviewer, executor, overthinker, seconder, test-engineer and researcher; progressive-disclosure redesign of `using-specialists`; interactive `chain-coordinator` bootstrap and assignment; chain-member identity and context reconstruction; memory retrieval policy; forensic and metrics hardening; historical and continuous evaluation; controlled model and prompt A/B testing; Console integration.
 
-**Canonical companions:** `docs/design/roadmap/specialists-roadmap.md` for the bridge-runtime roadmap; `docs/design/roadmap/chain-templates/` for executable chain shapes; `xtrm-dev/core/docs/xt-pi-role.md` for the interactive launcher; `Jaggerxtrm/xtmux/docs/observability-redesign.md` for the current local attention/messaging runtime; `xtrm/docs/channels/channels.md` for future channel semantics; and the newest dated xtrm reconciliation for cross-repository sequencing.
+**Canonical companions:** `docs/design/roadmap/specialists-roadmap.md` for the bridge-runtime roadmap; `docs/design/roadmap/chain-templates/` for executable chain shapes; `docs/design/execution-protocol-design/specialist-execution-protocol.md` for the deterministic lifecycle of one managed Specialist activation; `docs/design/execution-protocol-design/specialist-execution-protocol-ownership-decision.md` for ownership boundaries; `xtrm-dev/core/docs/xt-pi-role.md` for the interactive launcher; `Jaggerxtrm/xtmux/docs/observability-redesign.md` for the current local attention/messaging runtime; `xtrm/docs/channels/channels.md` for future channel semantics; and the newest dated xtrm reconciliation for cross-repository sequencing.
+
+## Revision 2026-07-17 v3.1 — claim pools, proxied-server parity and Dolt compatibility
+
+This revision extends the post-v1.1 contract with four changes verified on Beads `main`. They remain **unreleased** relative to stable v1.1.0 unless the installed binary or an explicitly pinned build proves them.
+
+1. **Pool-aware claim** (`849c05b`). Aliases listed in `claim.pools` may be preassigned by a dispatcher and taken through the normal atomic `--claim` path. Real assignees and unconfigured aliases retain anti-steal protection. After lease expiry, reclaim returns the issue to the unassigned pool rather than restoring the original alias.
+2. **Plain formula-name bonding** (`b740f6f`). `bd mol bond <formula-name> ...` resolves the same canonical plain names accepted by `bd formula show`, `bd mol seed`, `bd mol pour` and `bd cook`. Prefix/path workarounds are compatibility fallbacks only.
+3. **Expanded proxied-server CLI support** (`3ecbf5b`). `search`, `assign`, `priority`, `note`, `tag`, `edit`, `state`, `state list`, `link`, `q`, `todo`, `children` and `gate list` have proxied implementations. This is command-specific parity, not full formula, molecule, graph or gate-lifecycle parity.
+4. **Dolt v2.2.0 pin on current main** (`3fea705`). Dolt 2.2.0 is required only for Beads builds at or after this unreleased commit; it is not retroactively required for stable v1.1.0. The Beads binary, Dolt client/driver and server image are one compatibility tuple.
+
+These changes refine `WP-G02`, `WP-C05` and the interactive/recovery capability contracts. They add no work-package family or critical-path edge.
 
 ## Consolidation record
 
@@ -329,7 +340,11 @@ A repository audit performed on 13 July 2026 found that Beads now owns more of t
 | migration content hashes, designated migrator, smart remote migration/adoption and recovery guidance | stable v1.1 line | add one explicit multi-clone upgrade runbook; agents do not migrate independently |
 | `bd memories [query]`, `bd recall`, guarded `bd remember` ergonomics | stable/current | reuse before adding a Specialists memory wrapper |
 | claim TTL, `bd heartbeat`, `bd reclaim`, owner-safe unclaim | post-v1.1 `main` / unreleased | design integration now; activate only after released minimum version or pinned compatibility validation |
+| configured `claim.pools` and pool-aware atomic claim/reclaim | Beads `main` at `849c05b` / unreleased | use only after capability probing; preserve real-owner anti-steal protection and return expired pool claims to unassigned |
+| plain-name `bd mol bond` | Beads `main` at `b740f6f` / unreleased | verify against the canonical formula name; retain prefixes/paths only as old-binary fallbacks |
 | `bd formula schema --json`, discoverable verified primitives and smoke fixtures | post-v1.1 `main` / unreleased | use for formula authoring/validation after release or pin; never rely on declared-but-unwired primitives |
+| selected proxied-server commands | Beads `main` at `3ecbf5b` / unreleased | record support per command; do not infer full backend parity |
+| Dolt v2.2.0 compatibility tuple | Beads `main` at `3fea705` / unreleased | require only for that build line; keep stable v1.1.0 on its separately verified matrix |
 | `bd history <id> --events` and issue-scoped `bd gate list <id>` | post-v1.1 `main` / unreleased | add as future evidence/query surfaces behind capability checks |
 | PostgreSQL, MySQL and SQLite storage backends behind a conformance seam | post-v1.1 `main` / unreleased | record as architecture watch item; retain Dolt for this bridge runway |
 | differential conformance/oracle catalog | post-v1.1 test infrastructure | reuse the methodology for Specialists telemetry, CLI and runtime refactors |
@@ -339,13 +354,16 @@ A repository audit performed on 13 July 2026 found that Beads now owns more of t
 1. **Beads is authoritative for dependency readiness.** Specialists may persist resolved chain shape, job linkage, evidence and UI projections, but it must not maintain a competing blocker-resolution engine. `sp chain` combines its chain/job state with `bd ready --mol`, `bd ready --gated` and `bd gate` results.
 2. **Atomic graph creation becomes the default decomposition handoff.** The planning agent emits a versioned `bead-graph-plan.json`; the operator runs `bd create --graph ... --dry-run`; composition/reviewer validates the preview; only then is the graph applied atomically.
 3. **Structural fan-in uses native gates.** `all-children` and `any-children` may coordinate deterministic completion. They do not provide semantic review, release authority, quorum judgment or Channels behavior.
-4. **Claim ownership and worktree ownership remain distinct.** Native claim leases describe who owns a Bead contract. `merge-slot`/worktree lease describes who may write or integrate in a checkout. Neither replaces the other.
+4. **Claim ownership and worktree ownership remain distinct.** Native claim leases describe who owns a Bead contract. Configured `claim.pools` describe dispatcher preassignment, not durable worker identity. `merge-slot`/worktree lease describes who may write or integrate in a checkout. Neither replaces the other. Coordinators and recovery code must never take over a live owner through `unclaim; claim`; they coordinate with the owner or reclaim only an eligible expired lease.
 5. **`step_completed` shrinks further.** It records visibility, evidence and recommendation only. It neither computes a parallel readiness DAG nor auto-resumes peers.
 6. **Memory work starts with a gap analysis.** A Specialists wrapper is justified only for missing provenance, supersession, ranking, token budgets, memory types or telemetry—not for basic search/recall already provided by Beads.
 7. **Dolt remains the bridge backend.** Alternative backends are not adopted during this program because history, time travel, merge and remote sync remain useful. A later ADR may reconsider this separately.
 8. **Minimum-version and capability checks are explicit.** Stable features may be required by version; unreleased features require a pinned binary/commit and compatibility suite. No agent assumes `main` behavior merely because the design mentions it.
 9. **Beads upgrades are serialized.** For remote-backed/multi-clone databases, one designated migrator performs schema migration after backup and synchronization; other clones adopt the migrated state.
 10. **Differential testing is preferred for contract-preserving refactors.** Capture current canonical behavior, execute the same scenario corpus against the candidate, canonicalize volatile fields and review only intentional deltas.
+11. **Pool assignment is dispatch metadata, not durable worker identity.** Configured aliases use the native atomic claim path; expired pool claims return to unassigned, and live-owner takeover is never implemented as `unclaim; claim`.
+12. **Deployment support is command-specific.** Embedded Dolt, direct Dolt SQL-server and proxied-server each require an explicit capability/fallback matrix; selected proxied commands do not establish full parity.
+13. **Dolt compatibility is version-paired.** A build at or after `3fea705` requires Dolt v2.2.0 across client/driver/server fixtures; stable v1.1.0 retains its own verified matrix.
 
 ### 0.5.3 Capability snapshot required before decomposition
 
@@ -356,13 +374,15 @@ bd version
 bd ready --help
 bd create --help
 bd formula schema --json        # when supported
+bd mol bond --help
+bd config get claim.pools
 bd gate list --help
 bd history --help
 bd memories --help
 bd migrate --help
 ```
 
-The resulting capability matrix records `supported | unsupported | behavior-needs-verification`, minimum version/commit and fallback behavior. It becomes an input to every Beads-dependent root Bead.
+The resulting capability matrix records `supported | unsupported | behavior-needs-verification` for each of embedded Dolt, direct Dolt SQL-server and proxied-server, plus minimum version/commit, required Dolt version and fallback behavior. It becomes an input to every Beads-dependent root Bead. The matrix must independently probe ready/claim/lease, formula/molecule, graph creation, gate create/check/resolve, history and memory; broad claims such as “proxied-server supported” are insufficient.
 
 ## Document purpose
 
@@ -409,6 +429,7 @@ The required result is not merely shorter prompts. The required result is a meas
 8. Console provides historical, live and experiment-specific evaluation surfaces without becoming a second telemetry producer.
 9. Interactive role sessions receive current task context and mandatory rules as a first user assignment, never buried inside the long-lived system prompt.
 10. The interactive coordinator applies future chain-coordinator judgment duties through current Specialists, Beads and xtmux primitives without pretending that xtmux is Substrate or Channels.
+11. Every managed Specialist activation runs through a versioned deterministic shell that validates contract readiness, records policy acknowledgement, types planning and evidence, and owns commit/result/Bead-note/notification/cleanup finalization.
 
 # 1. Executive summary
 
@@ -798,6 +819,19 @@ Scrutiny floors, required gates, path matching, worktree boundaries, output-sche
 
 CLI manuals and lengthy playbooks belong in focused skills or tool descriptions, loaded only when needed.
 
+### Deterministic shell, typed agentic core
+
+One Specialist activation is not a free-form prompt followed by a terminal result. It executes through a versioned protocol:
+
+```plaintext
+runtime PREPARE
+→ typed agentic PLAN
+→ typed agentic EXECUTE
+→ runtime FINALIZE
+```
+
+The runtime owns structural contract validation, mandatory-rule receipts, phase applicability, plan/evidence/schema validation, Git finalization, result persistence, Bead handoff, parent notification and cleanup. The model owns semantic readiness judgment, conditional memory choice, local planning, role work and evidence interpretation. A completed process is not a satisfied chain step until the validated result satisfies the step contract.
+
 ### Identity pushed, content pulled
 
 The runtime should inject compact chain identity, member indexes and evidence pointers. The specialist should retrieve substantive upstream content only when its role requires it.
@@ -1148,6 +1182,90 @@ The coordinator-specific guidance must cover:
 - close-time evidence, clean-git verification, follow-up Beads and memory consideration.
 
 Permission/tool enforcement for interactive roles is not part of this runway. Role-boundary violations are measured in evals and remain prompt/skill discipline until Substrate provides the proper capability model.
+
+## 5.13 Deterministic Specialist execution protocol
+
+Every managed Specialist activation shall use `specialists.execution.v1` or a compatible versioned successor.
+
+Canonical phase sequence:
+
+```plaintext
+PREPARE
+  resolve Bead/root/step/chain context at bounded depth
+  validate the configured seven-field contract profile
+  block on structural NOK
+  produce semantic readiness READY | UNCLEAR | INVALID
+  resolve and fingerprint mandatory rules
+  record typed rule acknowledgement/conflicts
+  resolve capabilities and skills
+  optionally decide and perform memory retrieval
+
+PLAN
+  produce a typed activation-local execution plan
+  validate plan scope, permissions, evidence producers and validation
+
+EXECUTE
+  perform the bounded role work
+  record material plan deviations
+  collect typed evidence
+
+FINALIZE
+  validate result schema and required evidence
+  validate Git state and create the required commit for writer profiles
+  persist the authoritative result
+  append the structured Bead handoff automatically
+  send the bounded typed parent message automatically
+  emit forensic evidence
+  release activation-owned resources
+```
+
+The default seven-field change-contract readiness profile is:
+
+```plaintext
+problem
+scope
+non_goals
+dependencies_or_inputs
+deliverables
+validation
+acceptance
+```
+
+`type` and `scrutiny` are separately required metadata. A step contract resolves the role-specific equivalents: mandate, inputs, outputs, scope, non-goals, validation and downstream handoff obligation.
+
+### Ownership
+
+```plaintext
+Specialists runtime
+  common phase state machine, validation and automatic finalization
+
+Specialist definition
+  selects an execution profile; declares permissions, memory/plan/commit policy,
+  output schema and role-specific evidence requirements
+
+root/step Bead
+  task-specific contract and authorized scope
+
+chain template / resolved chain
+  participant topology, dependencies and gates
+
+chain reducer
+  derives runnable/satisfied state from persisted validated evidence
+```
+
+The full lifecycle must not be copied into every Specialist JSON or every formula. Definitions select reusable profiles and override only demonstrated role differences.
+
+### Required correctness properties
+
+- Contract NOK cannot proceed to planning.
+- `UNCLEAR` waits/escalates rather than executing speculatively.
+- Rule acknowledgement is not treated as compliance proof.
+- Conditional memory search may be skipped with a recorded reason.
+- A local plan cannot widen Bead scope or role capability.
+- Missing required evidence prevents successful finalization.
+- Commit, result, Bead note and parent message are runtime-owned and idempotent.
+- Notification failure does not rewrite the job verdict.
+- Chain satisfaction consumes the validated result, not raw model completion.
 
 # 6. Workstream B — Chain participant identity and context reconstruction
 
@@ -2933,10 +3051,10 @@ Scrutiny defaults:
 |---|---|---|---|---|---|---|
 | `WP-G00` | Patch canonical roadmap with Track C, dependency rules, status corrections and PRD reference | specialists | none | docs-specialists | doc-sync or code-quick | medium |
 | `WP-G01` | Add historical-snapshot banner to 2026-06-21 reconciliation and create new dated reconciliation | xtrm | none | docs-xtrm | doc-sync | medium |
-| `WP-G02` | Produce binding Beads capability/reuse decision covering merge-slot, gate, swarm/molecule, ready `--mol/--gated/--claim/--explain`, graph create/dry-run, fan-in gates, claim leases, formula schema, history events, memory and backend capabilities; record minimum version/pin and fallbacks | specialists | none | architecture-gate | research-only + premortem | high |
+| `WP-G02` | Produce binding Beads capability/reuse decision across embedded, direct-server and proxied-server modes: merge-slot, gates versus structural fan-in, ready FIFO, custom-active and pool-aware claim, lease/reclaim and anti-steal behavior, plain-name `mol bond`, graph create/dry-run, metadata, history, memory, Beads↔Dolt compatibility and backend capabilities; record minimum version/pin, required Dolt version and fallbacks | specialists | none | architecture-gate | research-only + premortem | high |
 | `WP-G03` | Register this PRD in roadmap/MOC indexes and map all acceptance criteria to WPs | specialists + xtrm | G00,G01 | docs-integration | doc-sync | medium |
 
-`WP-G02` is a hard planning gate for chain-foundation implementation, not for telemetry baselining. Its output includes the local Beads capability snapshot, stable-versus-pinned adoption table and the decision on which Specialists code paths are deleted or reduced through native reuse.
+`WP-G02` is a hard planning gate for chain-foundation implementation, not for telemetry baselining. Its output includes the installed-version and deployment-mode capability matrices, stable-versus-pinned adoption table, Beads↔Dolt compatibility tuple, compatibility fixtures, fallbacks and the decision on which Specialists code paths are deleted or reduced through native reuse.
 
 ## 15.3 Telemetry-integrity packages
 
@@ -2985,6 +3103,20 @@ Scrutiny defaults:
 
 Role prompt files are parallel-safe only after `WP-P02` and `WP-P04` freeze shared contracts. Each role owns its own specialist JSON and role-specific tests; one integration owner handles shared mandatory-rule/index edits.
 
+## 15.5A Deterministic Specialist execution packages
+
+| WP | Deliverable | Dependencies | Parallel lane | Scrutiny |
+|---|---|---|---|---|
+| `WP-XP01` | `specialists.execution.v1` schemas, reusable profiles, protocol state and pure reducer/event catalog | T06, P02 interfaces | execution-protocol-core | critical |
+| `WP-XP02` | Context resolver, seven-field structural contract gate and semantic readiness result | XP01, C04/C06 where chain context exists | execution-preflight | critical |
+| `WP-XP03` | Mandatory-rule delivery receipt/acknowledgement plus conditional memory decision and telemetry | XP01, M01 | execution-policy | high |
+| `WP-XP04` | Typed activation-local plan, scope/capability validator and plan-deviation evidence | XP01, XP02 | execution-plan | high |
+| `WP-XP05` | Evidence-requirement catalog and validators, including conditional GitNexus/current-diff evidence | XP01, T07 | execution-evidence | high |
+| `WP-XP06` | Central commit → result → Bead note → parent message → forensic → cleanup finalization with idempotency | XP01, P02, notification contract, lifecycle audit closure | execution-finalize | critical |
+| `WP-XP07` | `specialist-execution-protocol-v1` simulation, failure-injection and role-profile rollout suite | XP01–XP06, E03 | execution-eval | critical |
+
+`WP-XP01`–`XP05` may run in observe/shadow mode while unrelated audit closure continues. `XP06` enforcement and broad profile promotion require the relevant Git, lifecycle and notification correctness blockers to be closed.
+
 ## 15.6 Critical chain-foundation packages
 
 | WP | Deliverable | Dependencies | Parallel lane | Scrutiny |
@@ -2993,7 +3125,7 @@ Role prompt files are parallel-safe only after `WP-P02` and `WP-P04` freeze shar
 | `WP-C02` | Persisted resolved chain shape with ordered steps/gates/status/job pointers | G02 | chain-state | critical |
 | `WP-C03` | `sp chain review/approve/insert` using resolved shape plus native Beads graph/gate/readiness primitives; no duplicate blocker engine | C02,G02 | chain-composition | critical |
 | `WP-C04` | Authoritative `kind:step`, root/step resolution and semantic-edge query helpers | G02 | chain-graph | high |
-| `WP-C05` | Chain-driven dispatch/workspace resolution using `bd ready --mol/--gated/--claim` as readiness/claim authority, with deprecation bridge for job/worktree flags | C01–C04 | chain-dispatch | critical |
+| `WP-C05` | Chain-driven dispatch/workspace resolution using native FIFO ready/claim authority, configured `claim.pools`, lease-aware claims and partial-batch reconciliation; preserve anti-steal semantics and distinct pool, issue, worktree and merge-slot ownership; never use `unclaim; claim` as takeover; include the job/worktree flag deprecation bridge | C01–C04 | chain-dispatch | critical |
 | `WP-C06` | Deterministic `<chain-context>` envelope with completeness flags and upstream pointers | C02,C04,T06 | chain-context | high |
 | `WP-C07` | Shared chain-participant rule and role-specific identity clauses | C06,P04 | chain-policy | high |
 | `WP-C08` | Structured handoff extension for decisions, inputs consumed and downstream attention | P02,C06 | handoff-contract | high |
@@ -3057,7 +3189,7 @@ Console does not own evaluator execution or canonical scores. It reads/materiali
 | `WP-IC07` | Add startup `starting → agent.ready → idle` handshake for Pi and Claude | core + xtmux | none | readiness | critical |
 | `WP-IC08` | Extend xtmux handoff for an existing prompt file, readiness wait and monitor integration | xtmux | IC07 | assignment-delivery | high |
 | `WP-IC09` | Integrate Core direct `--bead` auto-assignment through Specialists renderer + xtmux secure delivery | core | IC05,IC07,IC08 | role-launcher | critical |
-| `WP-IC10` | Implement preheated standby bootstrap, `role.ready`, later `xt role assign` and one-epic lifecycle | specialists + core + xtmux | IC05,IC07,IC08 | role-preheat | high |
+| `WP-IC10` | Implement preheated standby bootstrap, `role.ready`, later `xt role assign` and one-epic lifecycle; use native claim or configured pool semantics, preserve real-owner anti-steal protection, reconcile partial claims, never emulate takeover with `unclaim; claim`, and refuse unsafe `.beads/` or ambiguous shared-server identity | specialists + core + xtmux | IC05,IC07,IC08 | role-preheat | high |
 | `WP-IC11` | Add coordinator message vocabulary, conflict-matrix artifact and peer/orchestrator protocol | specialists + xtmux docs/tests | IC04 | coordinator-protocol | high |
 | `WP-IC12` | Add deterministic/live coordinator evals, Pi/Claude/direct comparison and no-leak tests | specialists + core + xtmux | IC02–IC11,E03 | coordinator-eval | high |
 | `WP-IC13` | Integrate coordinator with resolved chain shape/composition APIs and Beads-native readiness/gate evidence rather than manual DAG reconstruction | specialists | C02,C03,C04,IC04 | coordinator-chain-api | critical |
@@ -3283,6 +3415,17 @@ A lane may develop ahead on a feature branch, but it may not be promoted across 
 
 **Exit criteria:** the generated output contract is the single machine-readable SSOT; role-aware injections pass regression fixtures.
 
+## Phase 4A — Deterministic Specialist execution protocol
+
+1. Complete `WP-XP01`–`WP-XP03` in observe/shadow mode.
+2. Add structural contract blocking and semantic waiting behavior.
+3. Complete typed planning and evidence requirements through `WP-XP04`–`WP-XP05`.
+4. Centralize automatic finalization through `WP-XP06` only after lifecycle/Git/notification audit blockers close.
+5. Run `WP-XP07` before promoting any role from legacy to enforced profile.
+6. Remove superseded prompt prose only after the equivalent runtime invariant is enforced.
+
+**Exit criteria:** one writer and one read-only role complete the protocol end to end; NOK contracts cannot execute; plans cannot widen scope; required evidence and commit policy gate finalization; result, Bead note and parent message are persisted/emitted exactly once; replay fixtures pass.
+
 ## Phase 5 — Role prompt experiments
 
 1. Run `WP-P05` first for overthinker/researcher.
@@ -3448,6 +3591,22 @@ The Epics below are capability groupings. For actual Beads decomposition and par
 
 # 18. Acceptance criteria
 
+### Deterministic Specialist execution
+
+- Every managed run records protocol version and selected execution profile.
+- The configured seven-field contract profile is structurally validated before planning.
+- A structurally NOK contract cannot proceed.
+- Semantic `UNCLEAR` enters waiting/escalation rather than speculative work.
+- Effective mandatory rules are fingerprinted and explicitly acknowledged; acknowledgement is not treated as compliance proof.
+- Conditional memory search is either performed with recorded provenance or skipped with a recorded reason.
+- Required planning emits a schema-valid bounded local plan.
+- Plans outside role capability or Bead scope are rejected.
+- Required evidence is typed, attributable and current.
+- Writer finalization stages only authorized paths and creates the required commit; read-only profiles cannot commit.
+- Authoritative result persistence, Bead-note append and parent notification are idempotent.
+- Notification failure does not alter the job verdict.
+- Terminal cleanup releases only activation-owned resources and preserves branch/worktree/result/evidence.
+- Chain progression consumes the validated result and step satisfaction, not process completion alone.
 
 ## Beads capability reuse
 
@@ -3458,6 +3617,11 @@ The Epics below are capability groupings. For actual Beads decomposition and par
 - Structural fan-in uses native Beads waits/gates where sufficient; semantic review remains in Specialists.
 - Bead claim lease and worktree/merge-slot lease are modeled as separate ownership dimensions.
 - No unreleased Beads capability becomes mandatory without compatibility tests and operator approval.
+- Canonical plain formula names resolve consistently through `bd formula show`, `bd mol seed`, `bd mol pour`, `bd cook` and, when supported, `bd mol bond --dry-run`; legacy prefix/path workarounds are not policy.
+- Configured `claim.pools` aliases use the atomic claim path; real assignees and unconfigured aliases retain anti-steal protection.
+- Expired pool claims return to the unassigned pool, and no coordinator/recovery path uses `unclaim; claim` for live-owner takeover.
+- Embedded, direct-server and proxied-server compatibility is recorded per command; unsupported orchestration-critical proxied commands have an explicit fallback or block promotion.
+- A build at or after `3fea705` is validated with Dolt v2.2.0 as one client/server compatibility tuple; stable v1.1.0 retains its separately verified matrix.
 - Dolt remains the selected backend during the bridge runway.
 - Remote-backed upgrades follow a backup, designated-migrator and adoption runbook.
 
@@ -3595,8 +3759,14 @@ The Epics below are capability groupings. For actual Beads decomposition and par
 - Keep monorepo migration, Stage 0, Substrate and Channels outside the critical path.
 - Keep xtmux as a bridge attention/delivery runtime, not a semantic scheduler or authority layer.
 - Use Beads-native molecule readiness, atomic graph creation, fan-in gates and claims before adding Specialists equivalents.
+- Use configured `claim.pools` for dispatcher preassignment; preserve anti-steal protection for real owners and unconfigured aliases.
+- Never implement live-owner takeover as `unclaim; claim`; coordinate with the owner or reclaim an eligible expired lease.
+- Treat `bd mol bond` plain-name resolution as canonical when the installed build includes `b740f6f` or a release containing it.
+- Treat proxied-server support as a per-command compatibility matrix, not a backend-wide parity claim.
+- Require Dolt v2.2.0 only for Beads builds at or after unreleased `3fea705`; do not apply that minimum retroactively to stable v1.1.0.
 - Keep Dolt as the Beads backend during the bridge runway; alternative backends remain a later ADR/watch item.
 - Treat post-v1.1 claim leases, formula schema and history-event features as release/pin-gated capabilities, not assumptions.
+- The common Specialist lifecycle is owned once by the Specialists runtime; Specialist definitions select profiles, step contracts supply task-specific obligations, and chain templates remain topology definitions rather than generic per-node workflow scripts.
 
 ## 20.2 Decisions required before the affected package is dispatched
 
@@ -3623,6 +3793,20 @@ The Epics below are capability groupings. For actual Beads decomposition and par
 - Final Channels storage ownership and Stage 0 implementation details.
 - Whether dated `_meta` reconciliations remain one-time snapshots or become an append-only series.
 - Final retirement boundary between `step_completed`, xtmux bridge notifications and Channel scheduler intent.
+
+---
+
+## Revision summary — 17 July 2026
+
+The PRD now treats claim pools as dispatch metadata over the native atomic claim path, prohibits live-owner takeover through `unclaim; claim`, requires formula plain-name bond compatibility, records CLI support separately for embedded/direct/proxied deployment modes and pins Dolt v2.2.0 only to the corresponding unreleased Beads main line. Existing work packages absorb the changes; no new package family or critical-path edge was introduced.
+
+## Program tracking and operational companion
+
+- **Jira program:** [KAN-115 — Specialists modernization](https://xtrmxt.atlassian.net/browse/KAN-115)
+- **Operational companion:** [Specialists Modernization — Manuale operativo v3.1](https://xtrmxt.atlassian.net/wiki/spaces/KAN/pages/14319617)
+- **Freshness baseline:** reconciled on 17 July 2026 against this PRD v3.1 and the post-Beads-v1.1 contract.
+
+KAN-115 tracks implementation status and ownership. This page remains the normative product and architecture contract; where Jira summaries or the operational companion conflict with it, this PRD prevails.
 
 # Appendix A — Proposed core system prompts
 
@@ -3949,6 +4133,10 @@ Planning-only mandate:
 - Do not edit production code.
 - Do not begin implementation.
 - Inspect the installed Beads version, `bd ready/create/formula/gate/history/memories/migrate` capabilities, the live formula catalog and current open/closed Beads before creating duplicates.
+- Produce a per-command deployment-mode matrix for embedded Dolt, direct Dolt SQL-server and proxied-server; do not infer full parity from selected command support.
+- Record the Beads↔Dolt compatibility tuple; require Dolt v2.2.0 only for builds at or after `3fea705`.
+- Verify plain-name formula resolution with `bd mol bond <formula-name> <target> --dry-run` when supported; do not institutionalize legacy name prefixes.
+- Use configured `claim.pools` where required, preserve real-owner anti-steal behavior and never use `unclaim; claim` as a takeover shortcut.
 - Reconcile existing roadmap Beads to PRD work packages rather than blindly creating a second backlog.
 - Preserve every WP-* identifier from Section 15.
 - Produce `bead-graph-plan.json`, run `bd create --graph --dry-run`, then create or update program/workstream epics and root change Beads only after review.
@@ -3970,7 +4158,11 @@ Required outputs:
 7. Acceptance-criterion coverage report.
 8. Open decisions that genuinely block dispatch.
 9. Beads capability/version report and graph dry-run result.
-10. Exact next dispatch commands or xtmux handoff pointers, but do not execute them.
+10. Beads capability/version report and graph dry-run result.
+11. Ready/claim/pool/lease, graph, metadata, memory, migration and worktree compatibility report.
+12. Embedded/direct/proxied per-command compatibility and fallback matrix.
+13. Beads↔Dolt version compatibility tuple.
+14. Exact next dispatch commands or xtmux handoff pointers, but do not execute them.
 
 Stop and report rather than inventing a design when canonical documents conflict materially.
 ```

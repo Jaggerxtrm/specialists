@@ -1,0 +1,909 @@
+ChatGPT Pro
+
+
+
+
+
+Elaborato per 11m 34s
+Errore durante il caricamento dell'app
+Failed to fetch template
+
+Riprova
+Errore durante il caricamento dell'app
+Failed to fetch template
+
+Riprova
+Errore durante il caricamento dell'app
+Failed to fetch template
+
+Riprova
+Errore durante il caricamento dell'app
+Failed to fetch template
+
+Riprova
+This is the read-only audit report based on the current repository manifests, changelogs, roadmaps, Confluence PRD, operational manual, and Jira program structure.
+
+Cross-repository Specialists modernization audit
+Audit date: 17 July 2026
+Repositories: xtrm-dev/specialists, xtrm-dev/core, Jaggerxtrm/xtmux
+Program: KAN-115 — Specialists modernization
+Status: decision report; no repository, Jira, Confluence, or backlog mutations performed
+
+1. Executive finding
+The modernization program is not in a clean “not started” state. A significant portion of the interactive assignment, prompt composition, progressive-disclosure, runtime-origin, tmux identity, durable message transport, and journal contracts was implemented on 14–15 July 2026, after much of the PRD baseline was formulated.
+
+The canonical PRD remains useful for the target architecture and sequencing, but its implementation baseline and Appendix I backlog reconciliation are already stale. The PRD itself requires existing work to be classified as KEEP, REFINE, MERGE, RESEQUENCE, REPLACE, or ADD; several entries now need stronger actions: COMPLETED, SUPERSEDED, or NOT_PLANNED.
+
+The correct first action is therefore not to dispatch KAN-116–KAN-124 as currently written. It is to perform a short reconciliation wave that closes completed legacy work, reduces partially completed epics to their residual scope, separates unrelated implementation tracks, and updates the PRD and operational manual to the current repository state.
+
+2. Evidence limitations
+The Confluence page titled open-issues.json currently contains no body content. Both its searchable text and fetched Markdown/ADF body are empty. Consequently, I could not perform an issue-by-issue transformation of the actual JSON export.
+
+GitHub’s PR-list and PR-detail connector endpoints were intermittently returning upstream 502 errors. The repository file endpoint remained available, so this audit used the current package manifests, generated changelogs, repository roadmaps, explicit PR references embedded in those changelogs, and current implementation guidance. This is sufficient for freshness and backlog disposition, but it is not yet a review-discussion audit of every individual PR comment and diff.
+
+3. Current repository baseline
+Repository	Current manifest	PRD-era baseline	Audit result
+specialists	3.20.0	3.18.2	PRD baseline is materially stale
+core	0.10.6	0.10.2	Interactive launcher contract has changed
+xtmux	0.1.0	SQLite V2 baseline	Most previously identified viewer/integration gaps have landed
+The Specialists package is now 3.20.0, not 3.18.2. Core is now 0.10.6, not 0.10.2. xtmux has a formal package and CLI contract at 0.1.0, with its SQLite-backed observability and coordination implementation shipped in the repository.
+
+3.1 Specialists
+The scope represented by the known unitAI-6639v children is effectively complete.
+
+sp render-task now exposes the canonical task-side renderer. The global skill paths were repaired and missing declared skills now hard-fail. Literal variables inside bead content are no longer re-expanded. using-specialists was split from a 1,416-line eager payload into a 256-line router with on-demand references. Role-envelope parity and progressive-disclosure behaviour were explicitly evaluated. The changelog records closure of unitAI-6639v.1, .4, .2.1, .2.2, .3, and .5.
+
+Version 3.20.0 also implemented the runtime-origin bridge: direct pane-to-job binding, propagated origin for background launches, parent-job lineage, root-runtime-origin inheritance, forensic spawned_by links, high-cardinality label guards, sp ps exposure, and evidence-only lineage reconstruction.
+
+The residual runtime-origin work is narrow. The Specialists changelog deferred one live integration test until xtmux context --current --json was available. That xtmux contract has now landed, so unitAI-z8uli should be reduced to a real-host cross-repository integration smoke, redaction verification, and closure—not treated as a new implementation epic.
+
+The root ROADMAP.md is no longer safe as an active planning source. It still proposes a memory-curator specialist, Dolt-backed run summaries replacing flat directories, eager SessionStart injection, automatic dependency-output injection, and architecture based primarily on status.json. The current PRD instead requires pull-based memory and the operational manual explicitly says not to create a memory-curator specialist.
+Disposition: archive or fully reconcile the Specialists roadmap before using any of its issue IDs for new work.
+
+3.2 Core
+Core has already implemented most of the old xtrm-k2ufi transport scope.
+
+The launcher now obtains the rendered bead task and explicit skills from Specialists. More importantly, the implementation deliberately replaced the temporary file-transport design: Specialists owns turn-one composition; the launcher sends the identity system prompt and user assignment directly; .xtrm/role-*-prompt.md, .xtrm/role-*-task.md, @agent_prompt_file, and XTMUX_AGENT_PROMPT_FILE were removed. Pi starts with --no-skills, and requested skills are forced through the runtime-specific turn-one prefix. Preflight validation happens before worktree creation.
+
+Core also removed roughly 35 KB of eager project-intelligence context from every Pi provider request. Architecture, rules, documentation and skill bodies are now represented by pointers or loaded on demand; only the small synthesized memory and using-xtrm operating guidance remain eager.
+
+The launcher subsequently added literal-prefix preservation, trusted tmux transport hardening, declared-skill fallback handling, a bounded readiness wait, and a bounded wrapper-payload wait.
+
+This supersedes the PRD’s proposed “secure prompt-file pointer delivery” as the primary contract. The current no-file turn-one composition is cleaner and has already received HOME-leak, byte-ceiling, readiness, and parity protection. The PRD and manual should describe the implemented contract rather than reopening the previous transport design.
+
+The Core ROADMAP.md is also unsuitable as a program backlog. It contains extensive legacy skill plans, old version assumptions, old product boundaries, and long-range speculative features unrelated to the Specialists modernization program.
+
+Disposition: close or supersede the old transport epic, retain only a narrowly defined preheated-session/reuse capability if that remains desired, and remove the Core roadmap from KAN-115 authority.
+
+3.3 xtmux
+The July 14 xtmux-gaps.md document identified topology JSON, a journal cursor, agent-instance identity, pane-to-job binding, readiness, handoff delivery, an SSH/stdio bridge, and activity spans as gaps.
+
+All but the final telemetry-enhancement class have now substantially landed:
+
+Previously identified gap	Current evidence	Audit disposition
+Stable host and agent-instance identity	host_id and rotating agent_instance_id shipped	Completed
+Current-pane identity contract	xtmux context --current --json shipped	Completed
+Complete topology snapshot	xtmux topology --json shipped	Completed
+Bounded pane preview	xtmux pane capture --json shipped	Completed
+Durable journal cursor	log query --after-id and log follow --after-id shipped	Completed
+Readiness-aware delegation	Durable, idempotent delegation shipped	Completed
+SSH observation bridge	Read-only NDJSON bridge over SSH shipped	Completed
+Reply correlation	Explicit correlated replies and requester-owned waits shipped	Completed
+SQLite V2 cutover	V2 is default-on	Completed
+Structured activity spans	No equivalent completion evidence found	Retain
+These capabilities are recorded directly in the current changelog, including the relevant xtmux-j46 and xtmux-3xs work. The V2 monitor, telemetry and audit domains, shadow cutover, retention support and final default-on switch are also complete.
+
+The existing xtmux-gaps.md should therefore become a design-history and acceptance document, with each implemented section marked as landed. It should not continue generating duplicate “missing capability” issues.
+
+The remaining xtmux work should be limited to structured activity spans, any still-incomplete handoff lifecycle edge cases, Console materializer consumption, reconnect testing, and later mutation/control functions only after the read-only viewer is proven.
+
+4. Recommended disposition of legacy issues
+Existing item or scope	Decision	Reason
+unitAI-6639v	Close after parent-child verification	Known children covering renderer, skills, progressive disclosure, parity and literal bead content are explicitly closed
+xtrm-k2ufi	Replace old contract; close historical epic	File transport and positional assumptions were superseded by Specialists-owned turn-one composition
+Residual preheated assignment	Add narrowly scoped issue	No conclusive evidence that reusable preheated sessions are complete
+xtmux-3xs SQLite V2 program	Close/archive as completed	V2 domains, migration, shadow mode, retention and default-on cutover landed
+Landed xtmux-j46.* children	Close completed children	Identity, topology, journal, pane capture, readiness and SSH bridge are implemented
+unitAI-z8uli	Reduce to integration-validation closure	Runtime-origin and lineage contracts are implemented; one real-host gate remains
+unitAI-c64 memory curator	Close as not planned	Conflicts directly with the canonical pull-based three-lens memory design
+unitAI-6op Dolt run summaries	Replace	Current authority is per-repository observability.db; future work is migration/projection into state.db, not a competing run store
+unitAI-750 automatic dependency-output injection	Replace	Superseded by typed chain context, explicit upstream evidence pointers and pull-based detail retrieval
+unitAI-f3t eager SessionStart injection	Close or redefine	Conflicts with progressive disclosure and the removal of eager project context
+Specialists root roadmap	Archive and replace	Contains completed, contradicted and obsolete architecture
+Core root roadmap	Remove from modernization authority	Primarily a legacy general-skills roadmap
+xtmux-gaps.md	Mark implemented sections and preserve as rationale	Most MVP blockers have already landed
+No historical issue should be silently deleted. Completed or superseded issues should retain their original identity, implementation evidence and replacement reference.
+
+5. Jira audit
+KAN-115 currently groups the program into KAN-116 through KAN-124, with KAN-125 as a supporting TypeScript 7 track. The conceptual coverage is mostly correct, but the issues are too broad for sprint execution and several now mix completed and unimplemented work.
+
+KAN-116 — Program baseline and Beads reuse
+Keep, but rewrite as the immediate reconciliation gate.
+
+It should no longer say the implementation program is entirely unstarted. Its acceptance criteria should become:
+
+Reconcile the baseline against Specialists 3.20.0, Core 0.10.6, and current xtmux.
+
+Close or supersede completed legacy Beads.
+
+Complete the Beads capability/reuse matrix.
+
+Regenerate the canonical implementation graph from only residual work.
+
+Update the PRD, operational manual and repository roadmaps.
+
+The gate should block new modernization dispatch, not invalidate the already-landed work retroactively.
+
+KAN-117 — Telemetry and Eval Core
+Split into two epics or independently sprintable workstreams.
+
+Telemetry integrity must precede authoritative evaluation. One epic should own tool-call deduplication, thinking/activity spans, durations, candidate fingerprints, historical completeness and live Prometheus projection. The second should own eval storage, grader interfaces, backfill, CLI, paired experiments and promotion evidence.
+
+Combining both creates a very large collision surface around SQLite migrations, event schemas and evaluation tables.
+
+KAN-118 — Interactive assignment and recovery
+Replace the current issue.
+
+The interactive assignment half is largely implemented. The remaining work is predominantly logical sessions, safe Pi resume, reconciliation, input-concurrency policy and crash-injection evaluation.
+
+Recommended replacement:
+
+Interactive assignment residual validation: preheated-session reuse, real Pi/Claude parity smoke, failure/no-leak regression and contract documentation.
+
+Logical sessions and safe recovery: the full R01–R08 scope.
+
+Recovery should remain highest priority. It must not be hidden inside an epic whose first half is already complete.
+
+KAN-119 and KAN-124 — Chain spine and deterministic context
+Keep as separate delivery stages, with an explicit dependency.
+
+KAN-119 should own durable resolved chain shape, semantic edges, Beads-backed readiness and workspace/dispatch resolution. KAN-124 should then own the deterministic per-step context and enriched handoff contract.
+
+They should not independently own the same planning-skill or output-contract work.
+
+KAN-120 — Coordinator alignment
+Keep, later wave.
+
+This remains a substantial unimplemented track: entry gate, borderline judgment, hygiene coordination, close-time release judgment, incident handling, autonomy journal and recovery semantics.
+
+It must depend on telemetry/eval, chain state, logical sessions and deterministic context. It should remain shadow-only until evaluated.
+
+KAN-121 — Runtime contracts and prompt modernization
+Keep but reduce scope.
+
+Remove progressive-disclosure and role-envelope work that has already landed. Retain:
+
+one generated output contract;
+
+unified verdict vocabulary;
+
+role-aware policy injection;
+
+GitNexus policy consolidation;
+
+writer-only close/commit semantics;
+
+A/B prompt evaluation and promotion.
+
+KAN-122 — Three-lens memory
+Keep with explicit exclusions.
+
+The target remains herd, workgroup and identity lenses with provenance, pull-based retrieval, close-time distillation candidates and measurable retention policy. No dedicated memory-curator specialist should be created.
+
+KAN-123 — Console and policy promotion
+Split policy hooks from Console.
+
+The policy kernel and hook architecture can begin in shadow mode after the Beads/reconciliation gate. Console materialization belongs later, after upstream event and evaluation schemas stabilize.
+
+Combining them unnecessarily blocks policy experimentation on frontend readiness.
+
+KAN-125 — TypeScript 7 migration
+Move outside the critical-path hierarchy.
+
+The TS7 plan is a supporting reliability and developer-tooling track and explicitly does not authorize changes to runtime ownership, coordinator authority, Beads semantics, Console ownership, Substrate or Channels.
+
+It should be linked to KAN-115, not counted as a child whose completion determines whether the modernization program is done.
+
+6. Recommended Jira hierarchy
+KAN-115 should function as a program or initiative rather than one execution epic containing oversized tasks. When the Jira hierarchy supports an Initiative or equivalent, KAN-115 should be promoted to that level. Otherwise it should remain a program tracker linked to multiple independent epics.
+
+Sequence	Proposed epic	Primary ownership
+0	Program reconciliation and Beads capability gate	Specialists/documentation
+1	Telemetry integrity	Specialists
+2	Eval Core and experiment evidence	Specialists
+3	Logical sessions and safe recovery	Specialists + Core
+4	Durable chain state and deterministic context	Specialists
+5	Coordinator semantics and shadow policy kernel	Specialists + Core/xtmux integration
+6	Output contracts, prompt evaluation and three-lens memory	Specialists
+7	Console materialization and gradual enforcement	Console + Specialists
+Separate	TypeScript 7 compiler migration	Cross-repository tooling
+Each epic should then contain small repository-owned tasks. Cross-repository acceptance tests should be explicit integration tasks rather than implementation details hidden in one repository’s epic.
+
+7. Proposed sprint waves
+Wave 0 — Reconciliation and closure. Update baseline versions, close landed legacy issues, resolve the empty open-issues.json, execute the Beads capability audit, update PRD/manual/roadmaps, and run the final real-host runtime-origin smoke.
+
+Wave 1 — Evidence substrate. Complete telemetry integrity first, then establish Eval Core in observe-only mode. Freeze a reproducible baseline before any major prompt or coordinator authority change.
+
+Wave 2 — Recovery and chain authority. Implement logical sessions, safe resume and state reconciliation. Then implement the durable chain spine and Beads-backed readiness.
+
+Wave 3 — Context and coordination. Complete deterministic chain context and handoff semantics. Introduce coordinator roles and policy hooks only in shadow mode.
+
+Wave 4 — Behaviour modernization. Unify output contracts and verdicts, run role-by-role prompt experiments, and introduce the pull-based three-lens memory bridge.
+
+Wave 5 — Productization. Materialize stable contracts in Console, establish promotion dashboards, and move policies through off → shadow → warn → enforce.
+
+8. Requirements that remain binding
+The audit preserves the architectural decisions already established:
+
+Specialists remains authoritative for jobs, chains, evidence, evaluation and logical sessions. xtmux remains authoritative for interactive lifecycle, topology, messages, receipts, monitors and handoff delivery. Core remains responsible for launcher workflow and managed skills. Beads remains the durable work contract and memory substrate. Console remains a materialized operational read model.
+
+There should be no monorepo migration now. Substrate and Channels remain future targets and must not enter the current critical path. There should be no automatic Pi resume before reconciliation, no automatic semantic-memory writes before evaluation, no coordinator release or merge authority before calibration, and no prompt-wide refactor before telemetry and evaluation baselines exist.
+
+9. open-issues.json transformation contract
+Once the actual local export is available, its original issue fields and IDs should be preserved. Audit decisions should be additive rather than destructive, for example:
+
+{
+  "_audit": {
+    "decision": "keep | close_completed | close_not_planned | merge | replace | resequence",
+    "reason": "human-readable rationale",
+    "evidence": [
+      {
+        "repository": "xtrm-dev/specialists",
+        "reference": "v3.20.0 / PR #185"
+      }
+    ],
+    "superseded_by": ["new-or-existing-id"],
+    "target_program": "KAN-115",
+    "target_epic": "logical-sessions-recovery",
+    "wave": 2,
+    "requires_human_approval": true
+  }
+}
+This permits the local dev host to reimport the file without losing issue history or confusing a completed issue with an issue that never had value.
+
+10. Decision
+The current KAN-115 decomposition should not be dispatched unchanged.
+
+The approved mutation wave should first:
+
+update the PRD and operational manual baseline;
+
+reconcile or archive the three repository roadmaps/gap documents;
+
+close completed unitAI-6639v, xtmux V2 and landed j46 work;
+
+reduce unitAI-z8uli to its final integration gate;
+
+replace KAN-118 with residual assignment validation plus a dedicated recovery epic;
+
+split telemetry from Eval Core and policy hooks from Console;
+
+move KAN-125 outside the critical-path completion hierarchy;
+
+regenerate the real open-issues.json audit once its content is available.
+
+No Jira, Confluence, GitHub, or JSON changes have been made.
+
+The next controlled step is approval of the Wave 0 mutation scope. No systems were changed.
+
+
+Elaborato per 45s
+No, I was not able to read the contents of open-issues.json. I could access the Confluence page and its metadata, but both Markdown and ADF retrieval returned an empty paragraph. The previous report therefore did not contain an audit of the actual JSON data. 
+
+
+I found the additional page, v4-roadmap, at Confluence page ID 14352399. The connector can see its title, author, current status and version, but its body is also returned as empty. The generic fetch endpoint independently confirms text: "", so I cannot read that roadmap yet. 
+
+
+The connector itself is working correctly for ordinary Confluence content: it successfully returned the full PRD and the full operational manual. The problem is specific to these two pages. They appear to contain no saved page-body content from the API’s perspective—possibly because the material is still only in an editor draft, was pasted as an unsupported embedded object, or exists as an attachment rather than page text.
+
+Ensure both documents are saved/published directly into the Confluence page body, then ask me to retry. Do not rely on the previous audit until I have read both open-issues.json and v4-roadmap.
+
+
+
+Pasted markdown.md
+File
+
+Pasted text (2).txt
+Documento
+
+Elaborato per 2m 51s
+Sì: abbiamo già un metodo migliore e più corretto per la provenienza runtime. I meccanismi Beads che hai descritto sono utili, ma appartengono al piano di controllo del lavoro; non devono essere usati come fonte autorevole per ricostruire la trace di una run.
+
+La distinzione corretta è questa:
+
+Beads
+  identità, contratto, relazioni e dipendenze del lavoro
+
+Specialists forensic telemetry
+  ciò che una specifica attivazione ha realmente eseguito e prodotto
+
+Eval trial
+  valutazione di quella run e degli artifact prodotti
+Per dire «questo job ha prodotto questo commit»
+Il contratto già implementato è:
+
+job_id
+  → xtrm.forensic.v1
+    → git.auto_commit.succeeded
+      → commit_sha
+      → committed_files
+      → diff / commit / PR evidence refs
+La timeline canonica definisce già un TimelineEventEvidenceRef con:
+
+evidence_kind: diff | commit | pr
+base_ref
+base_sha
+head_sha
+pr_id
+pr_url
+pr_state
+trace_id
+span_id
+parent_span_id
+Gli eventi di auto-commit contengono inoltre commit_sha, committed_files ed eventuali evidence reference.
+
+Quando l’evento viene convertito in xtrm.forensic.v1, il runtime inserisce contemporaneamente:
+
+correlation.job_id
+correlation.chain_id
+correlation.commit_sha
+correlation.trace_id
+correlation.span_id
+e per un auto-commit riuscito emette l’evento canonico:
+
+event_family = git
+event_name   = git.auto_commit.succeeded
+Questa è una vera relazione di provenienza causale:
+
+il supervisor del job J ha eseguito l’operazione di commit e ha osservato come risultato lo SHA C.
+
+È molto più forte di:
+
+{
+  "github": {
+    "commit_sha": "C"
+  }
+}
+messo nella metadata della Bead, perché quest’ultimo è soltanto un’asserzione mutabile e non contiene automaticamente tempo, sequenza, attivazione, trace, risultato dell’operazione o relazione con il comando che lo ha prodotto.
+
+Commit come artifact, non come span
+Il commit non è propriamente una span. È un artifact prodotto dentro una trace.
+
+La forma corretta è:
+
+job / activation
+└── turn
+    └── tool o command span: git commit
+        └── artifact: commit SHA
+Nel modello corrente:
+
+job_id identifica la singola attivazione;
+
+participant_id identifica il partecipante stabile nella chain;
+
+turn_id e tool_call_id identificano le unità interne;
+
+trace_id, span_id e parent_span_id ricostruiscono la gerarchia temporale;
+
+commit_sha collega il risultato Git alla trace;
+
+evidence_refs collegano diff, commit e PR.
+
+Il modello a cinque livelli e la persistenza in specialist_forensic_events sono già definiti e in larga parte spediti. 
+
+ Il codice corrente di xtrm.forensic.v1 contempla esplicitamente job_id, turn_id, tool_call_id, trace/span, eval_id e commit_sha; tutti rimangono nel piano forensic e non diventano label Prometheus.
+
+Dove entrano gli eval trial
+Nel PRD, un eval trial non dovrebbe “scoprire” il commit dalla Bead. Deve riferirsi alla run:
+
+eval_trial
+  job_id
+  chain_id
+  candidate_id
+  case_id
+  environment_hash
+  artifact refs
+e poi risolvere gli artifact attraverso la telemetry del job:
+
+trial
+→ job_id
+→ forensic events
+→ diff / commit / PR / test / trace
+Il PRD definisce infatti l’eval_trial come una candidate che esegue un case in un tentativo, e l’eval_artifact come riferimento a output, trace, diff, commit, test, log o stato dell’ambiente. Inoltre xtrm.forensic.v1 è indicato come envelope universale con correlazione per job, chain, commit ed eval. 
+
+
+Questo permette di valutare, per esempio:
+
+il job ha dichiarato successo?
+il job ha effettivamente prodotto un commit?
+il commit contiene il diff atteso?
+il commit è quello successivamente incluso nella PR?
+la PR è stata mergiata?
+il merge commit conserva o riscrive gli SHA di implementazione?
+Sono domande diverse e non vanno compresse in un solo commit_sha.
+
+Utilità reale di external_ref, metadata e gh:pr
+Restano comunque molto utili.
+
+external_ref serve come indice operativo stabile dalla Bead verso Jira o verso la PR principale.
+
+metadata.github serve come proiezione denormalizzata per navigazione, riconciliazione e backfill:
+
+{
+  "github": {
+    "repository": "xtrm-dev/specialists",
+    "pr_number": 123,
+    "head_branch": "feature/unitAI-abc",
+    "implementation_commits": ["3f5c8e1"],
+    "merge_commit_sha": "8ac11f2",
+    "producing_job_ids": ["914f43"]
+  }
+}
+gh:pr gate stabilisce che il merge della PR è una condizione di avanzamento. Non dimostra chi ha creato la PR o quale job ha prodotto i commit.
+
+spec_id collega la Bead al contratto normativo.
+
+Questi dati sono quindi eccellenti come:
+
+indice del work item
+cache/proiezione per UI
+meccanismo di gate
+supporto al backfill storico
+fallback quando la telemetry precedente è incompleta
+Non sono invece adeguati come:
+
+trace runtime
+prova causale di authorship
+cronologia degli eventi
+fonte dei tempi/durate
+identità della singola attivazione
+Convenzione consigliata
+La separazione finale dovrebbe essere:
+
+Bead
+  external_ref
+  spec_id
+  metadata.github
+  gh:pr gate
+
+Job
+  xtrm.forensic.v1
+  job_id
+  participant_id
+  trace/span
+  git.auto_commit.succeeded
+  diff/commit/PR evidence refs
+
+Eval trial
+  trial_id
+  job_id / chain_id
+  candidate fingerprint
+  artifact refs verso la forensic evidence
+  grader scores
+È ragionevole scrivere nella metadata Beads una proiezione sintetica della provenance, ma dovrebbe dichiarare da dove deriva:
+
+{
+  "runtime_provenance": {
+    "source": "xtrm.forensic.v1",
+    "producing_job_id": "914f43",
+    "commit_sha": "3f5c8e1",
+    "evidence_kind": "commit"
+  }
+}
+Dato che si tratta di un oggetto JSON, va scritto attraverso la superficie typed metadata, non attraverso una sequenza di stringhe implicitamente tipizzate.
+
+Stato preciso
+Per job → commit, il contratto è già definito e implementato per il percorso di auto-commit.
+
+Per job → PR, il modello di evidence reference è già definito, inclusi numero, URL, stato, base e head SHA. Tuttavia non assumerei ancora che ogni percorso di creazione, aggiornamento e merge della PR emetta sempre un evento source-specific completo: la roadmap stessa segnala come residuo l’estensione delle famiglie native di eventi dove il dual-write generico non è abbastanza espressivo. 
+
+
+Quindi il lavoro residuo non è inventare la relazione usando Beads. È completare e verificare gli emitter:
+
+git.pr.created
+git.pr.updated
+git.pr.merged
+git.commit.observed
+git.commit.attributed
+distinguendo sempre:
+
+produced_by_job
+observed_by_job
+associated_with_bead
+included_in_pr
+merged_into_target
+La conclusione è netta: external references e metadata migliorano la navigabilità degli eval trail; la ricostruzione causale della run deve rimanere in xtrm.forensic.v1 e negli evidence artifact collegati al trial.
+
+
+
+specialists_modernization_final_prd_2026-07-17_v3.1(1).diff
+File
+sono state aggiunte queste modifiche, e aspetta, le repo hanno avuto notevoli aggionramnti.
+
+Elaborato per 2m 17s
+Errore durante il caricamento dell'app
+Failed to fetch template
+
+Riprova
+Mi fermo. Non applico alcuna modifica a Confluence, Jira, Beads o repository.
+
+Il precedente audit, soprattutto la matrice con le 73 chiusure candidate, va considerato superato. Il nuovo diff modifica in modo sostanziale WP-G02 e tutti i contratti che dipendono da claim, pool, lease, formula bonding, modalità embedded/direct/proxied e compatibilità Beads–Dolt. Queste non sono correzioni editoriali: cambiano la classificazione di diversi task e i prerequisiti della chain spine. 
+
+
+Anche le repository sono avanzate rispetto alla baseline usata:
+
+Specialists ha aggiunto la risoluzione dei modelli per superficie runtime tramite execution.surface_models e sp view --surface.
+
+Core è entrato nella linea 0.11.0, con nuovi contratti CLI e ulteriori modifiche al launcher e alla distribuzione degli skill.
+
+Sono presenti anche PR aperte o appena integrate su permission defaults, memoria, documentazione/release e superfici operative; quindi non basta aggiornare i numeri di versione.
+
+Inoltre, dal connector, la pagina Confluence corrente risulta ancora alla revisione del 15 luglio 2026, mentre il file che hai fornito contiene la revisione del 17 luglio 2026. L’export open-issues.json del 16 luglio è verosimilmente obsoleto rispetto ai nuovi merge e alle modifiche Beads.
+
+Il prossimo passaggio corretto sarà un nuovo freshness audit completamente read-only su head attuali, PR recenti, PRD aggiornato e un nuovo export Beads. Aspetto il tuo via prima di procedere.
+
+
+Elaborato per 1m 7s
+Errore durante il caricamento dell'app
+Failed to fetch template
+
+Riprova
+Il problema precedente non era una generale incapacità di gestire Confluence.
+
+La situazione era questa:
+
+Lettura diretta: funzionava già quando avevo il page ID noto.
+
+Ricerca/discovery: era il punto problematico. Il connector in alcuni tentativi cercava nell’istanza sbagliata oppure non riusciva a garantire l’accesso a xtrmxt.atlassian.net, quindi non potevo assicurare di trovare nuove pagine, audit o aggiornamenti Jira.
+
+Scrittura/modifica: le funzioni per creare e aggiornare pagine esistono, ma non avevo effettuato una scrittura di prova perché sarebbe stata una modifica reale.
+
+Ora il problema di discovery sembra risolto: la ricerca trova correttamente sia il PRD sia il manuale operativo nell’istanza xtrmxt.atlassian.net. 
+
+ Anche la lettura diretta del corpo completo del PRD è riuscita.
+
+La limitazione pratica sulle modifiche è che l’update Confluence non è una patch chirurgica di poche righe: normalmente devo:
+
+leggere l’ultima versione completa
+→ applicare le modifiche localmente
+→ sostituire il corpo completo della pagina
+→ registrare un version message
+Per una pagina enorme come il PRD questo è gestibile, ma richiede un diff accurato per evitare di perdere macro, link, formattazione o cambiamenti concorrenti. Non è un blocco di accesso; è una precauzione operativa.
+
+Quindi, allo stato attuale:
+
+Ricerca Confluence/Jira     funzionante
+Lettura pagine              funzionante
+Creazione pagine            disponibile
+Aggiornamento pagine        disponibile, non ancora testato con una modifica reale
+Modifiche granulari         non native; richiedono sostituzione controllata del body
+Non farei una modifica “di prova” al PRD canonico. La prima scrittura dovrebbe essere una modifica reale già approvata, dopo aver salvato il body corrente e prodotto un diff verificabile.
+
+
+probabilmente allora per documenti enormi come quello, sarà meglio che tu produca modifiche qui, e io vado ad applicarle. comunque. in ogni caso, torniamo a noi. brevissimo brief dello status.
+
+Status attuale:
+
+Il programma monitora Specialists, Core e xtmux rispetto a roadmap, PRD, audit e backlog.
+
+Il vecchio audit del 17 luglio è ormai solo una baseline storica.
+
+Baseline tecnica nota: Specialists 3.21.0, Core 0.11.0, xtmux 0.1.0.
+
+Sono usciti nuovi audit sprint e relativi cluster di lavoro su topology aggregation, installer/settings, compatibilità runtime, branch ancestry, integration telemetry e roleless --bead.
+
+Specialists ha già chiuso nuove PR su branch inheritance e xtrm.branch.integration.v1; sp render-bead è ancora aperta.
+
+Atlassian ora è nuovamente leggibile: PRD e manuale operativo sono accessibili.
+
+PRD e manuale risultano però ancora basati sulla reconciliation del 17 luglio e non riflettono i nuovi audit/merge.
+
+Per documenti Confluence molto grandi, la modalità preferita sarà: preparo qui patch/diff strutturati, poi li applichi tu.
+
+Nessuna modifica è stata ancora applicata a Confluence, Jira o Beads.
+
+Prossimo lavoro corretto: nuova reconciliation completa fra nuovi audit, PR correnti, PRD, manuale, Jira KAN e backlog Beads.
+
+
+oggi 3:23
+avevamo detto che c'era una versione del prd del 17 luglio?
+
+Sì, ma con una distinzione importante:
+
+Confluence: la pagina canonica risultava modificata il 17 luglio 2026, ma nel corpo riportava ancora “Date: 15 July 2026” e la revisione v3.1 del 15 luglio.
+
+File fornito da te: avevamo invece un aggiornamento/diff denominato come versione del 17 luglio 2026, con ulteriori modifiche ai contratti Beads.
+
+Quindi non avevamo confermato una nuova pagina Confluence formalmente datata 17 luglio; avevamo una revisione/diff del 17 luglio non ancora chiaramente applicata integralmente alla pagina canonica. La mia frase precedente “PRD basato sulla reconciliation del 17 luglio” era troppo imprecisa.
+
+
+nn riesco a trovarlo
+
+È nella tua File Library, non in Confluence. Il file completo è stato caricato il 17 luglio 2026 alle 22:18:
+
+
+ROADMAP.md
+File
+
+specialists_modernization_final_prd_2026-07-17_v3.1.diff
+File
+Nomi esatti:
+
+specialists_modernization_final_prd_2026-07-17_v3.1.md
+specialists_modernization_final_prd_2026-07-17_v3.1.diff
+Il file completo contiene esplicitamente una sezione “Revision summary — 17 July 2026” e dichiara la freshness baseline del 17 luglio.
+
+La pagina Confluence, invece, non sembra contenere integralmente questa revisione: mostra ancora intestazione e data del 15 luglio.
+
+
+Libreria
+/
+xtrm
+/
+specialists_modernization_final_prd_2026-07-17_v3.1.diff
+
+
+--- /mnt/data/specialists_modernization_final_prd_2026-07-15_v3.1.md	2026-07-17 22:02:04.626270329 +0000
++++ /mnt/data/specialists_modernization_final_prd_2026-07-17_v3.1.md	2026-07-17 22:05:08.490857929 +0000
+@@ -2,8 +2,8 @@
+ 
+ ## Product Requirements Document
+ 
+-**Status:** Final consolidated implementation PRD v3.1; supersedes prior prompt/eval, coordinator, Beads, skills and bridge drafts; includes the 15 July 2026 post-v1.1 Beads contract reconciliation  
+-**Date:** 15 July 2026  
++**Status:** Final consolidated implementation PRD v3.1; supersedes prior prompt/eval, coordinator, Beads, skills and bridge drafts; includes the 15–17 July 2026 post-v1.1 Beads contract reconciliations  
++**Date:** 17 July 2026  
+ **Primary repository:** `xtrm-dev/specialists`  
+ **Related repositories:** `xtrm-dev/core`, `Jaggerxtrm/xtmux`, `Jaggerxtrm/console` / Omniforge, `xtrm-dev/xtrm`  
+ **Audience:** Specialists runtime maintainers, Core/launcher maintainers, xtmux maintainers, agent-orchestration engineers, Console maintainers, evaluation engineers and platform/observability engineers  
+@@ -13,6 +13,17 @@
+ 
+ ---
+ 
++## Revision 2026-07-17 v3.1 — claim pools, proxied-server parity and Dolt compatibility
++
++This revision extends the post-v1.1 contract with four additional changes verified on Beads `main`. They remain **unreleased** relative to the stable v1.1.0 baseline unless the installed binary or an explicitly pinned build proves them.
++
++1. **Pool-aware claim** (`849c05b`). Aliases listed in `claim.pools` may be preassigned by a dispatcher and taken through the normal atomic `--claim` path. Real assignees and unconfigured aliases retain anti-steal protection. A pool take carries the normal worker lease; after expiry, `bd reclaim` returns the issue to the unassigned pool rather than restoring the original alias.
++2. **Plain formula-name bonding** (`b740f6f`). `bd mol bond <formula-name> ...` resolves the same canonical plain names accepted by `bd formula show`, `bd mol seed`, `bd mol pour` and `bd cook`. Specialists must not require artificial `mol-`, path or `.formula` naming workarounds.
++3. **Expanded proxied-server CLI support** (`3ecbf5b`). `search`, `assign`, `priority`, `note`, `tag`, `edit`, `state`, `state list`, `link`, `q`, `todo`, `children` and `gate list` have proxied-server implementations. This is command-specific parity, not proof that formula, molecule, graph or the complete gate lifecycle are proxied-compatible.
++4. **Dolt v2.2.0 pin on current main** (`3fea705`). Dolt 2.2.0 is a compatibility requirement only for Beads builds at or after this unreleased commit. It is not retroactively imposed on the stable v1.1.0 baseline. The Beads binary, Dolt client/driver and Dolt server image are validated as one compatibility tuple.
++
++These additions refine `WP-G02`, `WP-C05`, `WP-IC10`, `WP-R03`, `WP-R04` and `WP-K07`. They add no work-package family and do not change the program critical path.
++
+ ## Revision 2026-07-15 v3.1 — post-v1.1 Beads contract reconciliation
+ 
+ This revision reconciles the implementation contract with Beads behavior verified on `main` after the v1.1.0 release. These capabilities remain unreleased unless the locally installed binary or an explicitly pinned build proves otherwise.
+@@ -3052,6 +3063,8 @@
+ 
+ Unknown keys must not be assumed to have taken effect merely because the source TOML contains them.
+ 
++Formula composition must also test canonical plain-name resolution. When available, `bd mol bond <formula-name> <target> --dry-run` must accept the same formula name that succeeds through `bd formula show`, `bd mol seed`, `bd mol pour` and `bd cook`. Prefix/path workarounds are compatibility fallbacks only for older binaries and must not become naming policy.
++
+ ### 13.6.2 Ready, claim and lease lifecycle
+ 
+ Within one priority tier, native ready ordering is:
+@@ -3068,11 +3081,13 @@
+ 
+ A worker lease is armed only through lease-aware claim or heartbeat operations. A generic update that leaves an issue `in_progress` and assigned does not arm a worker lease. Transferring ownership through a generic update clears the previous lease; an unrelated update preserving the same status and owner preserves an existing lease.
+ 
+-`bd unclaim` requires ownership. `bd unclaim --force` is reserved for administrative or reaper recovery.
++`bd unclaim` requires ownership. `bd unclaim --force` is reserved for administrative or reaper recovery. Coordinators and workers must not implement takeover as `unclaim; claim`: they coordinate with the live owner or use `reclaim` only after the lease is eligible.
++
++A dispatcher may preassign work to configured pool aliases through `claim.pools`. A listed alias is claimable by any actor through the same atomic compare-and-swap used for unassigned work; a real assignee or unconfigured alias remains protected. Pool claims arm the normal worker lease. If that lease expires, reclaim returns the issue to the unassigned pool, not to the original alias, so pool membership is dispatch metadata rather than durable worker identity.
+ 
+ Mixed batch claims may commit successful claims while returning non-zero because another requested claim was lost. Dispatchers and recovery logic must re-read every requested issue and reconcile the persisted winner/loss state.
+ 
+-Issue claim ownership, worktree writer ownership and merge-slot authority remain separate dimensions.
++Issue claim ownership, claim-pool assignment, worktree writer ownership and merge-slot authority remain separate dimensions.
+ 
+ ### 13.6.3 Graph creation and dependency validation
+ 
+@@ -3132,6 +3147,20 @@
+ 
+ In shared Dolt SQL-server mode, `project_id` and database identity must be explicit. Ambiguous `bd doctor` reconciliation is a hard stop; the sole visible database must not be adopted without trustworthy local identity. One coordinated process owns backup scheduling, and operators inspect the effective `backup.enabled` value rather than inferring it from one configuration file.
+ 
++#### Deployment-mode capability matrix
++
++`WP-G02` must record capability separately for:
++
++```text
++embedded Dolt
++direct Dolt SQL-server
++proxied-server
++```
++
++Parity is command-specific. On the audited unreleased line, proxied-server support includes `search`, `assign`, `priority`, `note`, `tag`, `edit`, `state`, `state list`, `link`, `q`, `todo`, `children` and `gate list`. The matrix must still probe ready/claim/lease, formula/molecule, graph creation, gate create/check/resolve, history and memory independently. Missing commands receive an explicit fallback or block adoption of that mode; broad claims such as “proxied-server supported” are insufficient.
++
++For a Beads build at or after commit `3fea705`, the validated compatibility tuple requires Dolt v2.2.0 across the client/driver, server binary or image and integration fixtures. Stable v1.1.0 keeps its own verified Dolt matrix. Upgrades must not move the Beads binary and Dolt server independently without passing the shared-server compatibility suite.
++
+ ### 13.6.8 Worktree and bootstrap safety
+ 
+ After Beads creates or initializes a worktree, `.beads/` must be a real non-symlink directory with secure permissions, including mode `0700` where supported. Unsafe targets are rejected rather than repaired through a path-following operation.
+@@ -3155,17 +3184,19 @@
+ bd graph --help
+ bd formula schema --json
+ bd formula show --help
++bd mol bond --help
+ bd gate list --help
+ bd gate check --help
+ bd history --help
+ bd memories --help
+ bd prime --help
++bd config get claim.pools
+ bd config get backup.enabled
+ bd migrate --help
+ bd worktree --help
+ ```
+ 
+-The resulting matrix records `supported | unsupported | behavior-needs-verification`, released minimum version, pinned minimum commit, fallback, migration requirement and fixture. It is attached to every Beads-dependent root Bead and revalidated after upgrades.
++The resulting matrix records `supported | unsupported | behavior-needs-verification` for each deployment mode, released minimum version, pinned minimum commit, required Dolt version, fallback, migration requirement and fixture. It is attached to every Beads-dependent root Bead and revalidated after upgrades.
+ 
+ # 14. Agent-ready decomposition contract
+ 
+@@ -3375,10 +3406,10 @@
+ |---|---|---|---|---|---|---|
+ | `WP-G00` | Patch canonical roadmap with Track C, dependency rules, status corrections and PRD reference | specialists | none | docs-specialists | doc-sync or code-quick | medium |
+ | `WP-G01` | Add historical-snapshot banner to 2026-06-21 reconciliation and create new dated reconciliation | xtrm | none | docs-xtrm | doc-sync | medium |
+-| `WP-G02` | Audit, probe and capability-pin Beads primitives: formula gates versus `waits_for`; ready FIFO; custom-active claim; lease-aware claim/heartbeat/reclaim; owner-safe unclaim and partial batch reconciliation; cross-type hierarchy guards; atomic graph dry-run; `graph --open`; metadata typing; native memory suppression; shared-server identity/backup/migration; worktree permissions and hook-free bootstrap. Produce the binding reuse matrix, minimum release/pin, fixture and fallback decision. | specialists | none | architecture-gate | research-only + premortem | high |
++| `WP-G02` | Audit, probe and capability-pin Beads primitives across embedded, direct-server and proxied-server modes: formula gates versus `waits_for`; plain-name `mol bond`; ready FIFO; custom-active and pool-aware claim; lease-aware claim/heartbeat/reclaim; anti-steal owner-safe unclaim and partial batch reconciliation; cross-type hierarchy guards; atomic graph dry-run; `graph --open`; metadata typing; native memory suppression; shared-server identity/backup/migration; Beads↔Dolt version tuple; worktree permissions and hook-free bootstrap. Produce the binding reuse/deployment-mode matrix, minimum release or pinned commit, required Dolt version, fixture and fallback decision. | specialists | none | architecture-gate | research-only + premortem | high |
+ | `WP-G03` | Register this PRD in roadmap/MOC indexes and map all acceptance criteria to WPs | specialists + xtrm | G00,G01 | docs-integration | doc-sync | medium |
+ 
+-`WP-G02` is a hard planning gate for chain-foundation implementation, not for telemetry baselining. Its output includes the installed-version capability matrix, stable-versus-pinned adoption table, compatibility fixtures, fallbacks and the decision on which Specialists code paths are deleted or reduced through native reuse.
++`WP-G02` is a hard planning gate for chain-foundation implementation, not for telemetry baselining. Its output includes the installed-version and deployment-mode capability matrix, stable-versus-pinned adoption table, Beads↔Dolt compatibility tuple, compatibility fixtures, fallbacks and the decision on which Specialists code paths are deleted or reduced through native reuse.
+ 
+ ## 15.3 Telemetry-integrity packages
+ 
+@@ -3435,7 +3466,7 @@
+ | `WP-C02` | Persisted resolved chain shape with ordered steps/gates/status/job pointers | G02 | chain-state | critical |
+ | `WP-C03` | `sp chain review/approve/insert` over persisted shape and native Beads formula, gate, structural fan-in, graph and readiness primitives; validate parsed formulas and hierarchy-safe dependency composition | C02,G02 | chain-composition | critical |
+ | `WP-C04` | Authoritative `kind:step`, root/step resolution and semantic-edge query helpers | G02 | chain-graph | high |
+-| `WP-C05` | Chain-driven dispatch/workspace resolution using native FIFO ready/claim authority, custom-active eligibility, lease-aware worker claims and partial batch reconciliation; preserve distinct issue, worktree and merge-slot ownership; include the job/worktree flag deprecation bridge | C01–C04 | chain-dispatch | critical |
++| `WP-C05` | Chain-driven dispatch/workspace resolution using native FIFO ready/claim authority, custom-active eligibility, configured `claim.pools`, lease-aware worker claims and partial batch reconciliation; preserve anti-steal semantics and distinct pool assignment, issue claim, worktree and merge-slot ownership; never use `unclaim; claim` as takeover; include the job/worktree flag deprecation bridge | C01–C04 | chain-dispatch | critical |
+ | `WP-C06` | Deterministic `<chain-context>` envelope with completeness flags and upstream pointers | C02,C04,T06 | chain-context | high |
+ | `WP-C07` | Shared chain-participant rule and role-specific identity clauses | C06,P04 | chain-policy | high |
+ | `WP-C08` | Structured handoff extension for decisions, inputs consumed and downstream attention | P02,C06 | handoff-contract | high |
+@@ -3501,7 +3532,7 @@
+ | `WP-IC07` | Add startup `starting → agent.ready → idle` handshake for Pi and Claude | core + xtmux | none | readiness | critical |
+ | `WP-IC08` | Extend xtmux handoff for an existing prompt file, readiness wait and monitor integration | xtmux | IC07 | assignment-delivery | high |
+ | `WP-IC09` | Integrate Core direct `--bead` auto-assignment through Specialists renderer + xtmux secure delivery | core | IC05,IC07,IC08 | role-launcher | critical |
+-| `WP-IC10` | Implement preheated standby bootstrap, `role.ready`, later `xt role assign` and one-epic lifecycle; use native claim semantics when taking ownership, reconcile partial claims and refuse unsafe `.beads/` or ambiguous shared-server identity | specialists + core + xtmux | IC05,IC07,IC08,G02 | role-preheat | high |
++| `WP-IC10` | Implement preheated standby bootstrap, `role.ready`, later `xt role assign` and one-epic lifecycle; use native claim or configured claim-pool semantics when taking ownership, preserve real-owner anti-steal protection, reconcile partial claims, never emulate takeover with `unclaim; claim`, and refuse unsafe `.beads/` or ambiguous shared-server identity | specialists + core + xtmux | IC05,IC07,IC08,G02 | role-preheat | high |
+ | `WP-IC11` | Add coordinator message/evidence vocabulary, conflict matrix, incident protocol and peer/orchestrator mechanical boundary | specialists + xtmux docs/tests | IC04,E02 | coordinator-protocol | high |
+ | `WP-IC12` | Add deterministic/live coordinator evals: Pi/Claude/direct, no-leak, entry verdict, incident routing, release accuracy, autonomy and journal recovery | specialists + core + xtmux | IC02–IC11,E03 | coordinator-eval | critical |
+ | `WP-IC13` | Integrate coordinator with persisted resolved shape, composition gate and Beads-native readiness/gate/fan-in evidence; require readiness evidence, bounded insertions, hierarchy-safe dependencies and canonical full-graph resolution; use `graph --open` only for orientation | specialists | C02,C03,C04,IC04 | coordinator-chain-api | critical |
+@@ -3531,8 +3562,8 @@
+ |---|---|---|---|---|
+ | `WP-R01` | Persist logical session identity, managed/interactive mode, activation lineage, names and resume policy | specialists + core | T06,IC07 | critical |
+ | `WP-R02` | Add Pi runtime-session naming/discovery and explicit resume adapter; verify exact CLI/version behavior | core + specialists | R01 | high |
+-| `WP-R03` | Implement recovery classification and resume eligibility/refusal policy across issue claim, lease state, worktree ownership, safe `.beads/`, explicit project/database identity and candidate/runtime compatibility; distinguish durable interactive assignment from heartbeat-managed worker claim | specialists | R01,R02,G02 | critical |
+-| `WP-R04` | Implement authoritative recovery reconciliation for Git/Bead/chain/evidence state, including partial batch-claim reread, lease-aware re-arming only, hierarchy/worktree safety checks and no ownership inference from session state | specialists | R03,C02,C04,C05 | critical |
++| `WP-R03` | Implement recovery classification and resume eligibility/refusal policy across issue claim, configured pool assignment, lease state, worktree ownership, safe `.beads/`, explicit project/database identity and candidate/runtime compatibility; distinguish durable interactive assignment, pool-dispatched work and heartbeat-managed worker claim; coordinate with live owners rather than stealing claims | specialists | R01,R02,G02 | critical |
++| `WP-R04` | Implement authoritative recovery reconciliation for Git/Bead/chain/evidence state, including partial batch-claim reread, lease-aware re-arming only, pool-claim expiry returning to unassigned state, hierarchy/worktree safety checks and no ownership inference from session or original pool alias | specialists | R03,C02,C04,C05 | critical |
+ | `WP-R05` | Add session lifecycle forensic events, metrics and Console/materializer contract | specialists | R01,R03,T07,E02 | high |
+ | `WP-R06` | Ship `session-recovery-v1` crash-injection suite and fresh-activation fallback validation | specialists + core | R02–R05,E03 | critical |
+ | `WP-R07` | Formalize input concurrency policy (`reject`/safe enqueue now; interrupt/rollback capability-gated) across Core/xtmux/Specialists | specialists + core + xtmux | IC07,IC08,R01 | high |
+@@ -3548,7 +3579,7 @@
+ | `WP-K04` | Modernize global/core `planning` skill for capability discovery, parsed formula validation, gate-versus-fan-in semantics, graph-plan dry-run, hierarchy-safe cross-type dependencies, canonical graph versus `graph --open`, FIFO ready/claim/lease behavior, typed metadata, shared-server safety, collisions, memory lenses and acceptance coverage | core + specialists refs | G02,M01,IC01 | critical |
+ | `WP-K05` | Modernize the planning-only `planner` and structured output; emit typed symbolic graph plans and capability assumptions, never apply the graph, persist synthetic `graph --open` edges, invent gate schemas, infer metadata types or create hierarchy-shadow dependencies | specialists | K04,E03 | critical |
+ | `WP-K06` | Create/update `authoring-specialists` for prompt/rule/skill/output-contract development and promotion | specialists | P01–P04,T06 | high |
+-| `WP-K07` | Add skill installation parity, link/version guards, capability probes, CLI/JSON compatibility fixtures and freshness reporting for ready/claim/lease, formula parsing, graph guards, metadata typing, prime memory flags, shared-server identity/backup, `.beads/` permissions and hook-free bootstrap | specialists + core | K02–K06,G02 | high |
++| `WP-K07` | Add skill installation parity, link/version guards, capability probes, CLI/JSON compatibility fixtures and freshness reporting across embedded, direct-server and proxied-server modes for ready/claim/lease and `claim.pools`, formula parsing and plain-name `mol bond`, graph guards, metadata typing, prime memory flags, shared-server identity/backup, Beads↔Dolt version compatibility, `.beads/` permissions and hook-free bootstrap; document exact unsupported proxied commands and fallbacks | specialists + core | K02–K06,G02 | high |
+ 
+ ## 15.12 Deferred xtrm/Channels packages
+ 
+@@ -3715,10 +3746,12 @@
+ 6. Record current roadmap and code status so later reports do not compare against a moving baseline.
+ 7. Capture the installed Beads version or pinned commit and the complete capability matrix from Section 13.6.9.
+ 8. Produce the symbolic modernization `bead-graph-plan.json` and retain `bd create --graph <plan> --dry-run --json`.
+-9. Verify formula parsing, gate/fan-in distinction, FIFO ready ordering, custom-active claim, lease-aware lifecycle, mixed batch reconciliation, cross-type hierarchy guards, metadata typing, prime-memory flags, shared-server identity/backup and worktree/bootstrap safety.
+-10. Approve the designated-migrator, backup, adoption, rollback and shared-server identity runbook.
++9. Verify formula parsing and plain-name `mol bond`, gate/fan-in distinction, FIFO ready ordering, custom-active and pool-aware claim, real-owner anti-steal behavior, lease-aware lifecycle, mixed batch reconciliation, cross-type hierarchy guards, metadata typing, prime-memory flags, shared-server identity/backup and worktree/bootstrap safety.
++10. Produce the embedded/direct/proxied command matrix and verify every orchestration-critical command or its explicit fallback.
++11. Record the Beads↔Dolt compatibility tuple. Dolt 2.2.0 is required only for the unreleased line at or after `3fea705`, not retroactively for stable v1.1.0.
++12. Approve the designated-migrator, backup, adoption, rollback and shared-server identity runbook.
+ 
+-**Exit criteria:** canonical cross-links exist; the new dated reconciliation is approved; every implementation WP is traceable; a repeatable baseline report exists; the Beads capability matrix is approved; the graph dry-run succeeds without persistence; stable and pinned capabilities are explicitly separated; formula, readiness, claim, graph and migration fixture contracts pass.
++**Exit criteria:** canonical cross-links exist; the new dated reconciliation is approved; every implementation WP is traceable; a repeatable baseline report exists; the Beads capability and deployment-mode matrices are approved; the graph dry-run succeeds without persistence; stable and pinned capabilities are explicitly separated; the Beads↔Dolt tuple is validated; formula, readiness, claim, graph, proxied compatibility and migration fixture contracts pass.
+ 
+ ## Phase 1 — Telemetry integrity
+ 
+@@ -4007,20 +4040,27 @@
+ - Every Beads-dependent feature records an installed released version or explicitly pinned commit.
+ - No unreleased Beads capability becomes mandatory without compatibility fixtures, fallback behavior and operator approval.
+ - Formula gate configuration is validated through parsed JSON; silently discarded or unknown keys fail the authoring gate.
++- Canonical plain formula names resolve consistently through `bd formula show`, `bd mol seed`, `bd mol pour`, `bd cook` and, when supported, `bd mol bond --dry-run`; legacy prefix/path workarounds are not encoded as policy.
+ - `all-children`, `any-children` and `children-of(...)` are treated as structural `waits_for` fan-in, not as gate types.
+ - `sp chain` readiness agrees with native ready, blocked and gate state on canonical fixtures.
+ - Priority ready selection is FIFO within one priority tier and atomic ready-claim observes the same ordering.
+ - Claim eligibility delegates custom-active status classification to Beads.
+ - Worker claims use lease-aware verbs; generic interactive assignment is not silently enrolled in heartbeat/reclaim.
+ - Owner-safe unclaim, administrative `--force` and mixed batch-claim reconciliation are tested.
+-- Issue claim, worktree writer lease and merge slot remain independent ownership dimensions.
++- Configured `claim.pools` aliases are claimable through the atomic claim path, while real assignees and unconfigured aliases retain anti-steal protection.
++- Expired pool claims return to the unassigned pool and are not attributed back to the original alias.
++- Coordinators and recovery code never use `unclaim; claim` as a live-owner takeover path.
++- Issue claim, claim-pool assignment, worktree writer lease and merge slot remain independent ownership dimensions.
+ - Cross-type blocking is accepted for hierarchically independent nodes and rejected for ancestor/descendant hierarchy shadows.
+ - The graph is reviewed through `bd create --graph --dry-run --json` before live atomic creation.
+ - `bd graph --open` is never treated as the canonical DAG.
+ - String and typed metadata use the correct CLI surfaces and preserve expected JSON types.
+ - Eager-memory treatment reuses `bd prime --no-memories`; custom PRIME and flag precedence are covered.
+ - Shared-server operation uses explicit project/database identity and one coordinated backup owner.
++- Embedded, direct-server and proxied-server compatibility is recorded per command; proxied support for selected commands is not represented as full CLI parity.
++- Every orchestration-critical unsupported proxied command has an explicit fallback or blocks promotion of proxied mode.
+ - Remote-backed upgrades follow backup, designated-migrator, adoption and rollback procedures.
++- A build at or after Beads commit `3fea705` is validated with Dolt v2.2.0 as one client/server compatibility tuple; stable v1.1.0 retains its separately verified matrix.
+ - Worktree readiness verifies a safe `.beads/` directory and hook-free bootstrap behavior.
+ - Dolt remains the bridge backend unless a separate approved ADR changes that decision.
+ 
+@@ -4211,7 +4251,9 @@
+ - Treat formula gates and structural `waits_for` fan-in as distinct primitives.
+ - Treat the installed Beads binary and parsed schema/formula output as the authority for available CLI behavior.
+ - Use native FIFO ready ordering and atomic claim rather than a Specialists queue tie-breaker.
++- Use configured `claim.pools` for dispatcher pool preassignment; preserve anti-steal protection for real owners and unconfigured aliases.
+ - Use lease-aware claim/heartbeat for managed workers; do not infer a worker lease from generic status/assignee state.
++- Never implement live-owner takeover as `unclaim; claim`; coordinate with the owner or reclaim an eligible expired lease.
+ - Reconcile persisted issue state after mixed batch-claim failure.
+ - Delegate custom-active claim eligibility to Beads.
+ - Permit cross-type blocking only when it does not shadow an ancestor/descendant hierarchy.
+@@ -4220,6 +4262,9 @@
+ - Use `bd prime --no-memories` as the first treatment mechanism for eager-memory suppression.
+ - Require explicit project/database identity and coordinated backup ownership in shared-server operation.
+ - Include `.beads/` permissions and hook-free bootstrap in worktree readiness.
++- Treat `bd mol bond` plain-name resolution as the canonical formula naming behavior when the installed build includes `b740f6f` or a release containing it.
++- Treat proxied-server support as a per-command compatibility matrix, not a backend-wide parity claim.
++- Require Dolt v2.2.0 only for Beads builds at or after unreleased commit `3fea705`; do not apply that minimum retroactively to stable v1.1.0.
+ 
+ ## 20.2 Decisions required before the affected package is dispatched
+ 
+@@ -4574,11 +4619,15 @@
+ - Do not edit production code.
+ - Do not begin implementation.
+ - Record the installed Beads version or pinned commit and execute the complete capability snapshot from Section 13.6.9.
++- Produce a per-command deployment-mode matrix for embedded Dolt, direct Dolt SQL-server and proxied-server; do not infer full parity from selected command support.
++- Record the Beads↔Dolt compatibility tuple; require Dolt 2.2.0 only for builds at or after commit `3fea705`.
+ - Inspect the live Beads formula catalog and current open/closed Beads before creating duplicates.
+ - Validate formulas through parsed `bd formula show --json`; do not infer accepted schema from TOML prose.
++- Verify plain-name formula resolution with `bd mol bond <formula-name> <target> --dry-run` when supported; do not institutionalize legacy name prefixes.
+ - Preserve the distinction between asynchronous formula gates and structural `waits_for` fan-in.
+-- Use native FIFO ready/claim behavior and delegate custom-active claim eligibility to Beads.
+-- Model generic interactive assignment separately from heartbeat-managed worker leases.
++- Use native FIFO ready/claim behavior, configured `claim.pools` where required, and delegate custom-active claim eligibility to Beads.
++- Preserve real-owner anti-steal behavior and never use `unclaim; claim` as a takeover shortcut.
++- Model generic interactive assignment separately from pool preassignment and heartbeat-managed worker leases.
+ - Reconcile successful and failed issue claims after a mixed batch non-zero result.
+ - Permit cross-type blocking only for hierarchically independent nodes.
+ - Treat `bd graph --open` as a filtered orientation view, never as the canonical graph.
+@@ -4610,8 +4659,10 @@
+ 8. Open decisions that genuinely block dispatch.
+ 9. Beads version/capability matrix with released/pinned/fallback classification.
+ 10. Parsed formula and graph dry-run evidence.
+-11. Ready/claim/lease, graph, metadata, memory, migration and worktree compatibility report.
+-12. Exact next dispatch commands or xtmux handoff pointers, but do not execute them.
++11. Ready/claim/pool/lease, graph, metadata, memory, migration and worktree compatibility report.
++12. Embedded/direct/proxied per-command compatibility and fallback matrix.
++13. Beads↔Dolt version compatibility tuple.
++14. Exact next dispatch commands or xtmux handoff pointers, but do not execute them.
+ 
+ Stop and report rather than inventing a design when canonical documents conflict materially.
+ ```
+@@ -4944,3 +4995,18 @@
+ eval/validation coverage
+ roadmap/meta documentation patch plan
+ ```
++
++---
++
++## Revision summary — 17 July 2026
++
++The PRD now treats claim pools as dispatch metadata over the native atomic claim path, prohibits live-owner takeover through `unclaim; claim`, requires formula plain-name bond compatibility, records CLI support separately for embedded/direct/proxied deployment modes and pins Dolt v2.2.0 only to the corresponding unreleased Beads main line. Existing work packages absorb the changes; no new package family or critical-path edge was introduced.
++
++## Program tracking and operational companion
++
++- **Jira program:** [KAN-115 — Specialists modernization](https://xtrmxt.atlassian.net/browse/KAN-115)
++- **Operational companion:** [Specialists Modernization — Manuale operativo v3.1](https://xtrmxt.atlassian.net/wiki/spaces/KAN/pages/14319617)
++- **Freshness baseline:** reconciled on 17 July 2026 against this PRD v3.1 and the post-Beads-v1.1 contract.
++
++KAN-115 tracks implementation status and ownership. This page remains the normative product and architecture contract; where Jira summaries or the operational companion conflict with it, this PRD prevails.
++
