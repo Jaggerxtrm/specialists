@@ -102,3 +102,8 @@ __pycache__/
 .xtrm/cache/
 .xtrm/statusline-claim
 .pi/skills/
+
+# Internal working documents; keep user-facing docs and examples tracked.
+docs/archive/
+docs/devops/
+docs/plans/

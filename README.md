@@ -4,6 +4,17 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
 
+# **WARNING** 
+`docs/` might be stale at the current moment. The project is in active and quick development toward v4.0 and stable version, please refer to:
+  - sp --help;
+  - using-specialists skill;
+  - using-xtrm skill;
+  - all other skills INCLUDING those in the `xtrm-dev/core` repo;
+  - cloning the repo and understanding it with your agents is strongly recommended vs only installing the npm package;
+  - CHANGELOG.md, release notes, and prs themselves
+
+Installing https://www.github.com/xtrm-dev/core (xtrm-tools on npm) is a strong requirement
+
 **Specialists is an agent-mind runtime for getting real work done.**
 
 It is not just “run many agents”. The core idea is that a long single-agent chat becomes cognitively contaminated: old hypotheses, abandoned plans, tool residue, self-review bias, forgotten constraints, and context-window noise all accumulate in one mind. Quality drops because the same context tries to be explorer, implementer, tester, reviewer, security auditor, memory keeper, and release operator at once.
