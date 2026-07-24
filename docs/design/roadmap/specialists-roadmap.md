@@ -2,6 +2,8 @@
 
 > **Document role.** Canonical, consolidated source-of-truth for the specialists-runtime cleanup and substrate-alignment effort. Absorbs and supersedes the previously-separate `specialists-runtime-critique.md` and `specialists-substrate-alignment.md`.
 >
+> **Canonical execution-protocol companion.** The internal lifecycle of one managed Specialist activation is specified in `docs/design/execution-protocol-design/specialist-execution-protocol.md`. Ownership boundaries are recorded in `docs/design/execution-protocol-design/specialist-execution-protocol-ownership-decision.md`. This roadmap owns sequencing and implementation packages; it does not duplicate the protocol specification.
+>
 > **Revision note (this version).** Reviewed against `substrate.md` revision 10 *after* the step-1/2/3/4/6 integration and the rev10 additions (chain-coordinator §4.3, memory-as-capability §10.2, chain-template-declares-coordinator §6.9.10). Open questions (§11) resolved; the four content adjustments and the runway recalibration applied; every reads-forward retargeted to the sections that now actually exist in the canonical design. **Absorbed (2026-05-27 consolidation):** the prior parallel `specialists-friction-audit.md` (now archived) — its additions are now Opportunities 10 (`--chain` redesign) and 11 (pull-not-push memory recall), §12 (`sp epic` decoration strategy), §13 (chain templates concretized in `docs/design/roadmap/chain-templates/`), and D24–D27 in this §0. Changes are marked inline with **[rev-9/10 author]** where they reflect a decision by the substrate-design author, **[recalibrated]** where the runway changed a prior conclusion, and **[absorbed]** where they came from the friction-audit consolidation.
 >
 > **Intended consumers.** Operator (decisions now closed — see §0), planning session (produce a phased work plan from this doc), implementer (after plan approved).
@@ -43,6 +45,7 @@ The prior revision left nine open questions (old §11). They are now resolved. T
 | Opp 7 `--accept-stale-base --reason` | §6.4 precondition gate + channels.md §10.2 envelope |
 | Opp 8 `step_completed` event | §3.1 daemon advances on `agent_end` (same payload) |
 | Opp 9 composition-nudge YAML | §6.9.5 L1 nudges (same matcher) |
+| Opp 19 deterministic Specialist execution protocol | §3.1 advance on validated persisted evidence; §6.4 contract validator; §6.9.2 step satisfaction distinct from process completion |
 | `sp finalize` removal + `sp merge` diagnostic | §6.10 close-as-derivation |
 | Hook hard-codes "the six workflows" | §6.9.10 the six shipped default templates |
 
@@ -210,6 +213,8 @@ Each opportunity (a) is implementable without the substrate daemon or `container
 > **Post-table additions (2026-05-31).** Opportunities 13, 14, 15, 16 were added after this summary table and are described in §3.2 below — Opp 13 (sp stop --all / sp chain stop, `unitAI-1p0s5`), Opp 14 (canonical-pipeline completion, **[shipped]** via `unitAI-sfwe1`), Opp 15 (seconder fusion, **[shipped]** via `unitAI-4e194`), Opp 16 (SCRUTINY enforcement, in-flight via `unitAI-3l0ac`). A 17th initiative — sp merge / sp epic merge / sp finalize rework — is filed as `unitAI-lyh1b` (kj651 child); described in §10.5 Phase 5 row 19 + replaces the prior dirty-index-diagnostic scope. All five are kj651 parent-child children.
 >
 > **Post-table addition (2026-06-02; stable bridge shipped 2026-06-02).** Opportunity 18 — adopt the **5-layer identity model** (`participant_kind` / `participant_role` / `participant_id` / `job_id` / `turn_id`+`tool_call_id`+`event_id`) in observability + envelope, replacing the current conflation of `specialist_id` (a bounded role name) with run identity. Substrate is under-specified on per-activation identity (no Run/Activation entity in §2.1); this opp pins the canonical schema bridge-side. **Pre-substrate bridge status:** shipped for `xtrm.forensic.v1` envelopes, persisted `specialist_forensic_events`, `sp forensic`, `sp feed/log --json` additive `forensic_event`, and `sp metrics --prometheus` low-cardinality projection. Remaining substrate-era work is broader source-family coverage and eventual re-home into substrate state/events. Tracking beads: `unitAI-60w93.8`–`.15` (bridge stabilization) plus `unitAI-n2px1` (identity alignment). Co-supersedes the (wrong) Opp 18 framing previously on the feature branch (`specialist_id → participant_id` rename), which conflated role with instance.
+>
+> **Post-table addition — Opportunity 19: deterministic Specialist execution protocol.** Every managed activation runs through one versioned runtime protocol: context/contract preflight, mandatory-rule receipt and acknowledgement, conditional memory decision, typed local plan, role work, required evidence validation, Git/commit finalization, result persistence, automatic Bead handoff, typed parent notification and owned-resource cleanup. The deterministic shell is implemented once in Specialists; a Specialist definition selects a profile and declares role-specific capability/evidence differences; the step Bead carries the current mandate. `job completed` is not equivalent to `step satisfied`. Canonical design: `docs/design/execution-protocol-design/specialist-execution-protocol.md`.
 
 ### 3.2 Per-opportunity detail
 
@@ -874,6 +879,7 @@ Sequenced by leverage-per-day. **[recalibrated]** The runway (month+, ~10 repos)
 | 0 | 1 | mostly sequential | bootstrap items chain (install templates → edit planner → create planning skill → verify → smoke) | ~1–2h |
 | 1 | 4 | up to 4 parallel (Claude hook, Opp 2 path-binding, Opp 8 event, Opp 11 memory) | all touch different files / different surfaces | ~half overnight |
 | 2 | 5 | mostly sequential (Opp 1 → Opp 3 → Opp 4 → Opp 10 dep chain) | each opportunity depends on prior data shapes / flags | ~one overnight |
+| 2A | 3 | mostly sequential protocol kernel; fixtures and role-profile audit may run in parallel | phase/event schema → preflight → finalization ownership | ~half overnight |
 | 3 | 5.5 | up to 7 parallel (Opp 5, 6, 7, 9, R-checks, Opp 12 XML contracts, contract-discipline rule — all independent file scopes) | independent file scopes | ~half overnight |
 | 4 | 2 | sequential single workstream | one removal pass across `epic.ts` + state machine + reconciler | ~few hours |
 | 5 | 1 | parallel (B-A4 sweep, B-A5 excludes, B-A6 wrapper, sp merge diag) | independent file scopes | ~few hours |
@@ -918,6 +924,22 @@ After Phase 0: the operator has the chain templates installed, the planner knows
 | 7 | Opp 4 — `sp chain review/approve/insert` | §3.2 | 2d | Opp 3 |
 | 8 | sp-runtime hint blocks (§5.1/5.2/5.3) | §5 | 1d | Opp 8 |
 | 9 | **Opp 10 — `--chain <molecule-id>` redesign** (deprecate `--worktree`/`--job` with 1-release grace) | §3.2 | 2d | Opp 1+2 (lease) + Opp 3 (mol) + Opp 6 (naming) |
+
+### Phase 2A — Deterministic Specialist execution protocol (~3 days)
+
+This phase establishes the runtime-owned lifecycle of one Specialist activation. It is distinct from chain composition: Phase 2 resolves which steps exist; Phase 2A makes execution of each selected step typed, fail-closed and replayable.
+
+| # | Item | Source | Cost | Verify |
+|---|---|---|---|---|
+| 9a | Add `specialists.execution.v1` types, phase state and protocol event catalog | `docs/design/execution-protocol-design/specialist-execution-protocol.md` §§5,13–14 | 0.5d | pure reducer replay tests; every phase transition has a formatter/read surface |
+| 9b | Implement context resolution + seven-field structural contract gate; NOK cannot enter planning | protocol §6.1–6.3 | 0.5d | missing/invalid contract fixtures block before model work |
+| 9c | Persist mandatory-rule delivery receipt and typed acknowledgement; add conditional memory decision/telemetry | protocol §6.4–6.6 | 0.5d | resolved rule hash/IDs recorded; conflict blocks; no-memory path emits no query |
+| 9d | Add typed activation-local plan and deterministic scope/capability validation | protocol §7 | 0.5d | read-only write attempt and scope expansion rejected |
+| 9e | Add evidence-requirement catalog and validators, including conditional GitNexus evidence | protocol §9 | 0.5d | missing required/current evidence prevents successful finalization |
+| 9f | Centralize commit → result → Bead note → parent message → forensic → cleanup finalization with idempotency keys | protocol §10, §14 | 0.5d | crash/replay fixtures produce no duplicate commit, note or message |
+| 9g | Ship `specialist-execution-protocol-v1` simulation/eval suite and legacy-profile rollback | protocol §§17,19–20 | 0.5d | writer/read-only/waiting/failure fixtures pass; profile rollback proven |
+
+**Promotion rule:** Phase 2A may be instrumented in observe/shadow mode before the wider audit closes. Authoritative enforcement and broad rollout wait for the relevant lifecycle, Git and notification audit blockers to be resolved.
 
 ### Phase 3 — Naming, conventions, environment + XML contracts + contract discipline (~5.5 days)
 

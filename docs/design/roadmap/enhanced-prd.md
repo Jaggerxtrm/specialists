@@ -9,7 +9,7 @@
 **Audience:** Specialists runtime maintainers, Core/launcher maintainers, xtmux maintainers, agent-orchestration engineers, Console maintainers, evaluation engineers and platform/observability engineers  
 **Scope:** Prompt and rule modernization for reviewer, executor, overthinker, seconder, test-engineer and researcher; progressive-disclosure redesign of `using-specialists`; interactive `chain-coordinator` bootstrap and assignment; chain-member identity and context reconstruction; memory retrieval policy; forensic and metrics hardening; historical and continuous evaluation; controlled model and prompt A/B testing; Console integration.
 
-**Canonical companions:** `docs/design/roadmap/specialists-roadmap.md` for the bridge-runtime roadmap; `docs/design/roadmap/chain-templates/` for executable chain shapes; `xtrm-dev/core/docs/xt-pi-role.md` for the interactive launcher; `Jaggerxtrm/xtmux/docs/observability-redesign.md` for the current local attention/messaging runtime; `xtrm/docs/channels/channels.md` for future channel semantics; and the newest dated xtrm reconciliation for cross-repository sequencing.
+**Canonical companions:** `docs/design/roadmap/specialists-roadmap.md` for the bridge-runtime roadmap; `docs/design/roadmap/chain-templates/` for executable chain shapes; `docs/design/execution-protocol-design/specialist-execution-protocol.md` for the deterministic lifecycle of one managed Specialist activation; `docs/design/execution-protocol-design/specialist-execution-protocol-ownership-decision.md` for ownership boundaries; `xtrm-dev/core/docs/xt-pi-role.md` for the interactive launcher; `Jaggerxtrm/xtmux/docs/observability-redesign.md` for the current local attention/messaging runtime; `xtrm/docs/channels/channels.md` for future channel semantics; and the newest dated xtrm reconciliation for cross-repository sequencing.
 
 ## Revision 2026-07-17 v3.1 — claim pools, proxied-server parity and Dolt compatibility
 
@@ -429,6 +429,7 @@ The required result is not merely shorter prompts. The required result is a meas
 8. Console provides historical, live and experiment-specific evaluation surfaces without becoming a second telemetry producer.
 9. Interactive role sessions receive current task context and mandatory rules as a first user assignment, never buried inside the long-lived system prompt.
 10. The interactive coordinator applies future chain-coordinator judgment duties through current Specialists, Beads and xtmux primitives without pretending that xtmux is Substrate or Channels.
+11. Every managed Specialist activation runs through a versioned deterministic shell that validates contract readiness, records policy acknowledgement, types planning and evidence, and owns commit/result/Bead-note/notification/cleanup finalization.
 
 # 1. Executive summary
 
@@ -818,6 +819,19 @@ Scrutiny floors, required gates, path matching, worktree boundaries, output-sche
 
 CLI manuals and lengthy playbooks belong in focused skills or tool descriptions, loaded only when needed.
 
+### Deterministic shell, typed agentic core
+
+One Specialist activation is not a free-form prompt followed by a terminal result. It executes through a versioned protocol:
+
+```plaintext
+runtime PREPARE
+→ typed agentic PLAN
+→ typed agentic EXECUTE
+→ runtime FINALIZE
+```
+
+The runtime owns structural contract validation, mandatory-rule receipts, phase applicability, plan/evidence/schema validation, Git finalization, result persistence, Bead handoff, parent notification and cleanup. The model owns semantic readiness judgment, conditional memory choice, local planning, role work and evidence interpretation. A completed process is not a satisfied chain step until the validated result satisfies the step contract.
+
 ### Identity pushed, content pulled
 
 The runtime should inject compact chain identity, member indexes and evidence pointers. The specialist should retrieve substantive upstream content only when its role requires it.
@@ -1168,6 +1182,90 @@ The coordinator-specific guidance must cover:
 - close-time evidence, clean-git verification, follow-up Beads and memory consideration.
 
 Permission/tool enforcement for interactive roles is not part of this runway. Role-boundary violations are measured in evals and remain prompt/skill discipline until Substrate provides the proper capability model.
+
+## 5.13 Deterministic Specialist execution protocol
+
+Every managed Specialist activation shall use `specialists.execution.v1` or a compatible versioned successor.
+
+Canonical phase sequence:
+
+```plaintext
+PREPARE
+  resolve Bead/root/step/chain context at bounded depth
+  validate the configured seven-field contract profile
+  block on structural NOK
+  produce semantic readiness READY | UNCLEAR | INVALID
+  resolve and fingerprint mandatory rules
+  record typed rule acknowledgement/conflicts
+  resolve capabilities and skills
+  optionally decide and perform memory retrieval
+
+PLAN
+  produce a typed activation-local execution plan
+  validate plan scope, permissions, evidence producers and validation
+
+EXECUTE
+  perform the bounded role work
+  record material plan deviations
+  collect typed evidence
+
+FINALIZE
+  validate result schema and required evidence
+  validate Git state and create the required commit for writer profiles
+  persist the authoritative result
+  append the structured Bead handoff automatically
+  send the bounded typed parent message automatically
+  emit forensic evidence
+  release activation-owned resources
+```
+
+The default seven-field change-contract readiness profile is:
+
+```plaintext
+problem
+scope
+non_goals
+dependencies_or_inputs
+deliverables
+validation
+acceptance
+```
+
+`type` and `scrutiny` are separately required metadata. A step contract resolves the role-specific equivalents: mandate, inputs, outputs, scope, non-goals, validation and downstream handoff obligation.
+
+### Ownership
+
+```plaintext
+Specialists runtime
+  common phase state machine, validation and automatic finalization
+
+Specialist definition
+  selects an execution profile; declares permissions, memory/plan/commit policy,
+  output schema and role-specific evidence requirements
+
+root/step Bead
+  task-specific contract and authorized scope
+
+chain template / resolved chain
+  participant topology, dependencies and gates
+
+chain reducer
+  derives runnable/satisfied state from persisted validated evidence
+```
+
+The full lifecycle must not be copied into every Specialist JSON or every formula. Definitions select reusable profiles and override only demonstrated role differences.
+
+### Required correctness properties
+
+- Contract NOK cannot proceed to planning.
+- `UNCLEAR` waits/escalates rather than executing speculatively.
+- Rule acknowledgement is not treated as compliance proof.
+- Conditional memory search may be skipped with a recorded reason.
+- A local plan cannot widen Bead scope or role capability.
+- Missing required evidence prevents successful finalization.
+- Commit, result, Bead note and parent message are runtime-owned and idempotent.
+- Notification failure does not rewrite the job verdict.
+- Chain satisfaction consumes the validated result, not raw model completion.
 
 # 6. Workstream B — Chain participant identity and context reconstruction
 
@@ -3005,6 +3103,20 @@ Scrutiny defaults:
 
 Role prompt files are parallel-safe only after `WP-P02` and `WP-P04` freeze shared contracts. Each role owns its own specialist JSON and role-specific tests; one integration owner handles shared mandatory-rule/index edits.
 
+## 15.5A Deterministic Specialist execution packages
+
+| WP | Deliverable | Dependencies | Parallel lane | Scrutiny |
+|---|---|---|---|---|
+| `WP-XP01` | `specialists.execution.v1` schemas, reusable profiles, protocol state and pure reducer/event catalog | T06, P02 interfaces | execution-protocol-core | critical |
+| `WP-XP02` | Context resolver, seven-field structural contract gate and semantic readiness result | XP01, C04/C06 where chain context exists | execution-preflight | critical |
+| `WP-XP03` | Mandatory-rule delivery receipt/acknowledgement plus conditional memory decision and telemetry | XP01, M01 | execution-policy | high |
+| `WP-XP04` | Typed activation-local plan, scope/capability validator and plan-deviation evidence | XP01, XP02 | execution-plan | high |
+| `WP-XP05` | Evidence-requirement catalog and validators, including conditional GitNexus/current-diff evidence | XP01, T07 | execution-evidence | high |
+| `WP-XP06` | Central commit → result → Bead note → parent message → forensic → cleanup finalization with idempotency | XP01, P02, notification contract, lifecycle audit closure | execution-finalize | critical |
+| `WP-XP07` | `specialist-execution-protocol-v1` simulation, failure-injection and role-profile rollout suite | XP01–XP06, E03 | execution-eval | critical |
+
+`WP-XP01`–`XP05` may run in observe/shadow mode while unrelated audit closure continues. `XP06` enforcement and broad profile promotion require the relevant Git, lifecycle and notification correctness blockers to be closed.
+
 ## 15.6 Critical chain-foundation packages
 
 | WP | Deliverable | Dependencies | Parallel lane | Scrutiny |
@@ -3303,6 +3415,17 @@ A lane may develop ahead on a feature branch, but it may not be promoted across 
 
 **Exit criteria:** the generated output contract is the single machine-readable SSOT; role-aware injections pass regression fixtures.
 
+## Phase 4A — Deterministic Specialist execution protocol
+
+1. Complete `WP-XP01`–`WP-XP03` in observe/shadow mode.
+2. Add structural contract blocking and semantic waiting behavior.
+3. Complete typed planning and evidence requirements through `WP-XP04`–`WP-XP05`.
+4. Centralize automatic finalization through `WP-XP06` only after lifecycle/Git/notification audit blockers close.
+5. Run `WP-XP07` before promoting any role from legacy to enforced profile.
+6. Remove superseded prompt prose only after the equivalent runtime invariant is enforced.
+
+**Exit criteria:** one writer and one read-only role complete the protocol end to end; NOK contracts cannot execute; plans cannot widen scope; required evidence and commit policy gate finalization; result, Bead note and parent message are persisted/emitted exactly once; replay fixtures pass.
+
 ## Phase 5 — Role prompt experiments
 
 1. Run `WP-P05` first for overthinker/researcher.
@@ -3468,6 +3591,22 @@ The Epics below are capability groupings. For actual Beads decomposition and par
 
 # 18. Acceptance criteria
 
+### Deterministic Specialist execution
+
+- Every managed run records protocol version and selected execution profile.
+- The configured seven-field contract profile is structurally validated before planning.
+- A structurally NOK contract cannot proceed.
+- Semantic `UNCLEAR` enters waiting/escalation rather than speculative work.
+- Effective mandatory rules are fingerprinted and explicitly acknowledged; acknowledgement is not treated as compliance proof.
+- Conditional memory search is either performed with recorded provenance or skipped with a recorded reason.
+- Required planning emits a schema-valid bounded local plan.
+- Plans outside role capability or Bead scope are rejected.
+- Required evidence is typed, attributable and current.
+- Writer finalization stages only authorized paths and creates the required commit; read-only profiles cannot commit.
+- Authoritative result persistence, Bead-note append and parent notification are idempotent.
+- Notification failure does not alter the job verdict.
+- Terminal cleanup releases only activation-owned resources and preserves branch/worktree/result/evidence.
+- Chain progression consumes the validated result and step satisfaction, not process completion alone.
 
 ## Beads capability reuse
 
@@ -3627,6 +3766,7 @@ The Epics below are capability groupings. For actual Beads decomposition and par
 - Require Dolt v2.2.0 only for Beads builds at or after unreleased `3fea705`; do not apply that minimum retroactively to stable v1.1.0.
 - Keep Dolt as the Beads backend during the bridge runway; alternative backends remain a later ADR/watch item.
 - Treat post-v1.1 claim leases, formula schema and history-event features as release/pin-gated capabilities, not assumptions.
+- The common Specialist lifecycle is owned once by the Specialists runtime; Specialist definitions select profiles, step contracts supply task-specific obligations, and chain templates remain topology definitions rather than generic per-node workflow scripts.
 
 ## 20.2 Decisions required before the affected package is dispatched
 

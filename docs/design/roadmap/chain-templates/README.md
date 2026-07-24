@@ -8,6 +8,14 @@
 >
 > **Reference:** `docs/design/roadmap/specialists-roadmap.md` §3 (twelve alignment opportunities), Opp 4 (`sp chain review/approve/insert`), Opp 10 (`--chain` redesign), Opp 14 (QA chain integration via `test-engineer` + `test-runner` upgrade), §12 (sp epic decoration). For substrate alignment: `docs/design/substrate/substrate.md` §6.9.10.
 
+### Boundary: chain topology versus Specialist execution
+
+A formula defines collaboration topology: participant roles, step contracts, dependencies, gate classes and semantic edge hints. It does **not** duplicate the internal lifecycle of each participant.
+
+Every dispatched step executes through `docs/design/execution-protocol-design/specialist-execution-protocol.md`: context/contract preflight, mandatory-rule acknowledgement, optional memory decision, typed local planning, evidence validation, commit/finalization, result persistence, automatic Bead note, parent notification and cleanup. The resolved chain/reducer consumes the validated result to determine step satisfaction and next-node eligibility.
+
+This boundary keeps promoted chain templates compact and domain-specific instead of turning every formula into a generic workflow DSL.
+
 ## What's in this directory
 
 **15 chain template `.formula.json` files** currently in this directory (named `<template>.formula.json`). Each uses only `[package]` tier specialists from `config/specialists/` — these are the cross-repo defaults. Per-repo overrides via `extends` can add custom specialists (see market-data example pattern below).
@@ -130,6 +138,7 @@ The child template's steps APPEND to parent's. Behavior: bd cook resolves parent
 3. **No `applies_when` in formula.** Selection logic external. Documented above.
 4. **`bd mol pour` creates a NEW molecule** every time — operator can't pour into an existing molecule. For chain insertion (Opportunity 4 `sp chain insert`), helper logic creates step beads directly and wires edges, bypassing pour. Documented in roadmap §3.1.4.
 5. **Variables substitute at pour time only.** No runtime variables; no late-binding from bd context. Fine for chain shape; selection logic handles dynamic context.
+6. **Participant lifecycle is external to the formula.** A formula may declare role-specific inputs, outputs and evidence expectations, but PREPARE/PLAN/EXECUTE/FINALIZE sequencing and automatic terminal side effects belong to `specialists.execution.v1`.
 
 ## Cross-reference
 
@@ -144,3 +153,4 @@ The child template's steps APPEND to parent's. Behavior: bd cook resolves parent
   - §6.9.5 composition in three moments
   - §6.9.10 substrate-side catalog reference (points back at canon for full roster)
   - §4.3 chain coordinator (entry-gate at container start)
+- **Specialist execution protocol** `docs/design/execution-protocol-design/specialist-execution-protocol.md` — canonical internal lifecycle for every selected participant.
