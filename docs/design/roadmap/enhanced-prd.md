@@ -2,14 +2,84 @@
 
 ## Product Requirements Document
 
-**Status:** Final consolidated implementation and decomposition PRD v3.1; includes the 13–17 July 2026 Beads v1.1/main capability reconciliations
-**Date:** 17 July 2026
+**Status:** Final consolidated implementation PRD v3.2; includes the 15–17 July Beads reconciliations, deterministic Specialist execution protocol integration, and the 24 July 2026 repository-state/roadmap-coordination reconciliation
+**Date:** 24 July 2026
 **Primary repository:** `xtrm-dev/specialists`  
 **Related repositories:** `xtrm-dev/core`, `Jaggerxtrm/xtmux`, `Jaggerxtrm/console` / Omniforge, `xtrm-dev/xtrm`  
 **Audience:** Specialists runtime maintainers, Core/launcher maintainers, xtmux maintainers, agent-orchestration engineers, Console maintainers, evaluation engineers and platform/observability engineers  
-**Scope:** Prompt and rule modernization for reviewer, executor, overthinker, seconder, test-engineer and researcher; progressive-disclosure redesign of `using-specialists`; interactive `chain-coordinator` bootstrap and assignment; chain-member identity and context reconstruction; memory retrieval policy; forensic and metrics hardening; historical and continuous evaluation; controlled model and prompt A/B testing; Console integration.
+**Scope:** Prompt and rule modernization for reviewer, executor, overthinker, seconder, test-engineer and researcher; progressive-disclosure redesign of `using-specialists`; interactive `chain-coordinator` bootstrap and assignment; deterministic per-activation execution protocol; chain-member identity and context reconstruction; memory retrieval policy; forensic and metrics hardening; historical and continuous evaluation; controlled model and prompt A/B testing; Console integration; current-state reconciliation and roadmap coordination.
 
-**Canonical companions:** `docs/design/roadmap/specialists-roadmap.md` for the bridge-runtime roadmap; `docs/design/roadmap/chain-templates/` for executable chain shapes; `docs/design/execution-protocol-design/specialist-execution-protocol.md` for the deterministic lifecycle of one managed Specialist activation; `docs/design/execution-protocol-design/specialist-execution-protocol-ownership-decision.md` for ownership boundaries; `xtrm-dev/core/docs/xt-pi-role.md` for the interactive launcher; `Jaggerxtrm/xtmux/docs/observability-redesign.md` for the current local attention/messaging runtime; `xtrm/docs/channels/channels.md` for future channel semantics; and the newest dated xtrm reconciliation for cross-repository sequencing.
+**Canonical companions:** `docs/design/roadmap/specialists-roadmap.md` for the bridge-runtime roadmap; `docs/design/roadmap/chain-templates/` for executable chain shapes; `docs/design/execution-protocol-design/specialist-execution-protocol.md` for the deterministic lifecycle of one managed Specialist activation; `docs/design/execution-protocol-design/specialist-execution-protocol-ownership-decision.md` for ownership boundaries; `xtrm-dev/core/docs/design/audit-reconcile-v0724.md` and `xtrm-dev/core/docs/design/audit-reconcile-v0724-epic-plan.md` for current audit closure evidence; `xtrm-dev/core/docs/xt-pi-role.md` for the interactive launcher; `Jaggerxtrm/xtmux/docs/observability-redesign.md` for the current local attention/messaging runtime; `xtrm/docs/channels/channels.md` for future channel semantics; and the newest dated xtrm reconciliation for cross-repository sequencing.
+
+## Revision 2026-07-24 v3.2 — current implementation and roadmap-coordination reconciliation
+
+This revision does not replace the architecture established by v3.1 or by `specialists.execution.v1`. It reconciles that architecture against the repository state and the Core audit verified on 24 July 2026, and restores a dispatch-safe boundary between audit closure, released runtime behavior and the next deterministic-orchestration wave.
+
+### Authority and freshness
+
+The binding precedence for current-state claims is:
+
+1. current repository code, executable schemas, public CLI contracts and released artifacts;
+2. the installed Beads executable and its machine-readable capability surfaces;
+3. the Core audit `xtrm-dev/core/docs/design/audit-reconcile-v0724.md` and approved `audit-reconcile-v0724-epic-plan.md`;
+4. `specialists-roadmap.md` for canonical bridge architecture and sequencing;
+5. this PRD for implementation packages, gates and acceptance;
+6. Jira `KAN-115+`, Beads epics and the operational manual as program projections.
+
+The Core report `xtrm-orchestration-determinism-final-consolidated-report-2026-07-23.md` remains WIP evidence/architecture input. Where the later Core audit verified a different behavior or ownership boundary, the Core audit disposition wins. Neither document overrides current code.
+
+### Verified repository snapshot
+
+| Repository | Released package | Verified source snapshot | Reconciliation consequence |
+|---|---:|---|---|
+| `xtrm-dev/core` | `xtrm-tools` `0.11.2` | `428a27bf` | Runtime compatibility preflight, coordinator lineage, live Suite C, topology projection/views and installer/global-skill hardening are current primitives. |
+| `Jaggerxtrm/xtmux` | `@jaggerxtrm/xtmux` `0.2.2` | `048b742d` | `message-get`, `agent-last`, topology lineage fields, canonical Beads event streaming and SQLite coordination are current primitives. |
+| `xtrm-dev/specialists` | `@jaggerxtrm/specialists` `3.21.1` | `05c57e56` plus source-only PRs `#206–#208` | Coordinator ancestry, runtime-origin lineage, `sp render-bead`, integration record/list and build identity are landed; source-only JSON/event changes await a later package. |
+
+The applying agent must refresh exact heads before commit. Version identity and installed-artifact evidence must not be inferred from source-only commits.
+
+### Landed capability ledger
+
+The following are no longer net-new work: Core subordinate coordinator launch and validation; live coordinator→Specialist ancestry; read-only topology projection/views; xtmux exact message and completed-turn retrieval; xtmux topology lineage and canonical Beads event streaming; Specialists coordinator-branch consumption, `xtrm.branch.integration.v1`, integration record/list and roleless `sp render-bead`; and current public NDJSON/replay behavior where released identity permits it.
+
+The roadmap and Beads/Jira reconciliation must convert tasks that still propose creating these capabilities into close-completed, refine-current-contract, close-superseded or retain-only-unfinished acceptance criteria.
+
+### Binding corrections from the Core audit
+
+- `message-ack` remains a receipt/read fact, not fulfilment.
+- Exact inbound retrieval must retain bounded list/query behavior; no per-row `message-get` subprocess loop.
+- Claude inbox and parent-FYI parity belongs to xtmux, not Core.
+- Specialists parent notification starts with terminal `done | error | cancelled`; `waiting` is measured follow-up and `stalled` is not invented as canonical status.
+- Legacy Core Specialists marker hooks are deleted, not extended.
+- `--background` must be reconciled across help, dispatch parsing and eval fixtures.
+- The five orchestration skill roots require progressive-disclosure slimming and command-contract drift gates; detailed migration belongs to the audit epic, not duplicated WP prose here.
+
+### Program taxonomy and promotion gates
+
+The PRD Tracks A–F retain their meanings. Core audit labels “Track A — audit closure” and “Track B — deterministic orchestration” are operational labels, not replacements for PRD tracks.
+
+```text
+AC0 — current audit closure and released-trio coherence
+  → P1/security closure
+  → P2/message/hook/help/skill closure
+  → review-thread resolution and intentional clean test baseline
+  → coordinated package release and packed/live smoke
+
+DO0 — deterministic orchestration promotion
+  → canonical chain compiler/resolver
+  → persisted ResolvedChain
+  → pure evidence-driven chain reducer
+  → exact scheduler intents and dispatch
+  → specialists.execution.v1 enforcement by profile
+```
+
+`WP-XP01`–`WP-XP05` may instrument/operate in observe or shadow mode while AC0 is open. `WP-XP06` authoritative finalization, broad execution-profile enforcement and production chain resolver/reducer/dispatch do not promote until relevant AC0 blockers close.
+
+### Program projection
+
+- Jira `KAN-115` remains the program root; `KAN-116+` must be reconciled against this revision, current code and the Core audit before status or scope is trusted.
+- Core audit closure is tracked by Beads epic `xtrm-wiy5n`.
+- Jira identifies program work, GitHub proves implementation, `xtrm.forensic.v1` proves runtime causality, Git proves integration, and Beads preserves durable contracts/dependencies. No projection replaces its authority source.
 
 ## Revision 2026-07-17 v3.1 — claim pools, proxied-server parity and Dolt compatibility
 
@@ -690,6 +760,20 @@ Current primitives relevant to this PRD include:
 - agent-state and turn-completion events.
 
 These mechanisms are the bridge attention plane. They do not own Specialist chain truth, gate authority, resolved chain shape or final release decisions.
+
+## 2.17 Post-17 July implementation delta
+
+The current public retrieval hierarchy supersedes polling/pane-capture wording elsewhere in older bridge prose:
+
+```text
+exact coordination message       → xtmux message-get <message-key> --json
+latest completed interactive turn → xtmux agent-last <pane|session> --json
+structured Specialist progress    → sp run --json / sp feed --json
+authoritative Specialist result   → sp result <job-id> --json
+live prompt/menu/auth diagnosis   → bounded pane capture
+```
+
+Pane capture is not a result protocol. `sp feed --json` is structured progress, not terminal-result authority. `sp render-bead`, `xtrm.branch.integration.v1`, Core topology projections and the current NDJSON projector are existing primitives; remaining work must refine and consume those contracts rather than create parallel stores or renderers. Archon may consume the public boundary experimentally but does not own Specialists lifecycle, Beads, xtmux, worktrees or Git truth.
 
 ## 2.14 Bridge persistence split
 
@@ -2782,6 +2866,29 @@ Requirements:
 - Rollout modes: `off → shadow → warn → enforce`.
 - Hooks do not decide final release authority or implement a second chain scheduler.
 
+## 13.1C Current-state reconciliation and audit-promotion gate
+
+The roadmap patch produced from this PRD must contain a dated current-state ledger separate from architectural Opportunities. It records released versions and source-only deltas, landed capabilities that must not be recreated, current audit blockers and owning repositories, the distinction between AC0 audit closure and DO0 deterministic orchestration, the WIP status of the unavailable external report, and the Jira `KAN-115+` / Beads `xtrm-wiy5n` projection mapping.
+
+The local audit's operational “Track A / Track B” names must not replace the PRD's established Track A–F taxonomy.
+
+Before deterministic orchestration is promoted, require:
+
+```text
+audit P1/security closure
+→ audit P2/message/hook/help/skill closure
+→ review-thread resolution
+→ intentional clean test baseline
+→ coordinated released trio + packed/live smoke
+→ canonical chain compiler/resolver
+→ persisted ResolvedChain
+→ pure chain reducer
+→ exact scheduler intents and dispatch
+→ execution-protocol enforcement
+```
+
+Observe/shadow protocol work may run before the release gate where it cannot mutate authoritative lifecycle, Git or chain advancement.
+
 ## 13.2 Dependency matrix
 
 | PRD capability | Start now | Requires critical Specialists roadmap spine | Requires Stage 0 | Requires Channels 0.1 | Requires Channels 0.2 |
@@ -2890,6 +2997,8 @@ A local planning agent receiving this PRD must produce a Beads hierarchy, not im
 10. A final plan-validation report proving that every PRD acceptance criterion maps to at least one Bead.
 11. A versioned `bead-graph-plan.json` and the captured `bd create --graph --dry-run --json` preview for the proposed hierarchy.
 12. A Beads capability matrix recording the installed version, supported primitives, minimum-version constraints and fallbacks.
+13. A disposition mapping from Jira `KAN-115+` and current Beads epics to PRD WPs, including completed and superseded work.
+14. An AC0 audit-gate report proving which current blockers prevent DO0 promotion and which observe/shadow lanes may proceed.
 
 The planner must not create vague tasks such as “implement evals” or “improve reviewer”. Each root Bead must have a falsifiable externally observable outcome.
 
@@ -3055,6 +3164,15 @@ Scrutiny defaults:
 | `WP-G03` | Register this PRD in roadmap/MOC indexes and map all acceptance criteria to WPs | specialists + xtrm | G00,G01 | docs-integration | doc-sync | medium |
 
 `WP-G02` is a hard planning gate for chain-foundation implementation, not for telemetry baselining. Its output includes the installed-version and deployment-mode capability matrices, stable-versus-pinned adoption table, Beads↔Dolt compatibility tuple, compatibility fixtures, fallbacks and the decision on which Specialists code paths are deleted or reduced through native reuse.
+
+### Current audit-closure gate — external to the WP namespace
+
+Audit closure is tracked through `xtrm-dev/core/docs/design/audit-reconcile-v0724.md`, its approved Epic Plan and Beads epic `xtrm-wiy5n`. It is a promotion gate, not a second copy of the PRD backlog.
+
+- Do not create duplicate `WP-*` tasks for audit fixes already owned by that epic.
+- Map each audit fix to the PRD capability/WP it unblocks.
+- `WP-XP01`–`WP-XP05` may proceed in observe/shadow mode when file ownership does not collide with audit lanes.
+- `WP-XP06`, production chain compilation/reduction/dispatch and broad coordinator authority remain blocked by the relevant audit/release acceptance criteria.
 
 ## 15.3 Telemetry-integrity packages
 
@@ -3224,6 +3342,8 @@ These are linked future epics, not immediate child Beads of the Specialists impl
 
 ## 15.13 Initial parallel wave
 
+> **Freshness note (24 July 2026).** This table remains the architectural decomposition wave, not the current live dispatch plan. The active audit execution sequence is the approved v0724 Epic Plan (Sprints 0–3). Do not redispatch landed capabilities from this table. Recompute the wave after AC0 closes and the current WP/Jira/Beads disposition matrix is approved.
+
 After documentation gate creation, the first multiplexed wave may safely start these lanes:
 
 ```text
@@ -3331,26 +3451,46 @@ Assignment rules:
 Merge and promotion order:
 
 ```text
-documentation/reuse decisions
+current audit closure + message/hook/help/skill semantic alignment
+-> coordinated released trio + packed/live smoke
+-> documentation/reuse decisions
 -> telemetry schema and integrity
 -> eval schema/grader core
+-> execution-protocol schema/profile observe mode
 -> interactive content/parity audit
 -> readiness and secure delivery primitives
 -> progressive skill + assignment renderer
 -> chain state foundations
+-> canonical chain compiler/resolver + persisted ResolvedChain
+-> pure chain reducer + exact scheduler intents/dispatch
 -> output contract and runner policy
 -> role prompt candidates
 -> chain context and handoff
+-> execution-protocol finalization/enforcement by profile
 -> memory treatment
 -> model/prompt experiments
 -> Console product surfaces
--> enforcement
 -> Channels replacement of bridge communication
 ```
 
 A lane may develop ahead on a feature branch, but it may not be promoted across an unmet integration gate.
 
 # 16. Rollout plan
+
+## Gate AC0 — current audit closure and released-trio coherence
+
+AC0 is governed by the current Core audit, not by the historical 17 July baseline. It closes when:
+
+1. current P1/security findings are fixed and regression-tested;
+2. current P2 correctness and message/hook semantics are fixed or explicitly rejected with evidence;
+3. applicable review threads are resolved;
+4. canonical orchestration skills/help/managed instructions agree with public CLI contracts and meet approved context budgets;
+5. legacy marker-based Specialists notification hooks are removed;
+6. the Specialists test baseline is intentional and documented;
+7. source-only public JSON/event behavior is represented by released package identity;
+8. coordinated Core/xtmux/Specialists artifacts pass packed install, compatibility, cross-runtime messaging and extended live Suite C smoke.
+
+AC0 does not block documentation, fixtures, telemetry/eval baselining or `WP-XP01`–`WP-XP05` observe/shadow instrumentation. It blocks production promotion of the chain compiler/reducer/exact-dispatch path and authoritative `WP-XP06` finalization/enforcement.
 
 ## Phase 0 — Documentation reconciliation and immutable baseline
 
@@ -3804,9 +3944,10 @@ The PRD now treats claim pools as dispatch metadata over the native atomic claim
 
 - **Jira program:** [KAN-115 — Specialists modernization](https://xtrmxt.atlassian.net/browse/KAN-115)
 - **Operational companion:** [Specialists Modernization — Manuale operativo v3.1](https://xtrmxt.atlassian.net/wiki/spaces/KAN/pages/14319617)
-- **Freshness baseline:** reconciled on 17 July 2026 against this PRD v3.1 and the post-Beads-v1.1 contract.
+- **Current audit epic:** `xtrm-wiy5n`
+- **Freshness baseline:** reconciled on 24 July 2026 against current repository state, the Core v0724 audit disposition and the integrated deterministic Specialist execution protocol patch.
 
-KAN-115 tracks implementation status and ownership. This page remains the normative product and architecture contract; where Jira summaries or the operational companion conflict with it, this PRD prevails.
+KAN-115 tracks program status and ownership. Jira `KAN-116+`, Beads epics and the operational companion must be reconciled after this patch; they are not assumed fresh merely because they are linked. Current code and executable contracts remain the authority for what is actually landed.
 
 # Appendix A — Proposed core system prompts
 
@@ -4226,6 +4367,8 @@ Before integration:
 
 # Appendix I — Filed Beads reconciliation matrix
 
+> **Historical-disposition notice (24 July 2026).** Appendices I and J describe the 13 July filed packet and remain contract-migration evidence, not a current backlog/status ledger. Before applying a disposition, reconcile the Bead against current repository state, Jira `KAN-115+`, the v0724 audit epic `xtrm-wiy5n` and landed PRs. Never close or recreate work solely from this historical matrix.
+
 The following mapping is normative for updating the Beads packet generated on 13 July 2026. Status describes the contract, not whether the Bead remains open.
 
 | Existing Bead | Disposition | Final WP mapping | Required action |
@@ -4396,16 +4539,17 @@ Children:
 
 ## K.1 `specialists-roadmap.md`
 
-The roadmap patch must include all items from Sections 13.1 and 13.1A–B, update shipped status to Specialists `3.18.2`, add Track D (policy hooks/xtmux architecture) and Track E (interactive coordinator), and link this PRD. It must not copy all WP tables into the roadmap.
+The roadmap patch must include all items from Sections 13.1 and 13.1A–C, update the current-state ledger to Specialists `3.21.1` plus explicitly marked source-only `#206–#208`, Core `0.11.2`, xtmux `0.2.2`, preserve Track D (policy hooks/xtmux architecture), Track E (interactive coordinator) and Opportunity 19, and link this PRD. It must not copy all WP tables or the local audit sprint backlog into the roadmap.
 
 The roadmap should show this bridge sequence:
 
 ```text
-telemetry/eval baseline
-+ interactive content/parity audit
-→ readiness + secure assignment bridge
-→ critical chain-first spine
-→ coordinator consumes resolved shape
+AC0 audit closure + released-trio coherence
+→ telemetry/eval baseline and protocol observe mode
+→ critical chain compiler/resolver + persisted ResolvedChain
+→ pure reducer + exact dispatch
+→ execution-protocol enforcement by profile
+→ coordinator consumes validated chain/protocol evidence
 → evaluated prompt/rule/memory modernization
 → Console materializer expansion
 → eventual Substrate/Channels replacement

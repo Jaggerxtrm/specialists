@@ -4,6 +4,12 @@
 >
 > **Canonical execution-protocol companion.** The internal lifecycle of one managed Specialist activation is specified in `docs/design/execution-protocol-design/specialist-execution-protocol.md`. Ownership boundaries are recorded in `docs/design/execution-protocol-design/specialist-execution-protocol-ownership-decision.md`. This roadmap owns sequencing and implementation packages; it does not duplicate the protocol specification.
 >
+> **Current-state reconciliation companion.** Current audit closure and landed-state evidence are recorded in `xtrm-dev/core/docs/design/audit-reconcile-v0724.md` and its approved Epic Plan. Repository code and executable contracts remain authoritative. The unavailable `xtrm-orchestration-determinism-final-consolidated-report-2026-07-23.md` is WIP evidence only and is superseded where the later Core audit records an explicit override.
+>
+> **Freshness snapshot — 24 July 2026.** Released baseline: Core `0.11.2`, xtmux `0.2.2`, Specialists `3.21.1`. Specialists PRs `#206–#208` are source-only relative to that release. Exact heads must be refreshed before dispatch.
+>
+> **PRD companion.** Current implementation packages and acceptance gates are specified in `docs/design/roadmap/enhanced-prd.md`.
+>
 > **Revision note (this version).** Reviewed against `substrate.md` revision 10 *after* the step-1/2/3/4/6 integration and the rev10 additions (chain-coordinator §4.3, memory-as-capability §10.2, chain-template-declares-coordinator §6.9.10). Open questions (§11) resolved; the four content adjustments and the runway recalibration applied; every reads-forward retargeted to the sections that now actually exist in the canonical design. **Absorbed (2026-05-27 consolidation):** the prior parallel `specialists-friction-audit.md` (now archived) — its additions are now Opportunities 10 (`--chain` redesign) and 11 (pull-not-push memory recall), §12 (`sp epic` decoration strategy), §13 (chain templates concretized in `docs/design/roadmap/chain-templates/`), and D24–D27 in this §0. Changes are marked inline with **[rev-9/10 author]** where they reflect a decision by the substrate-design author, **[recalibrated]** where the runway changed a prior conclusion, and **[absorbed]** where they came from the friction-audit consolidation.
 >
 > **Intended consumers.** Operator (decisions now closed — see §0), planning session (produce a phased work plan from this doc), implementer (after plan approved).
@@ -65,6 +71,46 @@ The prior revision left nine open questions (old §11). They are now resolved. T
 - **D29 — Contract-creation discipline (CoT + multishot + critique-before-commit, XML structure).** All contract creators (planner Pass-1, orchestrator-as-specialist spawning follow-ups, executor spawning `discovered-from` beads, overthinker opening cleanup beads, Claude Code hook on `bd create`) must follow a uniform discipline when authoring change-contracts (root) or step-contracts (step beads). Rationale: contract quality is the highest-leverage point in the system — substrate §6.4 dispatcher refuses under-specified contracts; better contracts upfront = fewer refusal round-trips = faster chains end-to-end. The discipline has three components: **(a) chain-of-thought prefill** — draft contract inside `<thinking>` tags before commit, focusing on negative-space (NON_GOALS), falsifiable VALIDATION, glob-vs-file-list SCOPE; **(b) multishot in the meta-prompt** — 2 worked examples + 1 anti-example of common failure modes (e.g., "SCOPE glob too wide → matched 10 chains in dispatcher", "VALIDATION 'looks good' → unverifiable"); **(c) critique-before-commit** (premortem-style, Anthropic published pattern) — ask "what's WRONG with this draft" before committing, not "is this draft good". The discipline is **absorbed into existing items**, no new opportunity required: D26 planning skill (Phase 0), §4 Claude hook output (Phase 1), new mandatory rule `config/mandatory-rules/contract-discipline.md` (Phase 1, ~50 lines, wired into `template_sets` of the ~5 contract-creating specialists), D28 v4 SKILL Orchestration Discipline section (Phase 6). Substrate-aligned measurement: `dispatcher_refusal_rate` + `contract_revision_count` + `executor_clarification_request_count` are all queryable from existing observability tables; A/B compare pre/post Phase 1 ship to validate the discipline pays off.
 - **D30 — XML-structured contracts (Opportunity 12).** Root and step bead contracts move from markdown-with-headers (today: `PROBLEM:` / `SCOPE:` / etc.) to **XML semantic tags inside the bd description text** (`<change-contract>` for root, `<step-contract>` for step). Three rationales: (1) substrate §6.4 Stage-1 validator (when it lands) parses XML deterministically — markdown-header-parsing is fragile (header level confusion, typos, ordering); (2) dispatcher `<scope>` lookup deterministic for matcher rules and scope-collision detection; (3) compliance research (Anthropic) shows LLM consumers (specialists reading the contract as task context) parse XML more reliably than markdown headers. **Final outputs of specialists remain JSON** (reviewer verdict, code-sanity, etc.) — consumed by orchestrator code via existing schema validators. **Channel messages (channels.md) remain JSON** — `body_json` discriminated-union per spec. **XML applies only to bd contract descriptions and to specialist task_template scaffolding (system_prompt stays free-form).** New beads (post-§4-hook ship) are XML; existing beads stay markdown (no retrofit). The 13 chain template `.formula.json` step.description fields are retrofitted once (~14 file edit). Sequenced Phase 3 as **Opportunity 12** (parallelizable, ~2 E-D-E / ~few hours wall-clock auto-mode). Substrate migration: `<change-contract>` ↔ substrate's contract row with same tag names — rename pass, no semantic transform.
 - **D27 — Memory injection: push → pull (Opportunity 11), with type taxonomy.** Eliminate the runner-time auto-injection of `bd prime` + `.xtrm/memory.md` (~3.8k token irrelevant for most tasks per memory `bd-prime-context-overhead`). Replace with mandatory rule `config/mandatory-rules/memory-recall.md` that teaches specialists to query `bd memories <keyword>` / `bd recall <key>` scoped to their bead at startup and before key decisions. **[absorbed D28-XML]** The mandatory rule is written in XML semantic tags (`<at-startup>`, `<before-decisions>`, `<keyword-derivation>`, `<bd-prime-prohibition>`) for compliance per Anthropic prompt-improving research. **[absorbed 2026-05-29 from backlog.tasks.md]** The rule also declares a **memory type taxonomy** that specialists tag when calling `bd remember` (and that recall can filter on): `<memory type="error">` for gotchas / known failure modes, `<memory type="convention">` for codebase practices and patterns, `<memory type="identity">` for repo/role identity ("how the executor behaves in this repo, what it has learned about this place"), `<memory type="behavioral">` for observed orchestration-pattern preferences, `<memory type="best_practice">` for clean-close lessons (aligned with substrate §10.2 close-time distillation vocabulary). Recall priority at startup: convention > error > behavioral > identity > best_practice — conventions first because they prevent reinventing patterns; errors second because they prevent repeating bugs; behavioral guides orchestration choices; identity colors the felt-sense (per aws-summit "mob elaboration" insight); best_practice carries clean-close lessons forward. Reads forward to **substrate §10.2 memory-as-capability** which currently lists only failure/best_practice distillation types — substrate's chain coordinator close-time distillation pass would extend its vocabulary to write the same five types so runtime-query and close-time-write share one taxonomy. Rule joins the default `template_sets` for all package-tier specialists; opt-out allowed for tiny pre-scripted specialists if measurements show no benefit. Sequenced Phase 1 — independent, reversible, immediate token-budget win.
+
+### Current implementation reconciliation — 24 July 2026
+
+This ledger records status; it does not replace the Opportunities.
+
+#### Landed/current primitives
+
+- Core: subordinate coordinator launch and validation, branch/worktree/role/parent metadata, runtime compatibility rejection, live Suite C, read-only topology projection and operator views.
+- xtmux: SQLite coordination, exact `message-get`, completed-turn `agent-last`, canonical Beads event streaming, topology role/worktree/branch/parent fields and human event rendering.
+- Specialists: runtime-origin and descendant lineage, coordinator-branch ancestry, `sp render-bead`, `xtrm.branch.integration.v1`, `sp integration record/list`.
+- Current Specialists source additionally contains Pi-compatible `sp run/feed --json` NDJSON and corrected per-job ordering; these remain unreleased until package identity includes them.
+
+#### Current closure gate
+
+```text
+AC0 — close the existing audit and release a coherent trio
+DO0 — promote deterministic orchestration
+```
+
+These are operational gate names, not replacements for this roadmap's phases or the PRD Tracks A–F.
+
+AC0 includes P1/security and P2 correctness closure, exact message/ack/monitor/parent-notification semantics, removal of legacy marker-based Specialists hooks, help/skill/managed-instruction parity, review-thread resolution, an intentional clean test baseline, released public JSON contracts, and packed-install/compatibility/live Suite C proof.
+
+DO0 begins after AC0:
+
+```text
+canonical chain compiler/resolver
+→ immutable persisted ResolvedChain
+→ pure evidence-driven chain reducer
+→ exact scheduler intents and dispatch
+→ specialists.execution.v1 enforcement by profile
+```
+
+Opportunity 19 schema/profile instrumentation may proceed in observe/shadow mode while AC0 is open. Authoritative finalization and chain advancement remain gated.
+
+#### Projection and authority
+
+- Jira `KAN-115` is the program root; `KAN-116+` is reconciled after material roadmap/current-state changes.
+- Beads epic `xtrm-wiy5n` tracks current audit closure.
+- Jira identifies program work; GitHub proves implementation; Git proves integration; `xtrm.forensic.v1` proves runtime causality; Beads owns durable task contracts.
 
 **[absorbed] Chain ≡ bd `molecule` mental model.** Where this audit speaks of "chain identity," the concrete bd realization is a **molecule**: `bd mol pour <formula>` creates an `issue_type=molecule` parent with one child bead per formula step (`parent-child` edges; `blocks` edges between siblings per `needs`). An **epic** is the *organizational parent above chains* — `--type=epic` + `--parent` holding multiple chain-molecules for one PRD/initiative. Nesting: top epic (organizational) → chain-molecule (per root issue) → step beads. Quick-chain variant: bare molecule with no organizational epic. Ultra-quick single-shot: a lone task bead (READ_ONLY only). Substrate migration mapping: organizational epic → container `kind: epic`; chain-molecule → container `kind: chain`; molecule's root child → substrate root issue; step beads → step issues (`parent-child`/`validates` edges pre-populate the step relationship). The bridge value: data is already substrate-shaped; migration is a rename pass. See §13 for the 13 evidence-backed formula files.
 
@@ -940,6 +986,29 @@ This phase establishes the runtime-owned lifecycle of one Specialist activation.
 | 9g | Ship `specialist-execution-protocol-v1` simulation/eval suite and legacy-profile rollback | protocol §§17,19–20 | 0.5d | writer/read-only/waiting/failure fixtures pass; profile rollback proven |
 
 **Promotion rule:** Phase 2A may be instrumented in observe/shadow mode before the wider audit closes. Authoritative enforcement and broad rollout wait for the relevant lifecycle, Git and notification audit blockers to be resolved.
+
+### Gate R0 — audit closure and deterministic-orchestration promotion
+
+R0 is satisfied only when the current Core audit definition of done is met on released/packed artifacts:
+
+```text
+P1/security closure
+→ P2/message/hook/help/skill closure
+→ review-thread resolution
+→ intentional clean test baseline
+→ coordinated released trio
+→ packed install + compatibility + live Suite C
+```
+
+While R0 is open, documentation, fixtures, telemetry/eval baseline and Opportunity 19 observe mode may proceed. Production `ResolvedChain` compilation, reducer-driven advancement, exact dispatch and automatic finalization enforcement remain gated. After R0:
+
+```text
+compile selected template + overlays/policies
+→ persist ResolvedChain
+→ reduce validated evidence into scheduler intents
+→ dispatch exact Specialist profile/step contract
+→ consume specialists.execution.v1 validated result
+```
 
 ### Phase 3 — Naming, conventions, environment + XML contracts + contract discipline (~5.5 days)
 
