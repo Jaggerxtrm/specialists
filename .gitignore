@@ -104,6 +104,7 @@ __pycache__/
 .pi/skills/
 
 # Internal working documents; keep user-facing docs and examples tracked.
-docs/archive/
+docs/archive/*
+!docs/archive/iron-review-hardening-qa-chain-substrate.md
 docs/devops/
 docs/plans/
