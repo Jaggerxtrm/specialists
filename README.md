@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
 
-# **WARNING** 
+# **WARNING**
 `docs/` might be stale at the current moment. The project is in active and quick development toward v4.0 and stable version, please refer to:
   - sp --help;
   - using-specialists skill;
