@@ -2,10 +2,11 @@
   "specialist": {
     "metadata": {
       "name": "service-skills-sync",
-      "version": "1.6.2",
-      "description": "Service Skills Librarian: detects implementation drift and syncs expert persona SKILL.md documentation with actual codebase. Sibling to sync-docs but service-registry-aware.",
+      "version": "1.7.0",
+      "description": "Service Skills Librarian: detects implementation drift and syncs expert persona SKILL.md documentation with actual codebase. Sibling to sync-docs but service-registry-aware. service-skills is now the first-class service-knowledge package (~/dev/xtrm/packages/service-knowledge); this specialist resolves the service-knowledge machinery first and falls back to legacy service-skills for the one-release backward-compat window.",
       "category": "documentation",
       "tags": [
+        "service-knowledge",
         "service-skills",
         "drift",
         "sync",
@@ -39,13 +40,14 @@
     },
     "skills": {
       "paths": [
+        "~/.xtrm/skills/default/service-knowledge",
         "~/.xtrm/skills/default/service-skills",
         "~/.xtrm/skills/default/gitnexus-impact-analysis",
         "~/.xtrm/skills/default/gitnexus-exploring"
       ],
       "scripts": [
         {
-          "run": "for p in .xtrm/skills/default/service-skills/scripts/drift_detector.py .claude/skills/service-skills/scripts/drift_detector.py; do [ -f \"$CLAUDE_PROJECT_DIR/$p\" ] && python3 \"$CLAUDE_PROJECT_DIR/$p\" scan && exit 0; done; echo 'drift_detector not available'",
+          "run": "for p in .xtrm/skills/default/service-knowledge/scripts/drift_detector.py .xtrm/skills/default/service-skills/scripts/drift_detector.py .claude/skills/service-skills/scripts/drift_detector.py; do [ -f \"$CLAUDE_PROJECT_DIR/$p\" ] && python3 \"$CLAUDE_PROJECT_DIR/$p\" scan && exit 0; done; echo 'drift_detector not available'",
           "phase": "pre",
           "inject_output": true
         }
@@ -68,7 +70,9 @@
     },
     "validation": {
       "files_to_watch": [
+        ".xtrm/skills/user/packs/*/service-knowledge/service-registry.json",
         ".xtrm/skills/user/packs/*/service-skills/service-registry.json",
+        ".xtrm/skills/default/service-knowledge/SKILL.md",
         ".xtrm/skills/default/service-skills/SKILL.md"
       ],
       "stale_threshold_days": 30
