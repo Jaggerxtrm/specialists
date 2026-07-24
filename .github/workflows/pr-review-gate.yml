@@ -12,6 +12,7 @@ on:
 
 jobs:
   gate:
+    name: pr-review-gate
     if: github.event.pull_request || github.event.issue.pull_request
     runs-on: ubuntu-latest
     permissions:
