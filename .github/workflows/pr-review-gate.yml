@@ -1,0 +1,91 @@
+name: pr-review-gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  pull_request_review:
+    types: [submitted, dismissed]
+  pull_request_review_thread:
+    types: [resolved, unresolved]
+  issue_comment:
+    types: [created, edited, deleted]
+
+jobs:
+  gate:
+    if: github.event.pull_request || github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Check unresolved LLM-bot threads and bot verdict
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          BOT_RE: ${{ vars.PR_REVIEW_GATE_BOT_RE || '(?i)codex|coderabbit|claude' }}
+        with:
+          script: |
+            const pr = context.payload.pull_request?.number
+                    ?? context.payload.issue?.number;
+            if (!pr) { core.info('no PR context; skipping'); return; }
+            const { owner, repo } = context.repo;
+            const botRe = new RegExp(process.env.BOT_RE);
+
+            let data;
+            try {
+              data = await github.graphql(`
+                query($o:String!,$r:String!,$n:Int!){
+                  repository(owner:$o,name:$r){
+                    pullRequest(number:$n){
+                      reviewThreads(first:100){
+                        nodes{
+                          isResolved
+                          isOutdated
+                          comments(first:1){nodes{author{login}}}
+                        }
+                      }
+                      reviews(first:100){
+                        nodes{ state author{login} submittedAt }
+                      }
+                    }
+                  }
+                }`, { o: owner, r: repo, n: pr });
+            } catch (e) {
+              core.setFailed(`GraphQL failed (fail closed): ${e.message}`);
+              return;
+            }
+
+            const threads = data.repository.pullRequest.reviewThreads.nodes;
+            const unresolvedBot = threads.filter(t =>
+              !t.isResolved && !t.isOutdated &&
+              t.comments.nodes.some(c => botRe.test(c.author?.login ?? ''))
+            );
+
+            const reviews = data.repository.pullRequest.reviews.nodes;
+            const latest = {};
+            for (const r of reviews) {
+              const login = r.author?.login;
+              if (!login || !botRe.test(login)) continue;
+              if (!r.submittedAt) continue; // Codex-shaped: null timestamp; threads-only path
+              const prev = latest[login];
+              if (!prev || new Date(prev.submittedAt) < new Date(r.submittedAt)) {
+                latest[login] = r;
+              }
+            }
+            const blockingBots = Object.entries(latest)
+              .filter(([, r]) => r.state === 'CHANGES_REQUESTED')
+              .map(([login]) => login);
+
+            const problems = [];
+            if (unresolvedBot.length) {
+              const authors = [...new Set(unresolvedBot.flatMap(t =>
+                t.comments.nodes.map(c => c.author?.login).filter(Boolean)))];
+              problems.push(`${unresolvedBot.length} unresolved bot review thread(s) from: ${authors.join(', ')}`);
+            }
+            if (blockingBots.length) {
+              problems.push(`CHANGES_REQUESTED from: ${blockingBots.join(', ')}`);
+            }
+
+            if (problems.length) {
+              core.setFailed('BLOCKED — ' + problems.join(' | '));
+            } else {
+              core.info('OK — no unresolved bot threads, no bot CHANGES_REQUESTED');
+            }
