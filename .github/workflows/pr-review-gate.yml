@@ -44,42 +44,70 @@ jobs:
             const rawPattern = process.env.BOT_RE.replace(/^\(\?[imsux]+\)/, '');
             const botRe = new RegExp(rawPattern, 'i');
 
-            let data;
+            // Bot detection: MUST be a Bot account (GraphQL __typename) AND
+            // login matches the pattern. Prevents human logins containing
+            // "codex"/"claude" from tripping the gate.
+            const isBot = (author) =>
+              !!author && author.__typename === 'Bot' &&
+              botRe.test(author.login ?? '');
+
+            // Paginate reviewThreads — a PR with >100 threads could hide an
+            // unresolved bot thread behind the first page. Same for reviews.
+            const threads = [];
+            let reviewsPage = [];
+            let cursor = null;
+            let reviewCursor = null;
             try {
-              data = await github.graphql(`
-                query($o:String!,$r:String!,$n:Int!){
-                  repository(owner:$o,name:$r){
-                    pullRequest(number:$n){
-                      reviewThreads(first:100){
-                        nodes{
-                          isResolved
-                          isOutdated
-                          comments(first:1){nodes{author{login}}}
+              for (let page = 0; page < 20; page++) {  // hard cap: 20 pages = 2000 threads
+                const data = await github.graphql(`
+                  query($o:String!,$r:String!,$n:Int!,$tc:String,$rc:String){
+                    repository(owner:$o,name:$r){
+                      pullRequest(number:$n){
+                        reviewThreads(first:100, after:$tc){
+                          pageInfo{ hasNextPage endCursor }
+                          nodes{
+                            isResolved
+                            isOutdated
+                            comments(first:1){nodes{author{login __typename}}}
+                          }
+                        }
+                        reviews(first:100, after:$rc){
+                          pageInfo{ hasNextPage endCursor }
+                          nodes{ state submittedAt author{login __typename} }
                         }
                       }
-                      reviews(first:100){
-                        nodes{ state author{login} submittedAt }
-                      }
                     }
-                  }
-                }`, { o: owner, r: repo, n: pr });
+                  }`, { o: owner, r: repo, n: pr, tc: cursor, rc: reviewCursor });
+                const rt = data.repository.pullRequest.reviewThreads;
+                const rv = data.repository.pullRequest.reviews;
+                threads.push(...rt.nodes);
+                if (page === 0) reviewsPage = rv.nodes.slice();
+                else reviewsPage.push(...rv.nodes);
+                const nextT = rt.pageInfo.hasNextPage ? rt.pageInfo.endCursor : null;
+                const nextR = rv.pageInfo.hasNextPage ? rv.pageInfo.endCursor : null;
+                if (!nextT && !nextR) break;
+                cursor = nextT ?? cursor;
+                reviewCursor = nextR ?? reviewCursor;
+                if (page === 19 && (nextT || nextR)) {
+                  core.setFailed('BLOCKED — PR has >2000 threads/reviews; gate cannot verify all pages (fail closed)');
+                  return;
+                }
+              }
             } catch (e) {
               core.setFailed(`GraphQL failed (fail closed): ${e.message}`);
               return;
             }
 
-            const threads = data.repository.pullRequest.reviewThreads.nodes;
             const unresolvedBot = threads.filter(t =>
               !t.isResolved && !t.isOutdated &&
-              t.comments.nodes.some(c => botRe.test(c.author?.login ?? ''))
+              t.comments.nodes.some(c => isBot(c.author))
             );
 
-            const reviews = data.repository.pullRequest.reviews.nodes;
             const latest = {};
-            for (const r of reviews) {
-              const login = r.author?.login;
-              if (!login || !botRe.test(login)) continue;
+            for (const r of reviewsPage) {
+              if (!isBot(r.author)) continue;
               if (!r.submittedAt) continue; // Codex-shaped: null timestamp; threads-only path
+              const login = r.author.login;
               const prev = latest[login];
               if (!prev || new Date(prev.submittedAt) < new Date(r.submittedAt)) {
                 latest[login] = r;
