@@ -72,7 +72,7 @@
     },
     {
       "path": "config/skills/using-specialists/references/monitoring.md",
-      "sha256": "7b1aa2cec42756fb752467da14552d1e7233c892232abbc24d563abeb19cd537"
+      "sha256": "a354c816c5a39fc6dddc8360478ed29f3710f7d1204a284b148bb636e2b71747"
     },
     {
       "path": "config/skills/using-specialists/references/registry-and-locations.md",
@@ -257,9 +257,6 @@
     }
   ],
   "shipped_hooks": [
-    {
-      "path": "config/hooks/specialists-complete.mjs"
-    },
     {
       "path": "config/hooks/specialists-memory-cache-sync.mjs"
     },

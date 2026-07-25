@@ -2,11 +2,10 @@
 title: Hooks Reference
 scope: hooks
 category: reference
-version: 1.2.0
-updated: 2026-03-23
+version: 1.3.0
+updated: 2026-07-25
 description: Bundled Specialists hooks and their runtime behavior.
 source_of_truth_for:
-  - "hooks/specialists-complete.mjs"
   - "hooks/specialists-session-start.mjs"
 domain:
   - hooks
@@ -16,7 +15,6 @@ domain:
 | Section | Summary |
 |---|---|
 | [Hook inventory](#hook-inventory) | | Hook | Event | Purpose | |
-| [`specialists-complete.mjs`](#specialists-completemjs) | Behavior: |
 | [`specialists-session-start.mjs`](#specialists-session-startmjs) | Behavior: |
 | [Installation notes](#installation-notes) | The current canonical bootstrap is `specialists init` |
 | [Beads hooks](#beads-hooks) | Beads workflow enforcement hooks are owned outside this package |
@@ -33,17 +31,7 @@ Specialists works alongside **[xtrm-tools](https://github.com/Jaggerxtrm/xtrm-to
 
 | Hook | Event | Purpose |
 |---|---|---|
-| `specialists-complete.mjs` | `UserPromptSubmit` | inject background completion banners |
 | `specialists-session-start.mjs` | `SessionStart` | inject active jobs, available specialists, and workflow reminders |
-
-## `specialists-complete.mjs`
-
-Behavior:
-
-- scans `.specialists/ready/` for completion markers
-- reads job metadata from `status.json`
-- injects a completion banner for finished jobs
-- removes the marker after injection
 
 ## `specialists-session-start.mjs`
 

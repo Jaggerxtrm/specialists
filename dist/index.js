@@ -26842,6 +26842,117 @@ import { join as join12 } from "path";
 import { createInterface } from "readline";
 import { createReadStream } from "fs";
 import { spawn as spawn2, spawnSync as spawnSync8, execFileSync as execFileSync2 } from "child_process";
+function emitParentNotification(statusSnapshot, activeSiblingAssignee) {
+  try {
+    if (statusSnapshot.status !== "done" && statusSnapshot.status !== "error")
+      return;
+    if (statusSnapshot.spawn_origin?.kind !== "xtmux.agent_instance")
+      return;
+    const parent = validateRuntimeOrigin(statusSnapshot.spawn_origin.runtime_origin);
+    if ("error" in parent || !parent.verified)
+      return;
+    const idempotencyKey = `${statusSnapshot.id}:${statusSnapshot.status}`;
+    const resultCommand = `sp result ${statusSnapshot.id} --json`;
+    const payload = createForensicEvent({
+      event_family: "job",
+      event_name: statusSnapshot.status === "done" ? "job.completed" : "job.failed",
+      resource: {
+        service_namespace: "xtrm",
+        service_name: "specialists",
+        service_component: "supervisor",
+        deployment_environment: "local",
+        repo: "specialists",
+        participant_kind: "specialist",
+        participant_role: statusSnapshot.specialist
+      },
+      correlation: {
+        job_id: statusSnapshot.id,
+        ...statusSnapshot.bead_id ? { bead_id: statusSnapshot.bead_id } : {},
+        ...statusSnapshot.trace_id ? { trace_id: statusSnapshot.trace_id } : {},
+        ...statusSnapshot.span_id ? { span_id: statusSnapshot.span_id } : {},
+        ...statusSnapshot.parent_span_id ? { parent_span_id: statusSnapshot.parent_span_id } : {}
+      },
+      body: {
+        transition: statusSnapshot.status,
+        job_id: statusSnapshot.id,
+        specialist: statusSnapshot.specialist,
+        parent: {
+          kind: parent.kind,
+          tmux_session_id: parent.tmux_session_id,
+          tmux_pane_id: parent.tmux_pane_id,
+          ...parent.agent_instance_id ? { agent_instance_id: parent.agent_instance_id } : {},
+          verified: true
+        },
+        summary: `Specialist ${statusSnapshot.specialist} job ${statusSnapshot.id} is ${statusSnapshot.status}.`,
+        result_command: resultCommand,
+        idempotency_key: idempotencyKey
+      },
+      t_unix_ms: statusSnapshot.last_event_at_ms ?? statusSnapshot.started_at_ms
+    });
+    const text = JSON.stringify(payload);
+    if (Buffer.byteLength(text) > PARENT_NOTIFICATION_MAX_BYTES) {
+      console.warn("[supervisor] Parent notification skipped: payload exceeds limit");
+      return;
+    }
+    const args = [
+      "message-send",
+      "--to",
+      parent.tmux_session_id,
+      "--to-pane",
+      parent.tmux_pane_id,
+      ...statusSnapshot.bead_id ? ["--bead", statusSnapshot.bead_id] : [],
+      "--expects-reply=false",
+      "--id",
+      idempotencyKey,
+      "--text",
+      text,
+      "--json"
+    ];
+    const result = spawnSync8("xtmux", args, {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: PARENT_NOTIFICATION_TIMEOUT_MS
+    });
+    if (result.error || result.status !== 0) {
+      console.warn(`[supervisor] Parent notification failed: exit=${result.status ?? "unknown"}`);
+    }
+    if (!statusSnapshot.bead_id)
+      return;
+    const show = spawnSync8("bd", ["show", statusSnapshot.bead_id, "--json"], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: PARENT_NOTIFICATION_TIMEOUT_MS
+    });
+    if (show.error || show.status !== 0) {
+      console.warn(`[supervisor] Parent bead assignee read failed: exit=${show.status ?? "unknown"}`);
+      return;
+    }
+    let currentAssignee;
+    try {
+      const bead = JSON.parse(show.stdout ?? "");
+      currentAssignee = Array.isArray(bead) ? bead[0]?.assignee : bead.assignee;
+    } catch {
+      console.warn("[supervisor] Parent bead assignee read failed: invalid bd show output");
+      return;
+    }
+    const automaticAssignee = !currentAssignee || /^(?:(?:pi|claude)\/[a-z0-9]{5}|[a-z][a-z0-9-]*\/(?:[a-f0-9]{6}|job-[a-z0-9]+))$/i.test(currentAssignee);
+    if (!automaticAssignee) {
+      console.info(`[supervisor] Parent bead assignee preserved: ${statusSnapshot.bead_id}`);
+      return;
+    }
+    const assignee = activeSiblingAssignee ?? `${statusSnapshot.specialist}/${statusSnapshot.id}`;
+    const update = spawnSync8("bd", ["update", statusSnapshot.bead_id, `--assignee=${assignee}`, "--json"], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: PARENT_NOTIFICATION_TIMEOUT_MS
+    });
+    if (update.error || update.status !== 0) {
+      console.warn(`[supervisor] Parent bead assignee update failed: exit=${update.status ?? "unknown"}`);
+    }
+  } catch {
+    console.warn("[supervisor] Parent notification failed: exception");
+  }
+}
 function getCurrentGitSha() {
   const result = spawnSync8("git", ["rev-parse", "HEAD"], {
     encoding: "utf-8",
@@ -27406,6 +27517,19 @@ class Supervisor {
       return [];
     }
   }
+  activeSiblingAssignee(statusSnapshot) {
+    if (!statusSnapshot.bead_id)
+      return;
+    for (const id of this.listLiveJobsForBead(statusSnapshot.bead_id)) {
+      if (id === statusSnapshot.id)
+        continue;
+      const sibling = this.readStatus(id);
+      if (sibling && (sibling.status === "starting" || sibling.status === "running" || sibling.status === "waiting")) {
+        return `${sibling.specialist}/${id}`;
+      }
+    }
+    return;
+  }
   listChainJobIds(chainId) {
     try {
       if (this.isDisposed) {
@@ -27509,12 +27633,14 @@ class Supervisor {
       status,
       current_event: undefined,
       error: error2,
-      last_event_at_ms: Date.now()
+      last_event_at_ms: previousStatus === status ? currentStatus.last_event_at_ms ?? Date.now() : Date.now()
     };
     this.writeStatusFile(id, updatedStatus, { sqliteFailureMode: "warn" });
     if (previousStatus !== status) {
       this.appendEventBestEffort(id, "appendEvent:status_change", createStatusChangeEvent(status, previousStatus));
     }
+    if (status === "error")
+      emitParentNotification(updatedStatus, this.activeSiblingAssignee(updatedStatus));
     return this.withComputedLiveness(updatedStatus);
   }
   aggregateJobMetricsBestEffort(jobId) {
@@ -28899,9 +29025,9 @@ ${appendError}
       if (completePersisted === undefined) {
         throw new Error("[supervisor] SQLite upsertStatusWithEventAndResult failed: database client unavailable");
       }
+      emitParentNotification(statusSnapshot, this.activeSiblingAssignee(statusSnapshot));
       this.aggregateJobMetricsBestEffort(id);
       triggerGitnexusAnalyzeIfNeeded(statusSnapshot.last_auto_commit_sha, "terminal");
-      this.writeReadyMarker(id);
       return id;
     } catch (err) {
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
@@ -28952,7 +29078,7 @@ ${appendError}
         turnIndex: runMetrics.turns,
         tokenUsage: runMetrics.token_usage
       });
-      this.writeReadyMarker(id);
+      emitParentNotification(statusSnapshot, this.activeSiblingAssignee(statusSnapshot));
       throw err;
     } finally {
       if (stuckIntervalId !== undefined)
@@ -29000,7 +29126,7 @@ ${appendError}
     }
   }
 }
-var JOB_TTL_DAYS, STALL_DETECTION_DEFAULTS, WAITING_AUTO_CLOSE_GRACE_MS = 5000, GITNEXUS_RISK_ORDER, MODEL_CONTEXT_WINDOWS, TERMINAL_COMPLIANCE_VERDICT_REGEX, PASS_COMPLIANCE_VERDICT_REGEX, REVIEW_VERDICT_REGEX, AUTO_COMMIT_NOISE_PREFIXES, STATUS_WATCHDOG_INTERVAL_MS = 5000, STATUS_WATCHDOG_STALE_AFTER_MS = 30000;
+var JOB_TTL_DAYS, PARENT_NOTIFICATION_MAX_BYTES, PARENT_NOTIFICATION_TIMEOUT_MS = 5000, STALL_DETECTION_DEFAULTS, WAITING_AUTO_CLOSE_GRACE_MS = 5000, GITNEXUS_RISK_ORDER, MODEL_CONTEXT_WINDOWS, TERMINAL_COMPLIANCE_VERDICT_REGEX, PASS_COMPLIANCE_VERDICT_REGEX, REVIEW_VERDICT_REGEX, AUTO_COMMIT_NOISE_PREFIXES, STATUS_WATCHDOG_INTERVAL_MS = 5000, STATUS_WATCHDOG_STALE_AFTER_MS = 30000;
 var init_supervisor = __esm(() => {
   init_runtime_origin();
   init_job_root();
@@ -29012,7 +29138,9 @@ var init_supervisor = __esm(() => {
   init_epic_readiness();
   init_chain_identity();
   init_tmux_utils();
+  init_forensic_events();
   JOB_TTL_DAYS = Number(process.env.SPECIALISTS_JOB_TTL_DAYS ?? 7);
+  PARENT_NOTIFICATION_MAX_BYTES = 4 * 1024;
   STALL_DETECTION_DEFAULTS = {
     running_silence_warn_ms: 60000,
     running_silence_error_ms: 300000,
@@ -30400,8 +30528,6 @@ function ensureProjectHookWiring(cwd) {
       changed = true;
     }
   }
-  addHook("UserPromptSubmit", "node .claude/hooks/specialists-complete.mjs");
-  addHook("PostToolUse", "node .claude/hooks/specialists-complete.mjs");
   addHook("PostToolUse", "node .claude/hooks/specialists-memory-cache-sync.mjs");
   addHook("SessionStart", "node .claude/hooks/specialists-session-start.mjs");
   if (changed) {
@@ -30716,8 +30842,6 @@ function validateInitPostconditions(cwd) {
   }
   const settings = readJsonObject(join15(cwd, ".claude", "settings.json"));
   const requiredHookWiring = [
-    { event: "UserPromptSubmit", command: "node .claude/hooks/specialists-complete.mjs" },
-    { event: "PostToolUse", command: "node .claude/hooks/specialists-complete.mjs" },
     { event: "PostToolUse", command: "node .claude/hooks/specialists-memory-cache-sync.mjs" },
     { event: "SessionStart", command: "node .claude/hooks/specialists-session-start.mjs" }
   ];
@@ -63996,10 +64120,7 @@ var init_doctor = __esm(() => {
   XTRM_HOME = join44(homedir10(), ".xtrm");
   GLOBAL_HOOKS_DIR = join44(XTRM_HOME, "hooks", "specialists");
   GLOBAL_DEFAULT_SKILLS_DIR = join44(XTRM_HOME, "skills", "default");
-  HOOK_NAMES = [
-    "specialists-complete.mjs",
-    "specialists-session-start.mjs"
-  ];
+  HOOK_NAMES = ["specialists-session-start.mjs"];
 });
 
 // src/specialist/benchmarks.ts

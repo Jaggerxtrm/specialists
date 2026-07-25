@@ -450,10 +450,8 @@ function ensureProjectHookWiring(cwd: string): void {
   }
 
   // Wire hooks with symlinked .claude/hooks/ paths
-  addHook('UserPromptSubmit', 'node .claude/hooks/specialists-complete.mjs');
-  addHook('PostToolUse',      'node .claude/hooks/specialists-complete.mjs');
-  addHook('PostToolUse',      'node .claude/hooks/specialists-memory-cache-sync.mjs');
-  addHook('SessionStart',     'node .claude/hooks/specialists-session-start.mjs');
+  addHook('PostToolUse',  'node .claude/hooks/specialists-memory-cache-sync.mjs');
+  addHook('SessionStart', 'node .claude/hooks/specialists-session-start.mjs');
 
   if (changed) {
     saveJson(settingsPath, settings);
@@ -838,8 +836,6 @@ function validateInitPostconditions(cwd: string): ReadonlyArray<string> {
 
   const settings = readJsonObject(join(cwd, '.claude', 'settings.json'));
   const requiredHookWiring: ReadonlyArray<{ event: string; command: string }> = [
-    { event: 'UserPromptSubmit', command: 'node .claude/hooks/specialists-complete.mjs' },
-    { event: 'PostToolUse', command: 'node .claude/hooks/specialists-complete.mjs' },
     { event: 'PostToolUse', command: 'node .claude/hooks/specialists-memory-cache-sync.mjs' },
     { event: 'SessionStart', command: 'node .claude/hooks/specialists-session-start.mjs' },
   ];
