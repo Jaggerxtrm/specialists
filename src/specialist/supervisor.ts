@@ -256,7 +256,7 @@ function emitParentNotification(statusSnapshot: SupervisorStatus): void {
       '--to-pane', parent.tmux_pane_id,
       ...(statusSnapshot.bead_id ? ['--bead', statusSnapshot.bead_id] : []),
       '--expects-reply=false',
-      '--message-key', idempotencyKey,
+      '--id', idempotencyKey,
       '--text', text,
       '--json',
     ];
@@ -2814,7 +2814,6 @@ export class Supervisor {
         throw new Error('[supervisor] SQLite upsertStatusWithEvent failed during error completion: database client unavailable');
       }
 
-      emitParentNotification(statusSnapshot);
       this.aggregateJobMetricsBestEffort(id);
 
       appendResultToInputBead({
@@ -2826,6 +2825,7 @@ export class Supervisor {
         turnIndex: runMetrics.turns,
         tokenUsage: runMetrics.token_usage,
       });
+      emitParentNotification(statusSnapshot);
 
       // Touch ready marker so hooks can surface failure banners.
       this.writeReadyMarker(id);

@@ -115,7 +115,7 @@ describe('Supervisor parent terminal notification', () => {
     const args = argsForCall();
     expect(args).toEqual(expect.arrayContaining([
       'message-send', '--to', '$parent', '--to-pane', '%parent',
-      '--expects-reply=false', '--message-key', `${id}:done`, '--json',
+      '--expects-reply=false', '--id', `${id}:done`, '--json',
     ]));
 
     const text = valueAfter(args, '--text');
@@ -148,13 +148,33 @@ describe('Supervisor parent terminal notification', () => {
     expect(text).not.toContain('user@example.com');
   });
 
-  it('sends an error pointer without leaking the thrown error', async () => {
-    const supervisor = makeSupervisor({
-      run: vi.fn().mockRejectedValue(new Error('secret for private@example.com')),
-    } as any);
+  it('persists the error handoff before sending a pointer without the thrown error', async () => {
+    const order: string[] = [];
+    xtmuxSpawnMock.mockImplementation(() => {
+      order.push('notify');
+      return successfulSpawn();
+    });
+    const supervisor = new Supervisor({
+      jobsDir,
+      runner: { run: vi.fn().mockRejectedValue(new Error('secret for private@example.com')) } as any,
+      runOptions: {
+        name: 'executor',
+        prompt: 'do work',
+        inputBeadId: 'bead-1',
+        ambientRuntimeOrigin: PARENT_ORIGIN,
+      } as any,
+      beadsClient: {
+        updateBeadNotes: vi.fn(() => {
+          order.push('handoff');
+          return { ok: true };
+        }),
+      } as any,
+    });
+    supervisors.push(supervisor);
 
     await expect(supervisor.run()).rejects.toThrow('secret for private@example.com');
 
+    expect(order).toEqual(['handoff', 'notify']);
     expect(xtmuxSpawnMock).toHaveBeenCalledTimes(1);
     const payload = payloadForCall();
     expect(payload.event_name).toBe('job.failed');
@@ -192,8 +212,8 @@ describe('Supervisor parent terminal notification', () => {
     expect(supervisor.updateJobStatus(jobId, 'error', 'second')).toMatchObject({ status: 'error' });
 
     expect(xtmuxSpawnMock).toHaveBeenCalledTimes(2);
-    expect(valueAfter(argsForCall(0), '--message-key')).toBe(`${jobId}:error`);
-    expect(valueAfter(argsForCall(1), '--message-key')).toBe(`${jobId}:error`);
+    expect(valueAfter(argsForCall(0), '--id')).toBe(`${jobId}:error`);
+    expect(valueAfter(argsForCall(1), '--id')).toBe(`${jobId}:error`);
     expect(valueAfter(argsForCall(1), '--text')).toBe(valueAfter(argsForCall(0), '--text'));
   });
 
