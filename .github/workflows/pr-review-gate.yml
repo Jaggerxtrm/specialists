@@ -12,6 +12,8 @@ on:
     types: [opened, synchronize, reopened]
   pull_request_review:
     types: [submitted, dismissed]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
   issue_comment:
     types: [created, edited, deleted]
   workflow_dispatch:
@@ -39,6 +41,9 @@ jobs:
                     ?? context.payload.issue?.number
                     ?? Number(context.payload.inputs?.pr);
             if (!pr) { core.info('no PR context; skipping'); return; }
+            // issue_comment fires on PR conversation comments only; inline diff
+            // comments fire pull_request_review_comment. Both listed so an
+            // out-of-review inline bot comment still re-runs the gate.
             const { owner, repo } = context.repo;
             // Strip Python/Perl-style inline flag if present; JS regex doesn't support it.
             const rawPattern = process.env.BOT_RE.replace(/^\(\?[imsux]+\)/, '');
@@ -103,17 +108,24 @@ jobs:
               t.comments.nodes.some(c => isBot(c.author))
             );
 
-            const latest = {};
+            // Preserve active CHANGES_REQUESTED like GitHub's native branch
+            // protection does: a CR verdict stays active until the same bot
+            // submits APPROVED or DISMISSED. Later COMMENTED reviews do NOT
+            // clear it. Track the latest *verdict-carrying* review per bot
+            // (APPROVED/CHANGES_REQUESTED/DISMISSED); COMMENTED is ignored.
+            const VERDICT_STATES = new Set(['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED']);
+            const latestVerdict = {};
             for (const r of reviewsPage) {
               if (!isBot(r.author)) continue;
               if (!r.submittedAt) continue; // Codex-shaped: null timestamp; threads-only path
+              if (!VERDICT_STATES.has(r.state)) continue;
               const login = r.author.login;
-              const prev = latest[login];
+              const prev = latestVerdict[login];
               if (!prev || new Date(prev.submittedAt) < new Date(r.submittedAt)) {
-                latest[login] = r;
+                latestVerdict[login] = r;
               }
             }
-            const blockingBots = Object.entries(latest)
+            const blockingBots = Object.entries(latestVerdict)
               .filter(([, r]) => r.state === 'CHANGES_REQUESTED')
               .map(([login]) => login);
 
