@@ -268,6 +268,42 @@ function emitParentNotification(statusSnapshot: SupervisorStatus): void {
     if (result.error || result.status !== 0) {
       console.warn(`[supervisor] Parent notification failed: exit=${result.status ?? 'unknown'}`);
     }
+
+    if (!statusSnapshot.bead_id) return;
+    const show = spawnSync('bd', ['show', statusSnapshot.bead_id, '--json'], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: PARENT_NOTIFICATION_TIMEOUT_MS,
+    });
+    if (show.error || show.status !== 0) {
+      console.warn(`[supervisor] Parent bead assignee read failed: exit=${show.status ?? 'unknown'}`);
+      return;
+    }
+
+    let currentAssignee: string | undefined;
+    try {
+      const bead = JSON.parse(show.stdout ?? '') as Array<{ assignee?: string }> | { assignee?: string };
+      currentAssignee = Array.isArray(bead) ? bead[0]?.assignee : bead.assignee;
+    } catch {
+      console.warn('[supervisor] Parent bead assignee read failed: invalid bd show output');
+      return;
+    }
+    const automaticAssignee = !currentAssignee
+      || /^(?:(?:pi|claude)\/[a-z0-9]{5}|[a-z][a-z0-9-]*\/(?:[a-f0-9]{6}|job-[a-z0-9]+))$/i.test(currentAssignee);
+    if (!automaticAssignee) {
+      console.info(`[supervisor] Parent bead assignee preserved: ${statusSnapshot.bead_id}`);
+      return;
+    }
+
+    const assignee = `${statusSnapshot.specialist}/${statusSnapshot.id}`;
+    const update = spawnSync('bd', ['update', statusSnapshot.bead_id, `--assignee=${assignee}`, '--json'], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: PARENT_NOTIFICATION_TIMEOUT_MS,
+    });
+    if (update.error || update.status !== 0) {
+      console.warn(`[supervisor] Parent bead assignee update failed: exit=${update.status ?? 'unknown'}`);
+    }
   } catch {
     console.warn('[supervisor] Parent notification failed: exception');
   }
@@ -2764,9 +2800,6 @@ export class Supervisor {
       // the same commit; if a checkpoint already analyzed the final sha we skip.
       triggerGitnexusAnalyzeIfNeeded(statusSnapshot.last_auto_commit_sha, 'terminal');
 
-      // Touch ready marker so hooks can surface completion banners.
-      this.writeReadyMarker(id);
-
       return id;
     } catch (err: any) {
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
@@ -2827,8 +2860,6 @@ export class Supervisor {
       });
       emitParentNotification(statusSnapshot);
 
-      // Touch ready marker so hooks can surface failure banners.
-      this.writeReadyMarker(id);
       throw err;
     } finally {
       if (stuckIntervalId !== undefined) clearInterval(stuckIntervalId);
