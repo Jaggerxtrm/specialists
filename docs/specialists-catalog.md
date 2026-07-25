@@ -48,7 +48,7 @@ Run `sp list` for the live merged registry, including user-local specialists. Th
 | `reviewer` | 2.0.0 | user-configured | MEDIUM | user-configured | Compliance review of executor/debugger output via `--job`; emits PASS/PARTIAL/FAIL. |
 | `seconder` | 1.0.0 | user-configured | READ_ONLY | user-configured | Smell pass after executor and before reviewer. |
 | `security-auditor` | 1.0.0 | user-configured | LOW | user-configured | Threat modeling, secure-code review, dependency advisory triage; recommendations only. |
-| `service-skills-sync` | 1.6.0 | user-configured | MEDIUM | user-configured | Sync service-oriented skill packages and drift detection across service boundaries. |
+| `service-knowledge-sync` | 1.6.0 | user-configured | MEDIUM | user-configured | Sync service-oriented skill packages and drift detection across service boundaries. |
 | `specialists-creator` | 1.4.1 | user-configured | HIGH | user-configured | Create/fix `.specialist.json` definitions and validate schema/model choices. |
 | `sync-docs` | 3.1.0 | user-configured | MEDIUM | user-configured | Sync exactly one documentation file from scoped report/commit context. |
 | `test-engineer` | 1.0.0 | user-configured | HIGH | user-configured | Write/update tests, fixtures, smoke/E2E harnesses, and telemetry assertions from actual implementation diff; no production fixes. |
@@ -62,7 +62,7 @@ Run `sp list` for the live merged registry, including user-local specialists. Th
 - **`reviewer` v2.0 is phase-2-only.** The former phase-1 reviewer responsibilities merged into `seconder` v1.0; reviewer now handles only final compliance sign-off.
 - **`researcher` v1.3 adds web pipeline (Mode 4).** Includes DDGS + agent-browser for current web queries beyond static library docs.
 - **New quantitative specialists** `quant-methodologist` and `quant-researcher` v1.0.0 added for financial/quantitative research workflows.
-- **New supporting specialists:** `transcriber` v1.6.0 (media transcription), `service-skills-sync` v1.6.0 (cross-service drift detection), `obligations-scanner` v1.0.0 (TODO/FIXME tracking), and `bare` v1.0.0 (minimal trusted-mode RPC).
+- **New supporting specialists:** `transcriber` v1.6.0 (media transcription), `service-knowledge-sync` v1.6.0 (cross-service drift detection), `obligations-scanner` v1.0.0 (TODO/FIXME tracking), and `bare` v1.0.0 (minimal trusted-mode RPC).
 - **`sync-docs` v3.1 is single-doc only.** One bead scope must name exactly one doc. It is not a broad docs-tree auditor.
 - **`test-engineer` v1 writes tests from actual diff evidence.** It is ambidextrous for `test-only` and `code-with-tests` chains, creates/updates test assets only, emits exact `test-runner` commands, and routes source bugs back to debugger/executor.
 - **`test-runner` v2.0.1 is exact-command first.** It prefers orchestrator/test-engineer command lists, falls back to manifest-detected suites only when no exact command is provided, and reports owner-routed failures with evidence.

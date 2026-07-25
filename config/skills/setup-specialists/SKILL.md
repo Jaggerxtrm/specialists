@@ -472,11 +472,11 @@ notes **and** in the spec's `output_file`. Both are fed from a single source
 The supervisor renders markdown-native blocks (no emoji, no dividers):
 
 ```
-### service-skills-sync · kimi-k2.5 · [turn 12 · WAITING]   ← H3 per-turn
+### service-knowledge-sync · kimi-k2.5 · [turn 12 · WAITING]   ← H3 per-turn
 <assistant output verbatim>
 _turn 12 · 8413 ms · 4222 to 167 tok · 2026-06-16 02:11 · git fc9168e2_
 
-## service-skills-sync · kimi-k2.5 · [FINAL · DONE]        ← H2 canonical, greppable
+## service-knowledge-sync · kimi-k2.5 · [FINAL · DONE]        ← H2 canonical, greppable
 <final assistant output verbatim>
 _final · 107106 ms · 18269 to 468 tok · 2026-06-16 02:13 · git fc9168e2_
 ```

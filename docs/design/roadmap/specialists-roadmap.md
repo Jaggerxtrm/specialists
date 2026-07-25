@@ -612,7 +612,7 @@ The fusion is architecturally clean: `reviewer.specialist.json` already declared
 | `orchestrator` | `claude-code-session`, `auto-mode-harness` | `orch::${session_uuid}` | UUID per session run | session |
 | `pulse_emitter` (in container) | `chain-coordinator-hygiene`, ... | `${container_id}::emitter::${role}` | UUID per emission | container |
 | `pulse_emitter` (extern) | `github-webhook`, `cron-trigger`, ... | opaque UUID registered at setup | UUID per emission | global |
-| `adapter` | `mcp-grafana`, `mcp-gitnexus`, `service-skills-sync`, ... | opaque UUID per registered adapter | UUID per invocation | global |
+| `adapter` | `mcp-grafana`, `mcp-gitnexus`, `service-knowledge-sync`, ... | opaque UUID per registered adapter | UUID per invocation | global |
 | `node_member` | `coordinator`, `<member-role>` | `node::${node_id}::${role}::${member_index}` | UUID per run | node |
 
 **Invariants.**

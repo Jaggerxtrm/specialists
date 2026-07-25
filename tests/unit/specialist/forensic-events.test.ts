@@ -83,8 +83,8 @@ describe('forensic-events', () => {
       event: createForensicEvent({
         event_family: 'service_skills',
         event_name: 'service_skills.drift_detected',
-        resource: { ...resource, service_name: 'service-skills', participant_kind: 'adapter', participant_role: 'service-skills-sync' },
-        correlation: { participant_id: 'adapter:service-skills-sync', issue_id: 'unitAI-eoqxp.3.5' },
+        resource: { ...resource, service_name: 'service-skills', participant_kind: 'adapter', participant_role: 'service-knowledge-sync' },
+        correlation: { participant_id: 'adapter:service-knowledge-sync', issue_id: 'unitAI-eoqxp.3.5' },
         body: { service_id: 'specialists-runtime', drift_tier: 'high', tier_source: 'drift_detector', files_count: 2 },
       }),
     },

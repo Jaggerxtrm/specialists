@@ -305,7 +305,7 @@ expert-persona docs per service — **Architecture, Data Flows, Cross-Service He
 + `executor` for navigation. This is the direct analogue of the AWS agent's **runbooks +
 per-service topology context** (§6.1).
 
-- The **`service-skills-sync` librarian** (`.specialists/user/service-skills-sync.specialist.json`
+- The **`service-knowledge-sync` librarian** (`.specialists/user/service-knowledge-sync.specialist.json`
   in market-data) already keeps these in sync with code drift using **gitnexus**
   (`detect_changes`/`impact`/`context`) + Serena, gated by a `drift_detector.py` pre-scan and
   PostToolUse/pre-commit/pre-push hooks (the `service-skills-set` "Trinity").
