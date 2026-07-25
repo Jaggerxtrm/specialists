@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Resolve docs review gate findings** ([ec64645](https://github.com/xtrm-dev/specialists/commit/ec64645053f1cfe5f097275d40a8fe8bd84ee49a))
+
 ### Other changes
 
 - **Fix pi-compatible JSON output for run and feed (#206)
@@ -23,9 +27,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * fix(feed): merge per-job streams transitively** ([5fa36e0](https://github.com/xtrm-dev/specialists/commit/5fa36e03d653a5b5a5dd3431c4802942276afeae))
 
+- **Reference service-knowledge package (PR0 relocation) (#213)** ([cb79680](https://github.com/xtrm-dev/specialists/commit/cb796800d98a3b4bf7bb48efcc7e31fb9790dec9))
+
+- **Service-skills-sync -> service-knowledge-sync specialist (#217)** ([7f7617e](https://github.com/xtrm-dev/specialists/commit/7f7617ea696ef77fe2e424366d17d9b0f60e6aa1))
+
 ### Project maintenance
 
-- **Auto-refresh CHANGELOG.md — pre-push hook (xtrm-reyem.12)** ([3949e0b](https://github.com/xtrm-dev/specialists/commit/3949e0b58cf97f3c1c0a402336813e0d84775148))
+- **Auto-refresh CHANGELOG.md — pre-push hook (xtrm-reyem.12) (#208)** ([05c57e5](https://github.com/xtrm-dev/specialists/commit/05c57e568e8e11286bd159ecbc985f58e9ee5782))
+
+- **Chore** ([601cfa8](https://github.com/xtrm-dev/specialists/commit/601cfa8e04d190831f32ab4cb817babead5433c9))
+
+- **Reconcile enhanced PRD v3.1 (#209)** ([a11d5bc](https://github.com/xtrm-dev/specialists/commit/a11d5bcde475530cc815815ccc0fc3329590e6a8))
+
+- **Add pr-review-gate required-status-check workflow** ([cde9fd8](https://github.com/xtrm-dev/specialists/commit/cde9fd8971e029a085d33e7131d439f92218228f))
+
+- **Set explicit job name for readable required-check context** ([ed10f80](https://github.com/xtrm-dev/specialists/commit/ed10f806fff39da4bfe47603838625a146d8d280))
+
+- **Drop unsupported pull_request_review_thread trigger** ([3a79f3b](https://github.com/xtrm-dev/specialists/commit/3a79f3bd732ba2c875605584d5e553823376982b))
+
+- **Tighten to Bot __typename + paginate threads/reviews** ([448f0a6](https://github.com/xtrm-dev/specialists/commit/448f0a6aac5a43b1a0760b0caf611a41affcce71))
+
+- **Scope tracked documentation and reconcile roadmap** ([02241c4](https://github.com/xtrm-dev/specialists/commit/02241c47732ee497d4a7b7c61d0ca3a1c9408d29))
+
+- **Clean README whitespace** ([d1afc58](https://github.com/xtrm-dev/specialists/commit/d1afc58d0ff1cc41c768d016c1cf5a875c45cb3d))
+
+- **Wave-2 — pull_request_review_comment trigger + preserve CR verdicts** ([91cf32d](https://github.com/xtrm-dev/specialists/commit/91cf32dc6e86bcb121501bee478230792d0f0fa6))
 
 ## [v3.21.1] — 2026-07-22
 
