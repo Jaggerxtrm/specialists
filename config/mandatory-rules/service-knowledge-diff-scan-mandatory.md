@@ -1,5 +1,5 @@
 ---
-name: service-skills-diff-scan-mandatory
+name: service-knowledge-diff-scan-mandatory
 kind: mandatory-rule
 ---
 **Phase 2.5 — Diff content scan is mandatory for every drifted service file.**

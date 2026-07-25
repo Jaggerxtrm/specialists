@@ -140,7 +140,7 @@ Specialists gives an AI workflow the same structure. The orchestrator remains th
 | Review implementation evidence against the bead contract | `sp run reviewer --bead <id> --job <exec-job>` |
 | Research current docs, repos, APIs, papers, or domain evidence | `researcher`, `quant-researcher`, `transcriber` |
 | Sync one stale doc safely | `sync-docs` |
-| Keep service-expert skill docs aligned with code drift | `service-skills-sync` |
+| Keep service-expert skill docs aligned with code drift | `service-knowledge-sync` |
 | Generate immediate JSON/text from a specialist | `sp script` or `sp serve` |
 | Watch all active specialist work across repos | `sp console` |
 | Inspect runtime evidence and telemetry | `sp feed`, `sp log`, `sp forensic`, `sp metrics` |
@@ -333,7 +333,7 @@ Telemetry uses bounded labels and avoids high-cardinality IDs in Prometheus labe
 | Implementation/review | `executor`, `reviewer`, `seconder` | write changes, verify scope, check quality |
 | QA | `test-engineer`, `test-runner`, `obligations-scanner` | create tests, run exact commands, track TODO/FIXME obligations |
 | Research | `researcher`, `github-researcher`, `transcriber` | gather current docs, code examples, papers, video transcripts |
-| Documentation/release | `sync-docs`, `service-skills-sync`, `changelog-keeper`, `changelog-drafter` | keep docs and release notes current |
+| Documentation/release | `sync-docs`, `service-knowledge-sync`, `changelog-keeper`, `changelog-drafter` | keep docs and release notes current |
 | Operations | `xt-merge`, `memory-processor`, `node-coordinator` | merge queues, curate memory, coordinate node workers |
 | Domain specialists | `quant-researcher`, `quant-methodologist` | market-data and quantitative-method evidence/methodology |
 

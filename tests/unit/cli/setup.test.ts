@@ -315,7 +315,7 @@ describe('setup CLI', () => {
 
   it('probe-only emits probe contract result', async () => {
     const { run } = await import('../../../src/cli/setup.js');
-    await run(['--probe-only', 'nano-gpt/moonshotai/kimi-k2.5', 'service-skills-sync', '--json']);
+    await run(['--probe-only', 'nano-gpt/moonshotai/kimi-k2.5', 'service-knowledge-sync', '--json']);
 
     const payload = JSON.parse(stdout.join('\n'));
     expect(payload).toMatchObject({

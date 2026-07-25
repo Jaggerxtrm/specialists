@@ -195,7 +195,7 @@ describe('output contract injection', () => {
       ...baseSpec,
       specialist: {
         ...baseSpec.specialist,
-        metadata: { name: 'service-skills-sync' },
+        metadata: { name: 'service-knowledge-sync' },
         execution: { ...baseSpec.specialist.execution, response_format: 'json' },
       },
     };
@@ -385,7 +385,7 @@ describe('runScriptSpecialist expected_output_keys validation', () => {
     const spec = textSpecWithKeys(['summary', 'services', 'actions']);
     const child = createSpawnMock();
     const resultPromise = runScriptSpecialist(
-      { specialist: 'service-skills-sync', template: 'render $name', variables: { name: 'x' } },
+      { specialist: 'service-knowledge-sync', template: 'render $name', variables: { name: 'x' } },
       { loader: makeLoader(spec as never) as never, projectDir: '.' },
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -861,7 +861,7 @@ describe('runScriptSpecialist PiAgentSession JSON recovery', () => {
       ...baseSpec,
       specialist: {
         ...baseSpec.specialist,
-        metadata: { name: 'service-skills-sync' },
+        metadata: { name: 'service-knowledge-sync' },
         execution: {
           ...baseSpec.specialist.execution,
           permission_required: 'MEDIUM',
@@ -872,7 +872,7 @@ describe('runScriptSpecialist PiAgentSession JSON recovery', () => {
     };
 
     const result = await runScriptSpecialist(
-      { specialist: 'service-skills-sync', variables: { name: 'release notes' } },
+      { specialist: 'service-knowledge-sync', variables: { name: 'release notes' } },
       {
         loader: makeLoader(spec as never) as never,
         projectDir: '.',
@@ -920,7 +920,7 @@ describe('runScriptSpecialist PiAgentSession observability bridge', () => {
       ...baseSpec,
       specialist: {
         ...baseSpec.specialist,
-        metadata: { name: 'service-skills-sync' },
+        metadata: { name: 'service-knowledge-sync' },
         execution: {
           ...baseSpec.specialist.execution,
           permission_required: 'MEDIUM',
@@ -929,7 +929,7 @@ describe('runScriptSpecialist PiAgentSession observability bridge', () => {
     };
 
     const result = await runScriptSpecialist(
-      { specialist: 'service-skills-sync', variables: { name: 'release notes' } },
+      { specialist: 'service-knowledge-sync', variables: { name: 'release notes' } },
       {
         loader: makeLoader(spec as never) as never,
         projectDir: '.',
