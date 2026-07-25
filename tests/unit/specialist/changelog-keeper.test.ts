@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseSpecialist } from '../../../src/specialist/schema.js';

@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';

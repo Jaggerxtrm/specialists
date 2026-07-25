@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — platform-gated skips are intentional.
 import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

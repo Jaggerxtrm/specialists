@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LEGACY_PERMISSION_TOOL_STRINGS, resolveManifestTools, type ToolCatalog, type ToolTier } from '../../../src/specialist/manifest-resolver.js';

@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — live suite requires SPECIALISTS_LIVE_SMOKE=1.
 // NOTE: Probe live validation stays out of scope here.
 // Phase C already covers live probe behavior; probe-only needs upstream pi model access
 // and authenticated runtime that should not be required for discovery smoke.

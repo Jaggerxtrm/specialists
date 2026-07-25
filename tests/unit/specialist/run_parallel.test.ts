@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 // tests/unit/specialist/run_parallel.test.ts
 import { describe, it, expect, vi } from 'vitest';
 import { createRunParallelTool } from '../../../src/tools/specialist/run_parallel.tool.js';

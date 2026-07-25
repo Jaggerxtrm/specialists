@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BeadsClient, buildBeadContext } from '../../src/specialist/beads.js';

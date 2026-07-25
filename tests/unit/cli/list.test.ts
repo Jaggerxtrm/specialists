@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 // tests/unit/cli/list.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { parseArgs, ArgParseError, computeMedianElapsedMs, getChainPositionBadge, run } from '../../../src/cli/list.js';

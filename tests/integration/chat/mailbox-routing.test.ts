@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 import { describe, expect, it } from 'vitest';
 import { createChatControl, dispatchInput, type ControlOps } from '../../../src/cli/chat/control.js';
 

@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 import { describe, expect, it } from 'vitest';
 import { initialConsoleState, reduceConsoleState, selectedJobRow } from '../../../src/cli/console/view-model.js';
 import type { ProcessSnapshot } from '../../../src/cli/console/types.js';

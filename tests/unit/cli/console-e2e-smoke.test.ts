@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 // End-of-epic E2E smoke for sp console v2 (unitAI-ctb4u.12).
 //
 // The bead-spec calls for `bun build --compile` + driving every view via pty.
