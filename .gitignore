@@ -108,3 +108,5 @@ docs/archive/*
 !docs/archive/iron-review-hardening-qa-chain-substrate.md
 docs/devops/
 docs/plans/
+
+open-issues.json
