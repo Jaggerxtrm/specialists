@@ -21,7 +21,7 @@ import { createInterface } from 'node:readline';
 import { createReadStream } from 'node:fs';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import type { SpecialistRunner, RunOptions } from './runner.js';
-import { resolveSpawnOrigin, type RuntimeOriginV1, type SpecialistSpawnOriginV1 } from './runtime-origin.js';
+import { resolveSpawnOrigin, validateRuntimeOrigin, type RuntimeOriginV1, type SpecialistSpawnOriginV1 } from './runtime-origin.js';
 import { resolveJobsDir, resolveCurrentBranch } from './job-root.js';
 import { isJobFileOutputEnabled } from './job-file-output.js';
 import type { BeadsClient } from './beads.js';
@@ -61,8 +61,11 @@ import { loadEpicReadinessSummary, syncEpicStateFromReadiness } from './epic-rea
 import { derivePersistedChainIdentity } from './chain-identity.js';
 import { isTmuxSessionAlive } from '../cli/tmux-utils.js';
 import { parsePorcelainStatus } from './porcelain-parser.js';
+import { createForensicEvent } from './forensic-events.js';
 
 const JOB_TTL_DAYS = Number(process.env.SPECIALISTS_JOB_TTL_DAYS ?? 7);
+const PARENT_NOTIFICATION_MAX_BYTES = 4 * 1024;
+const PARENT_NOTIFICATION_TIMEOUT_MS = 5_000;
 
 export const STALL_DETECTION_DEFAULTS: Required<StallDetectionConfig> = {
   running_silence_warn_ms: 60_000,
@@ -195,7 +198,80 @@ export interface SupervisorOptions {
   stallDetection?: StallDetectionConfig;
 }
 
+function emitParentNotification(statusSnapshot: SupervisorStatus): void {
+  try {
+    if (statusSnapshot.status !== 'done' && statusSnapshot.status !== 'error') return;
+    if (statusSnapshot.spawn_origin?.kind !== 'xtmux.agent_instance') return;
 
+    const parent = validateRuntimeOrigin(statusSnapshot.spawn_origin.runtime_origin);
+    if ('error' in parent || !parent.verified) return;
+
+    const idempotencyKey = `${statusSnapshot.id}:${statusSnapshot.status}`;
+    const resultCommand = `sp result ${statusSnapshot.id} --json`;
+    const payload = createForensicEvent({
+      event_family: 'job',
+      event_name: statusSnapshot.status === 'done' ? 'job.completed' : 'job.failed',
+      resource: {
+        service_namespace: 'xtrm',
+        service_name: 'specialists',
+        service_component: 'supervisor',
+        deployment_environment: 'local',
+        repo: 'specialists',
+        participant_kind: 'specialist',
+        participant_role: statusSnapshot.specialist,
+      },
+      correlation: {
+        job_id: statusSnapshot.id,
+        ...(statusSnapshot.bead_id ? { bead_id: statusSnapshot.bead_id } : {}),
+        ...(statusSnapshot.trace_id ? { trace_id: statusSnapshot.trace_id } : {}),
+        ...(statusSnapshot.span_id ? { span_id: statusSnapshot.span_id } : {}),
+        ...(statusSnapshot.parent_span_id ? { parent_span_id: statusSnapshot.parent_span_id } : {}),
+      },
+      body: {
+        transition: statusSnapshot.status,
+        job_id: statusSnapshot.id,
+        specialist: statusSnapshot.specialist,
+        parent: {
+          kind: parent.kind,
+          tmux_session_id: parent.tmux_session_id,
+          tmux_pane_id: parent.tmux_pane_id,
+          ...(parent.agent_instance_id ? { agent_instance_id: parent.agent_instance_id } : {}),
+          verified: true,
+        },
+        summary: `Specialist ${statusSnapshot.specialist} job ${statusSnapshot.id} is ${statusSnapshot.status}.`,
+        result_command: resultCommand,
+        idempotency_key: idempotencyKey,
+      },
+      t_unix_ms: statusSnapshot.last_event_at_ms ?? statusSnapshot.started_at_ms,
+    });
+    const text = JSON.stringify(payload);
+    if (Buffer.byteLength(text) > PARENT_NOTIFICATION_MAX_BYTES) {
+      console.warn('[supervisor] Parent notification skipped: payload exceeds limit');
+      return;
+    }
+
+    const args = [
+      'message-send',
+      '--to', parent.tmux_session_id,
+      '--to-pane', parent.tmux_pane_id,
+      ...(statusSnapshot.bead_id ? ['--bead', statusSnapshot.bead_id] : []),
+      '--expects-reply=false',
+      '--id', idempotencyKey,
+      '--text', text,
+      '--json',
+    ];
+    const result = spawnSync('xtmux', args, {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: PARENT_NOTIFICATION_TIMEOUT_MS,
+    });
+    if (result.error || result.status !== 0) {
+      console.warn(`[supervisor] Parent notification failed: exit=${result.status ?? 'unknown'}`);
+    }
+  } catch {
+    console.warn('[supervisor] Parent notification failed: exception');
+  }
+}
 
 function getCurrentGitSha(): string | undefined {
   const result = spawnSync('git', ['rev-parse', 'HEAD'], {
@@ -972,7 +1048,9 @@ export class Supervisor {
       status,
       current_event: undefined,
       error,
-      last_event_at_ms: Date.now(),
+      last_event_at_ms: previousStatus === status
+        ? currentStatus.last_event_at_ms ?? Date.now()
+        : Date.now(),
     };
 
     this.writeStatusFile(id, updatedStatus, { sqliteFailureMode: 'warn' });
@@ -980,6 +1058,7 @@ export class Supervisor {
     if (previousStatus !== status) {
       this.appendEventBestEffort(id, 'appendEvent:status_change', createStatusChangeEvent(status, previousStatus));
     }
+    if (status === 'error') emitParentNotification(updatedStatus);
 
     return this.withComputedLiveness(updatedStatus);
   }
@@ -2678,6 +2757,7 @@ export class Supervisor {
         throw new Error('[supervisor] SQLite upsertStatusWithEventAndResult failed: database client unavailable');
       }
 
+      emitParentNotification(statusSnapshot);
       this.aggregateJobMetricsBestEffort(id);
 
       // Terminal-path gitnexus analyze. Dedupes against checkpoint-time fires for
@@ -2745,6 +2825,7 @@ export class Supervisor {
         turnIndex: runMetrics.turns,
         tokenUsage: runMetrics.token_usage,
       });
+      emitParentNotification(statusSnapshot);
 
       // Touch ready marker so hooks can surface failure banners.
       this.writeReadyMarker(id);
