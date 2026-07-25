@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — static skip remains tracked.
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';

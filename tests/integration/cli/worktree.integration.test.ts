@@ -1,4 +1,5 @@
 // tests/integration/cli/worktree.integration.test.ts
+// ISSUE: xtrm-wiy5n.4.11 — capability-gated skips are intentional.
 // Integration tests for worktree-backed specialists run/status/resume/steer flows.
 // Covers: unitAI-hgpu.3, unitAI-hgpu.4
 

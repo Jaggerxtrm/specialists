@@ -1,4 +1,5 @@
 // tests/unit/specialist/loader.test.ts
+// ISSUE: xtrm-wiy5n.4.11 — static skip remains tracked.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, writeFile, mkdir, utimes } from 'node:fs/promises';
 import { join } from 'node:path';

@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 import { describe, expect, it } from 'vitest';
 import { renderJobRow, selectJobColumns, visibleLength } from '../../../src/cli/console/theme.js';
 import { fitFrame } from '../../../src/cli/console/components.js';

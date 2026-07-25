@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 import { describe, it, expect } from 'vitest';
 import { loadToolCatalogIndex, SPECIALIST_TOOL_PRECEDENCE } from '../../../src/specialist/tool-catalog.js';
 import { readFile } from 'node:fs/promises';

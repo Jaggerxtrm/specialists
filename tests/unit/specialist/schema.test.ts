@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — static skip remains tracked.
 import { describe, it, expect } from 'vitest';
 import {
   OVERRIDE_ALLOWED_EXECUTION_FIELDS,

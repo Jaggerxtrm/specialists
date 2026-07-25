@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — runtime-gated skip is intentional.
 import { mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

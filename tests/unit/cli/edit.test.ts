@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 // tests/unit/cli/edit.test.ts
 // Tests the parseArgs logic in edit.ts by shimming process.exit + process.argv.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';

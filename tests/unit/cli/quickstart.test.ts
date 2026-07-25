@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 // tests/unit/cli/quickstart.test.ts
 import { describe, it, expect, vi, afterEach } from 'vitest';
 

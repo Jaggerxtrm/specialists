@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.10 — attach can hang in nested tmux test runs.
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';

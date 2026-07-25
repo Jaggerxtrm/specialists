@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 import { afterEach, describe, expect, it } from 'vitest';
 import { execSync, spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';

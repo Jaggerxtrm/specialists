@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — live suite requires SPECIALISTS_LIVE_SMOKE=1.
 // Live HOME strategy for smoke: keep real HOME (and ~/.pi credentials) intact and set XDG_CONFIG_HOME
 // to a temp directory so specialist overrides stay isolated; symlink repoRoot/.beads into tempRepo.
 import { afterEach, describe, expect, it } from 'vitest';

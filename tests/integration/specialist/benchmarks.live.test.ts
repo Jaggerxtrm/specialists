@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — live suite requires SPECIALISTS_LIVE_SMOKE=1.
 import { describe, expect, it } from 'vitest';
 import { loadBenchmarkSnapshot } from '../../../src/specialist/benchmarks.js';
 import { runAgenticFollowthroughProbe } from '../../../src/specialist/model-probes.js';

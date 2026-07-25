@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — tmux-gated skip is intentional.
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as childProcess from 'node:child_process';
 

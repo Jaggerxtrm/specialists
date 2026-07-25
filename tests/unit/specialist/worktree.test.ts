@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 // tests/unit/specialist/worktree.test.ts
 // Contract tests for bd worktree helper module
 

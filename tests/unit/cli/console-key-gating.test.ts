@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 // Regression for codex PR #125 review finding: generic paging shortcuts
 // (`d` / `u` / `g` / `G`) used to fire before the view-specific handlers in
 // ConsoleApp.handleInput, so on ps view `d` paged down instead of opening

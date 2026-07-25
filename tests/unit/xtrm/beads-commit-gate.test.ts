@@ -1,3 +1,4 @@
+// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 import { describe, it, expect } from 'vitest';
 import { execSync } from 'node:child_process';
 import { decideCommitGate } from '../../../.xtrm/hooks/beads-gate-core.mjs';
