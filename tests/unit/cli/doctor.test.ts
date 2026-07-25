@@ -68,15 +68,10 @@ describe('doctor CLI — run()', () => {
     expect(hasSummary).toBe(true);
   });
 
-  it('checks for both expected hooks', async () => {
+  it('checks for the expected session hook', async () => {
     const { combined } = await runDoctor();
-    const hooks = [
-      'specialists-complete.mjs',
-      'specialists-session-start.mjs',
-    ];
-    for (const hook of hooks) {
-      expect(combined, `missing hook check: ${hook}`).toContain(hook);
-    }
+    expect(combined).toContain('specialists-session-start.mjs');
+    expect(combined).not.toContain('specialists-complete.mjs');
   });
 
   it('mentions managed mirror fixes', async () => {

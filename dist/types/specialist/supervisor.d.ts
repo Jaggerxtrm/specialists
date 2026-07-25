@@ -181,6 +181,7 @@ export declare class Supervisor {
     private reconcileDeadStatus;
     readStatus(id: string): SupervisorStatusView | null;
     listLiveJobsForBead(beadId: string): string[];
+    private activeSiblingAssignee;
     listChainJobIds(chainId: string): string[];
     readResult(id: string): string | null;
     finalizeWaitingJob(id: string): SupervisorStatusView | null;

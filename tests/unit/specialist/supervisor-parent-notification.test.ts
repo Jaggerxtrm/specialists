@@ -1,22 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { RuntimeOriginV1 } from '../../../src/specialist/runtime-origin.js';
 import { Supervisor, type SupervisorStatus } from '../../../src/specialist/supervisor.js';
 
-const { xtmuxSpawnMock } = vi.hoisted(() => ({ xtmuxSpawnMock: vi.fn() }));
+const { bdSpawnMock, xtmuxSpawnMock } = vi.hoisted(() => ({
+  bdSpawnMock: vi.fn(),
+  xtmuxSpawnMock: vi.fn(),
+}));
 
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   return {
     ...actual,
     spawn: vi.fn(() => ({ pid: 1234, unref: vi.fn() })),
-    spawnSync: (command: string, args: string[], options: object) => (
-      command === 'xtmux'
-        ? xtmuxSpawnMock(command, args, options)
-        : actual.spawnSync(command, args, options)
-    ),
+    spawnSync: (command: string, args: string[], options: object) => {
+      if (command === 'xtmux') return xtmuxSpawnMock(command, args, options);
+      if (command === 'bd') return bdSpawnMock(command, args, options);
+      return actual.spawnSync(command, args, options);
+    },
   };
 });
 
@@ -82,6 +85,10 @@ describe('Supervisor parent terminal notification', () => {
     jobsDir = join(tmpDir, 'jobs');
     mkdirSync(jobsDir, { recursive: true });
     xtmuxSpawnMock.mockReset().mockImplementation(successfulSpawn);
+    bdSpawnMock.mockReset().mockImplementation((_command: string, args: string[]) => ({
+      ...successfulSpawn(),
+      stdout: args[0] === 'show' ? JSON.stringify([{ assignee: 'pi/old12' }]) : '{}',
+    }));
   });
 
   afterEach(async () => {
@@ -146,6 +153,126 @@ describe('Supervisor parent terminal notification', () => {
     });
     expect(text).not.toContain(privateResult);
     expect(text).not.toContain('user@example.com');
+    expect(existsSync(join(tmpDir, 'ready', id))).toBe(false);
+  });
+
+  it('advances a prior runtime assignee to terminal role and job lineage', async () => {
+    const order: string[] = [];
+    xtmuxSpawnMock.mockImplementation(() => {
+      order.push('notify');
+      return successfulSpawn();
+    });
+    bdSpawnMock.mockImplementation((_command: string, args: string[]) => {
+      order.push(args[0]!);
+      return {
+        ...successfulSpawn(),
+        stdout: args[0] === 'show' ? JSON.stringify([{ assignee: 'pi/old12' }]) : '{}',
+      };
+    });
+    const specialistRunner = runner();
+    specialistRunner.run.mockResolvedValue({
+      output: 'done',
+      model: 'test-model',
+      backend: 'test-backend',
+      durationMs: 10,
+      specialistVersion: '1.0.0',
+      promptHash: 'prompt-hash',
+      beadId: 'bead-1',
+    });
+
+    const id = await makeSupervisor(specialistRunner).run();
+
+    expect(order).toEqual(['notify', 'show', 'update']);
+    expect(bdSpawnMock).toHaveBeenLastCalledWith(
+      'bd',
+      ['update', 'bead-1', `--assignee=executor/${id}`, '--json'],
+      expect.objectContaining({ encoding: 'utf-8' }),
+    );
+  });
+
+  it('keeps an active sibling as the bead assignee when another job finishes', async () => {
+    bdSpawnMock.mockImplementation((_command: string, args: string[]) => ({
+      ...successfulSpawn(),
+      stdout: args[0] === 'show' ? JSON.stringify([{ assignee: 'executor/abc999' }]) : '{}',
+    }));
+    const specialistRunner = runner();
+    specialistRunner.run.mockResolvedValue({
+      output: 'done',
+      model: 'test-model',
+      backend: 'test-backend',
+      durationMs: 10,
+      specialistVersion: '1.0.0',
+      promptHash: 'prompt-hash',
+      beadId: 'bead-1',
+    });
+    const supervisor = makeSupervisor(specialistRunner);
+    const readStatus = supervisor.readStatus.bind(supervisor);
+    vi.spyOn(supervisor, 'listLiveJobsForBead').mockReturnValue(['abc123']);
+    vi.spyOn(supervisor, 'readStatus').mockImplementation((id) => id === 'abc123'
+      ? {
+          id,
+          specialist: 'reviewer',
+          status: 'waiting',
+          started_at_ms: 1_700_000_000_000,
+          is_dead: false,
+        }
+      : readStatus(id));
+
+    const completedId = await supervisor.run();
+
+    expect(bdSpawnMock).toHaveBeenLastCalledWith(
+      'bd',
+      ['update', 'bead-1', '--assignee=reviewer/abc123', '--json'],
+      expect.any(Object),
+    );
+    expect(bdSpawnMock.mock.calls.flatMap((call) => call[1] as string[])).not.toContain(`--assignee=executor/${completedId}`);
+  });
+
+  it('preserves a manual bead assignee', async () => {
+    bdSpawnMock.mockImplementation((_command: string, args: string[]) => ({
+      ...successfulSpawn(),
+      stdout: args[0] === 'show' ? JSON.stringify([{ assignee: 'alice@example.com' }]) : '{}',
+    }));
+    const specialistRunner = runner();
+    specialistRunner.run.mockResolvedValue({
+      output: 'done',
+      model: 'test-model',
+      backend: 'test-backend',
+      durationMs: 10,
+      specialistVersion: '1.0.0',
+      promptHash: 'prompt-hash',
+      beadId: 'bead-1',
+    });
+
+    await makeSupervisor(specialistRunner).run();
+
+    expect(bdSpawnMock).toHaveBeenCalledTimes(1);
+    expect(bdSpawnMock).toHaveBeenCalledWith('bd', ['show', 'bead-1', '--json'], expect.any(Object));
+  });
+
+  it('keeps notification and completion when the assignee update fails', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    bdSpawnMock.mockImplementation((_command: string, args: string[]) => ({
+      ...successfulSpawn(),
+      stdout: args[0] === 'show' ? JSON.stringify([{ assignee: 'reviewer/abc123' }]) : '',
+      status: args[0] === 'update' ? 1 : 0,
+    }));
+    const specialistRunner = runner();
+    specialistRunner.run.mockResolvedValue({
+      output: 'done',
+      model: 'test-model',
+      backend: 'test-backend',
+      durationMs: 10,
+      specialistVersion: '1.0.0',
+      promptHash: 'prompt-hash',
+      beadId: 'bead-1',
+    });
+
+    const id = await makeSupervisor(specialistRunner).run();
+
+    expect(xtmuxSpawnMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(readFileSync(join(jobsDir, id, 'status.json'), 'utf-8'))).toMatchObject({ status: 'done' });
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('assignee update failed'));
   });
 
   it('persists the error handoff before sending a pointer without the thrown error', async () => {
@@ -181,6 +308,7 @@ describe('Supervisor parent terminal notification', () => {
     expect(payload.body.transition).toBe('error');
     expect(payload.body.result_command).toBe(`sp result ${payload.body.job_id} --json`);
     expect(valueAfter(argsForCall(), '--text')).not.toContain('private@example.com');
+    expect(existsSync(join(tmpDir, 'ready', payload.body.job_id))).toBe(false);
   });
 
   it('keeps terminal completion when xtmux delivery throws', async () => {

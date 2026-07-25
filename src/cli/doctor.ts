@@ -48,10 +48,7 @@ const USER_SPECIALISTS_DIR = join(SPECIALISTS_DIR, 'user');
 const XTRM_HOME = join(homedir(), '.xtrm');
 const GLOBAL_HOOKS_DIR = join(XTRM_HOME, 'hooks', 'specialists');
 const GLOBAL_DEFAULT_SKILLS_DIR = join(XTRM_HOME, 'skills', 'default');
-const HOOK_NAMES = [
-  'specialists-complete.mjs',
-  'specialists-session-start.mjs',
-] as const;
+const HOOK_NAMES = ['specialists-session-start.mjs'] as const;
 
 type JsonRecord = Record<string, unknown>;
 

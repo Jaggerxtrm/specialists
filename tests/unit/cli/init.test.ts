@@ -207,26 +207,25 @@ describe('init CLI — run()', () => {
     await runInit(tempDir);
     const xtrmHooksDir = join(tempDir, '.xtrm', 'hooks', 'specialists');
     const xtrmHooks = await readdir(xtrmHooksDir).catch(() => []);
-    expect(xtrmHooks).toContain('specialists-complete.mjs');
+    expect(xtrmHooks).not.toContain('specialists-complete.mjs');
     expect(xtrmHooks).toContain('specialists-session-start.mjs');
     expect(xtrmHooks).toContain('specialists-memory-cache-sync.mjs');
-    const claudeHookPath = join(tempDir, '.claude', 'hooks', 'specialists-complete.mjs');
+    const claudeHookPath = join(tempDir, '.claude', 'hooks', 'specialists-session-start.mjs');
     expect(lstatSync(claudeHookPath).isSymbolicLink()).toBe(true);
     const resolvedTarget = join(dirname(claudeHookPath), readlinkSync(claudeHookPath));
-    expect(resolvedTarget).toBe(join(tempDir, '.xtrm', 'hooks', 'specialists', 'specialists-complete.mjs'));
+    expect(resolvedTarget).toBe(join(tempDir, '.xtrm', 'hooks', 'specialists', 'specialists-session-start.mjs'));
   });
   it('wires hooks in .claude/settings.json with symlinked .claude/hooks paths', async () => {
     await runInit(tempDir);
     const settingsPath = join(tempDir, '.claude', 'settings.json');
     const settings = JSON.parse(await readFile(settingsPath, 'utf-8'));
     expect(settings.hooks).toBeDefined();
-    expect(settings.hooks.UserPromptSubmit).toBeDefined();
     expect(settings.hooks.PostToolUse).toBeDefined();
     expect(settings.hooks.SessionStart).toBeDefined();
-    const submitCommands = settings.hooks.UserPromptSubmit.flatMap((entry: any) => entry.hooks.map((hook: any) => hook.command));
+    const submitCommands = (settings.hooks.UserPromptSubmit ?? []).flatMap((entry: any) => entry.hooks.map((hook: any) => hook.command));
     const postToolUseCommands = settings.hooks.PostToolUse.flatMap((entry: any) => entry.hooks.map((hook: any) => hook.command));
-    expect(submitCommands).toContain('node .claude/hooks/specialists-complete.mjs');
-    expect(postToolUseCommands).toContain('node .claude/hooks/specialists-complete.mjs');
+    expect(submitCommands).not.toContain('node .claude/hooks/specialists-complete.mjs');
+    expect(postToolUseCommands).not.toContain('node .claude/hooks/specialists-complete.mjs');
     expect(postToolUseCommands).toContain('node .claude/hooks/specialists-memory-cache-sync.mjs');
   });
   it('installs skills to .claude/skills/ (project-local for Claude)', async () => {
@@ -291,9 +290,9 @@ describe('init CLI — run()', () => {
   it('does not overwrite existing .xtrm hook files', async () => {
     const hooksDir = join(tempDir, '.xtrm', 'hooks', 'specialists');
     await mkdir(hooksDir, { recursive: true });
-    await writeFile(join(hooksDir, 'specialists-complete.mjs'), '// custom hook', 'utf-8');
+    await writeFile(join(hooksDir, 'specialists-session-start.mjs'), '// custom hook', 'utf-8');
     await runInit(tempDir);
-    const content = await readFile(join(hooksDir, 'specialists-complete.mjs'), 'utf-8');
+    const content = await readFile(join(hooksDir, 'specialists-session-start.mjs'), 'utf-8');
     expect(content).toBe('// custom hook');
   });
   it('does not install skills to .specialists/default/skills/ (deprecated location)', async () => {
@@ -311,15 +310,12 @@ describe('init CLI — run()', () => {
   it('rewires copied legacy hook files in .claude/hooks to canonical symlinks', async () => {
     const hooksDir = join(tempDir, '.claude', 'hooks');
     await mkdir(hooksDir, { recursive: true });
-    await writeFile(join(hooksDir, 'specialists-complete.mjs'), '// stale copy', 'utf-8');
     await writeFile(join(hooksDir, 'specialists-session-start.mjs'), '// stale copy', 'utf-8');
     await runInit(tempDir);
-    for (const name of ['specialists-complete.mjs', 'specialists-session-start.mjs']) {
-      const hookPath = join(hooksDir, name);
-      expect(lstatSync(hookPath).isSymbolicLink()).toBe(true);
-      const resolvedTarget = join(dirname(hookPath), readlinkSync(hookPath));
-      expect(resolvedTarget).toBe(join(tempDir, '.xtrm', 'hooks', 'specialists', name));
-    }
+    const hookPath = join(hooksDir, 'specialists-session-start.mjs');
+    expect(lstatSync(hookPath).isSymbolicLink()).toBe(true);
+    const resolvedTarget = join(dirname(hookPath), readlinkSync(hookPath));
+    expect(resolvedTarget).toBe(join(tempDir, '.xtrm', 'hooks', 'specialists', 'specialists-session-start.mjs'));
   });
   it('does not warn about memory FTS sync failure when no beads db exists', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
