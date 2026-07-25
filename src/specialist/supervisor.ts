@@ -198,7 +198,7 @@ export interface SupervisorOptions {
   stallDetection?: StallDetectionConfig;
 }
 
-function emitParentNotification(statusSnapshot: SupervisorStatus): void {
+function emitParentNotification(statusSnapshot: SupervisorStatus, activeSiblingAssignee?: string): void {
   try {
     if (statusSnapshot.status !== 'done' && statusSnapshot.status !== 'error') return;
     if (statusSnapshot.spawn_origin?.kind !== 'xtmux.agent_instance') return;
@@ -295,7 +295,7 @@ function emitParentNotification(statusSnapshot: SupervisorStatus): void {
       return;
     }
 
-    const assignee = `${statusSnapshot.specialist}/${statusSnapshot.id}`;
+    const assignee = activeSiblingAssignee ?? `${statusSnapshot.specialist}/${statusSnapshot.id}`;
     const update = spawnSync('bd', ['update', statusSnapshot.bead_id, `--assignee=${assignee}`, '--json'], {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -972,6 +972,18 @@ export class Supervisor {
     }
   }
 
+  private activeSiblingAssignee(statusSnapshot: SupervisorStatus): string | undefined {
+    if (!statusSnapshot.bead_id) return undefined;
+    for (const id of this.listLiveJobsForBead(statusSnapshot.bead_id)) {
+      if (id === statusSnapshot.id) continue;
+      const sibling = this.readStatus(id);
+      if (sibling && (sibling.status === 'starting' || sibling.status === 'running' || sibling.status === 'waiting')) {
+        return `${sibling.specialist}/${id}`;
+      }
+    }
+    return undefined;
+  }
+
   listChainJobIds(chainId: string): string[] {
     try {
       if (this.isDisposed) {
@@ -1094,7 +1106,7 @@ export class Supervisor {
     if (previousStatus !== status) {
       this.appendEventBestEffort(id, 'appendEvent:status_change', createStatusChangeEvent(status, previousStatus));
     }
-    if (status === 'error') emitParentNotification(updatedStatus);
+    if (status === 'error') emitParentNotification(updatedStatus, this.activeSiblingAssignee(updatedStatus));
 
     return this.withComputedLiveness(updatedStatus);
   }
@@ -2793,7 +2805,7 @@ export class Supervisor {
         throw new Error('[supervisor] SQLite upsertStatusWithEventAndResult failed: database client unavailable');
       }
 
-      emitParentNotification(statusSnapshot);
+      emitParentNotification(statusSnapshot, this.activeSiblingAssignee(statusSnapshot));
       this.aggregateJobMetricsBestEffort(id);
 
       // Terminal-path gitnexus analyze. Dedupes against checkpoint-time fires for
@@ -2858,7 +2870,7 @@ export class Supervisor {
         turnIndex: runMetrics.turns,
         tokenUsage: runMetrics.token_usage,
       });
-      emitParentNotification(statusSnapshot);
+      emitParentNotification(statusSnapshot, this.activeSiblingAssignee(statusSnapshot));
 
       throw err;
     } finally {

@@ -190,6 +190,44 @@ describe('Supervisor parent terminal notification', () => {
     );
   });
 
+  it('keeps an active sibling as the bead assignee when another job finishes', async () => {
+    bdSpawnMock.mockImplementation((_command: string, args: string[]) => ({
+      ...successfulSpawn(),
+      stdout: args[0] === 'show' ? JSON.stringify([{ assignee: 'executor/abc999' }]) : '{}',
+    }));
+    const specialistRunner = runner();
+    specialistRunner.run.mockResolvedValue({
+      output: 'done',
+      model: 'test-model',
+      backend: 'test-backend',
+      durationMs: 10,
+      specialistVersion: '1.0.0',
+      promptHash: 'prompt-hash',
+      beadId: 'bead-1',
+    });
+    const supervisor = makeSupervisor(specialistRunner);
+    const readStatus = supervisor.readStatus.bind(supervisor);
+    vi.spyOn(supervisor, 'listLiveJobsForBead').mockReturnValue(['abc123']);
+    vi.spyOn(supervisor, 'readStatus').mockImplementation((id) => id === 'abc123'
+      ? {
+          id,
+          specialist: 'reviewer',
+          status: 'waiting',
+          started_at_ms: 1_700_000_000_000,
+          is_dead: false,
+        }
+      : readStatus(id));
+
+    const completedId = await supervisor.run();
+
+    expect(bdSpawnMock).toHaveBeenLastCalledWith(
+      'bd',
+      ['update', 'bead-1', '--assignee=reviewer/abc123', '--json'],
+      expect.any(Object),
+    );
+    expect(bdSpawnMock.mock.calls.flatMap((call) => call[1] as string[])).not.toContain(`--assignee=executor/${completedId}`);
+  });
+
   it('preserves a manual bead assignee', async () => {
     bdSpawnMock.mockImplementation((_command: string, args: string[]) => ({
       ...successfulSpawn(),
