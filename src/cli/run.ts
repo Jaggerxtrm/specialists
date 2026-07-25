@@ -113,6 +113,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     if (token === '--no-bead-notes') { noBeadNotes  = true; continue; }
     if (token === '--keep-alive')    { keepAlive    = true; noKeepAlive = false; continue; }
     if (token === '--no-keep-alive') { keepAlive    = undefined; noKeepAlive = true; continue; }
+    // Compatibility only; user-facing help directs asynchronous runs through shell `&`.
     if (token === '--background')    { background   = true; continue; }
     if (token === '--json')          { outputMode   = 'json'; continue; }
     if (token === '--raw')           { outputMode   = 'raw';  continue; }

@@ -545,7 +545,7 @@ export async function handleEpicMergeCommand(argv: readonly string[]): Promise<v
     const message = error instanceof Error ? error.message : String(error);
     console.error(message);
     console.error('');
-    console.error('Usage: specialists epic merge <epic-id> [--rebuild] [--pr] [--json] [--target-branch <name>]');
+    console.error('Usage: specialists epic merge <epic-id> [--rebuild] [--pr] [--json] [--target-branch <name>]  [broken]');
     process.exit(1);
   }
 
@@ -832,19 +832,11 @@ export async function handleEpicCommand(argv: readonly string[]): Promise<void> 
       '  status <epic-id> [--json]                       Show derived readiness and chain status',
       '  sync <epic-id> [--apply] [--json]               Reconcile epic drift (dry-run by default)',
       '  abandon <epic-id> --reason <text> [--force] [--json]  Transition epic to abandoned',
-      '  merge <epic-id> [--rebuild] [--pr] [--json]     Publish epic-owned chains in dependency order',
+      '  merge [broken]                                  Do not use; follow the manual git workflow',
       '',
       'Epic readiness:',
       '  status reflects derived readiness from live chain state',
       '  persisted epic state is compatibility metadata only',
-      '',
-      'Merge behavior:',
-      '  - Requires derived readiness: ready chains only',
-      '  - All chain jobs must be terminal before publication',
-      '  - Chains merged in topological dependency order',
-      '  - Use --pr to publish via pull request instead of direct merge',
-      '  - TypeScript gate runs after each merge',
-      '  - Lifecycle transitions persisted to SQLite',
       '',
       'Examples:',
       '  specialists epic list',
@@ -853,9 +845,6 @@ export async function handleEpicCommand(argv: readonly string[]): Promise<void> 
       '  specialists epic sync unitAI-3f7b',
       '  specialists epic sync unitAI-3f7b --apply',
       '  specialists epic abandon unitAI-3f7b --reason "scope changed"',
-      '  specialists epic merge unitAI-3f7b --rebuild',
-      '  specialists epic merge unitAI-3f7b --pr',
-      '  specialists epic merge unitAI-3f7b --target-branch feature/foo',
       '',
     ].join('\n'));
     return;
@@ -866,7 +855,7 @@ export async function handleEpicCommand(argv: readonly string[]): Promise<void> 
     status: 'specialists epic status <epic-id> [--json]',
     sync: 'specialists epic sync <epic-id> [--apply] [--json]',
     abandon: 'specialists epic abandon <epic-id> --reason <text> [--force] [--json]',
-    merge: 'specialists epic merge <epic-id> [--rebuild] [--pr] [--json] [--target-branch <name>]',
+    merge: 'specialists epic merge <epic-id> [--rebuild] [--pr] [--json] [--target-branch <name>]  [broken]',
   };
   if (argv.slice(1).some((arg) => arg === '--help' || arg === '-h') && usage[subcommand]) {
     console.log(`\nUsage: ${usage[subcommand]}\n`);

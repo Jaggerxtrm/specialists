@@ -1110,7 +1110,7 @@ export function executePublicationPlan(
   checkoutNewBranch(publishBranch);
 
   try {
-    const steps = runMergePlan(targets, options);
+    const steps = runMergePlan(targets, { ...options, targetBranch: publishBranch });
     const pullRequestUrl = createPullRequest(baseBranch, publishBranch, options.publicationLabel);
     checkoutBranch(baseBranch);
     return { steps, pullRequestUrl };

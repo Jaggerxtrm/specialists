@@ -65,6 +65,7 @@ function parseArgs(argv: string[]): Args {
 
   const required = (name: string): string => {
     const value = values.get(name)?.trim();
+    if (value?.startsWith('--')) fail('usage', `--${name} is required\n${USAGE}`, json);
     if (!value) fail('usage', `--${name} is required\n${USAGE}`, json);
     return value;
   };

@@ -27,6 +27,14 @@ describe('command-specific --help', () => {
     expect(out).toContain('ad-hoc:');
     expect(out).toContain('--prompt');
     expect(out).toContain('does not disable bead reading');
+    expect(out).not.toContain('--background');
+  });
+
+  it('merge --help marks the command broken without executable guidance', () => {
+    const out = captureIndexHelp(['merge', '--help']);
+    expect(out).toContain('[broken]');
+    expect(out).not.toContain('sp epic merge');
+    expect(out).not.toContain('specialists merge unitAI');
   });
 
   it('feed --help documents single-job and global follow modes', () => {
@@ -126,7 +134,8 @@ describe('command-specific --help', () => {
     expect(captureIndexHelp(['epic', 'status', '--help'])).toContain('specialists epic status <epic-id> [--json]');
     expect(captureIndexHelp(['epic', 'sync', '--help'])).toContain('specialists epic sync <epic-id> [--apply] [--json]');
     expect(captureIndexHelp(['epic', 'abandon', '--help'])).toContain('specialists epic abandon <epic-id> --reason <text>');
-    expect(captureIndexHelp(['epic', 'merge', '--help'])).toContain('specialists epic merge <epic-id>');
+    expect(captureIndexHelp(['epic', 'merge', '--help'])).toMatch(/specialists epic merge <epic-id>.*\[broken\]/);
+    expect(captureIndexHelp(['epic', '--help'])).not.toContain('specialists epic merge unitAI');
     expect(captureIndexHelp(['db', 'setup', '--help'])).toContain('specialists db <setup|backfill|vacuum|prune|extract|stats|benchmark-export>');
   });
 
