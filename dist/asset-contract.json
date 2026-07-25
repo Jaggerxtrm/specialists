@@ -12,7 +12,7 @@
     },
     {
       "path": "config/skills/setup-specialists/SKILL.md",
-      "sha256": "63dc55a2b942d4ac038834ba75d2c6d99aadcd3759b8998387e7315cd0496a63"
+      "sha256": "103538eb80e7684e9fde36d1e87079569c1b792ffc63d89df6851da6834268cd"
     },
     {
       "path": "config/skills/specialists-creator/scripts/audit-spec-uniformity.mjs",
@@ -139,7 +139,7 @@
       "path": "config/specialists/security-auditor.specialist.json"
     },
     {
-      "path": "config/specialists/service-skills-sync.specialist.json"
+      "path": "config/specialists/service-knowledge-sync.specialist.json"
     },
     {
       "path": "config/specialists/specialists-creator.specialist.json"
@@ -222,10 +222,10 @@
       "path": "config/mandatory-rules/serena-cheatsheet.md"
     },
     {
-      "path": "config/mandatory-rules/service-skills-diff-scan-mandatory.md"
+      "path": "config/mandatory-rules/service-knowledge-diff-scan-mandatory.md"
     },
     {
-      "path": "config/mandatory-rules/service-skills-gitnexus-triage.md"
+      "path": "config/mandatory-rules/service-knowledge-gitnexus-triage.md"
     },
     {
       "path": "config/mandatory-rules/sync-docs-scope-discipline.md"

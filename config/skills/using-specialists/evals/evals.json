@@ -68,15 +68,15 @@
       "id": 4,
       "eval_name": "merge-publication-flow",
       "prompt": "Reviewer passed an executor chain. What should the orchestrator do next to publish the specialist work?",
-      "expected_output": "Agent uses sp merge <chain-root-bead> for standalone chains or sp epic merge <epic-id> for epic-owned work, avoids manual git merge, and closes the bead only after required gates are confirmed.",
+      "expected_output": "Agent follows references/merge-and-integration.md and uses its documented manual git publication workflow only after required gates are confirmed, then closes the bead at the prescribed point.",
       "assertions": [
         {
-          "name": "uses_specialist_merge",
-          "description": "Agent names sp merge or sp epic merge as the publication path"
+          "name": "uses_manual_git_publication",
+          "description": "Agent follows the documented manual git publication workflow"
         },
         {
-          "name": "avoids_manual_git_merge",
-          "description": "Agent explicitly avoids manual git merge for specialist-owned work"
+          "name": "avoids_broken_publication_verbs",
+          "description": "Agent does not invoke the known-broken Specialists publication verbs"
         },
         {
           "name": "honors_reviewer_gate",
@@ -182,7 +182,7 @@
       "id": 9,
       "eval_name": "progressive-disclosure-merge-routing",
       "prompt": "A specialist chain finished and the reviewer returned PASS. I need to merge it. Which part of the using-specialists skill do you consult, and what is the merge rule?",
-      "expected_output": "Agent uses the router's routing table to open references/merge-and-integration.md for the merge procedure, and states rule 9 (manual git only: Cherry-Pick Playbook / FF / git merge --no-ff; never sp merge or sp epic merge) \u2014 which it can answer from the router alone.",
+      "expected_output": "Agent uses the router's routing table to open references/merge-and-integration.md for the merge procedure, and states rule 9 (manual git only: Cherry-Pick Playbook / FF / git merge --no-ff; never the broken Specialists publication verbs) \u2014 which it can answer from the router alone.",
       "assertions": [
         {
           "name": "routes_to_merge_reference",
@@ -190,7 +190,7 @@
         },
         {
           "name": "states_manual_merge_rule",
-          "description": "Agent states that sp merge / sp epic merge are forbidden and merging is manual git."
+          "description": "Agent states that the broken Specialists publication verbs are forbidden and merging is manual git."
         },
         {
           "name": "does_not_load_irrelevant_references",

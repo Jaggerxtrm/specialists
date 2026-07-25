@@ -13,7 +13,7 @@ vi.mock('node:child_process', () => ({
 import { spawnSync } from 'node:child_process';
 import * as observabilitySqlite from '../../../src/specialist/observability-sqlite.js';
 import * as epicReadiness from '../../../src/specialist/epic-readiness.js';
-import { evaluateMergeWorthiness, resolveChainEpicMembership, resolveMergeTargets, topologicallySortChains, run, checkEpicUnresolvedGuard, runMergePlan, previewBranchMergeDelta, rebaseBranchOntoMaster, runTypecheckGate } from '../../../src/cli/merge.js';
+import { evaluateMergeWorthiness, executePublicationPlan, resolveChainEpicMembership, resolveMergeTargets, topologicallySortChains, run, checkEpicUnresolvedGuard, runMergePlan, previewBranchMergeDelta, rebaseBranchOntoMaster, runTypecheckGate } from '../../../src/cli/merge.js';
 
 function asSpawnResult(partial: Partial<SpawnSyncReturns<string>>): SpawnSyncReturns<string> {
   return {
@@ -106,6 +106,58 @@ describe('merge CLI', () => {
 
     expect(spawnSync).not.toHaveBeenCalledWith('bunx', ['tsc', '--noEmit'], expect.any(Object));
     expect(logSpy).toHaveBeenCalledWith('TypeScript gate: skipped (no tsconfig)');
+  });
+
+  it('records the temporary publication branch for PR merges', () => {
+    const workerRoot = join(testRoot, 'worker');
+    mkdirSync(workerRoot, { recursive: true });
+    const recordBranchIntegration = vi.fn();
+    const sqliteClient = {
+      resolveEpicByChainRootBeadId: vi.fn().mockReturnValue(null),
+      recordBranchIntegration,
+      close: vi.fn(),
+    };
+    vi.spyOn(observabilitySqlite, 'createObservabilitySqliteClient').mockReturnValue(sqliteClient as never);
+    vi.spyOn(Date, 'now').mockReturnValue(123);
+
+    let mainBranch = 'main';
+    (spawnSync as unknown as ReturnType<typeof vi.fn>).mockImplementation((command: string, args: string[], options: { cwd?: string }) => {
+      if (command === 'git' && args[0] === 'rev-parse' && args.includes('--abbrev-ref')) {
+        return asSpawnResult({ stdout: `${options.cwd === workerRoot ? 'feature/executor' : mainBranch}\n` });
+      }
+      if (command === 'git' && args[0] === 'checkout') {
+        mainBranch = args[1] === '-b' ? args[2]! : args[1]!;
+        return asSpawnResult({});
+      }
+      if (command === 'git' && args[0] === 'worktree') {
+        return asSpawnResult({ stdout: `worktree ${testRoot}\n` });
+      }
+      if (command === 'git' && args[0] === 'symbolic-ref') {
+        return asSpawnResult({ stdout: 'origin/main\n' });
+      }
+      if (command === 'git' && args[0] === 'merge-base') {
+        return asSpawnResult({ stdout: 'base-sha\n' });
+      }
+      if (command === 'git' && args[0] === 'diff' && args.includes('--name-status')) {
+        return asSpawnResult({ stdout: 'M\tsrc/file.ts\n' });
+      }
+      if (command === 'git' && args[0] === 'diff') {
+        return asSpawnResult({ stdout: 'src/file.ts\n' });
+      }
+      if (command === 'git' && args[0] === 'rebase') return asSpawnResult({});
+      if (command === 'git' && args[0] === 'merge') return asSpawnResult({});
+      if (command === 'git' && args[0] === 'rev-parse') return asSpawnResult({ stdout: '73cf0e77\n' });
+      if (command === 'gh' && args[0] === 'pr') return asSpawnResult({ stdout: 'https://github.test/pr/1\n' });
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+    });
+
+    executePublicationPlan([
+      { beadId: 'unitAI-chain', branch: 'feature/executor', jobId: 'job-1', jobStatus: 'done', worktreePath: workerRoot, startedAtMs: 1 },
+    ], { mode: 'pr', publicationLabel: 'epic-test', rebuild: false });
+
+    expect(recordBranchIntegration).toHaveBeenCalledWith(expect.objectContaining({
+      target: expect.objectContaining({ branch: 'sp/publish-epic-test-123' }),
+    }));
   });
 
   it('sorts chains in dependency order', () => {

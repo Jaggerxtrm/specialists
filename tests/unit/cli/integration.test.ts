@@ -155,6 +155,30 @@ describe('sp integration record', () => {
     expect(emitted.error.message).toContain('Usage: specialists integration record');
   });
 
+  it('rejects a flag-shaped required value as missing', async () => {
+    const { cwd } = mkDb();
+    argv(
+      '--source-branch', 'feature/x', '--source-worktree', '/wt',
+      '--target-branch', 'master', '--target-worktree', '/repo',
+      '--commit', '--branch', 'main', '--cwd', cwd, '--json',
+    );
+    const { runRecord } = await import('../../../src/cli/integration.js');
+    expect(() => runRecord()).toThrow('exit:1');
+    expect(JSON.parse(stdout.join('')).error.message).toContain('--commit is required');
+  });
+
+  it('rejects an empty required value as missing', async () => {
+    const { cwd } = mkDb();
+    argv(
+      '--source-branch', 'feature/x', '--source-worktree', '/wt',
+      '--target-branch', 'master', '--target-worktree', '/repo',
+      '--commit', '', '--cwd', cwd, '--json',
+    );
+    const { runRecord } = await import('../../../src/cli/integration.js');
+    expect(() => runRecord()).toThrow('exit:1');
+    expect(JSON.parse(stdout.join('')).error.message).toContain('--commit is required');
+  });
+
   it('rejects a commit that is not a 7-40 char hex sha', async () => {
     const { cwd } = mkDb();
     argv(
