@@ -358,6 +358,29 @@ describe('Supervisor parent terminal notification', () => {
     expect(valueAfter(argsForCall(1), '--text')).toBe(valueAfter(argsForCall(0), '--text'));
   });
 
+  it('notifies the parent when readStatus reconciles a dead job', () => {
+    const supervisor = makeSupervisor();
+    const jobId = 'job-dead';
+    const jobDir = join(jobsDir, jobId);
+    mkdirSync(jobDir, { recursive: true });
+    writeFileSync(join(jobDir, 'status.json'), JSON.stringify({
+      id: jobId,
+      specialist: 'executor',
+      status: 'running',
+      started_at_ms: Date.now() - 10_000,
+      last_event_at_ms: Date.now() - 10_000,
+      pid: 999_999_999,
+      spawn_origin: { kind: 'xtmux.agent_instance', runtime_origin: PARENT_ORIGIN },
+    } satisfies SupervisorStatus));
+
+    expect(supervisor.readStatus(jobId)).toMatchObject({ status: 'error', is_dead: false });
+
+    expect(xtmuxSpawnMock).toHaveBeenCalledTimes(1);
+    expect(valueAfter(argsForCall(), '--id')).toBe(`${jobId}:error`);
+    expect(payloadForCall()).toMatchObject({ event_name: 'job.failed', body: { transition: 'error', job_id: jobId } });
+    expect(readFileSync(join(jobDir, 'death.txt'), 'utf-8')).toContain('Process crashed or was killed');
+  });
+
   it('does not notify an unverified parent', () => {
     const supervisor = makeSupervisor();
     const jobId = 'job-unverified';

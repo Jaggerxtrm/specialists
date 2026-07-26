@@ -28,6 +28,7 @@ import type { BeadsClient } from './beads.js';
 import {
   type TimelineEvent,
   type TimelineEventControlSignal,
+  type TimelineEventRunComplete,
   TIMELINE_EVENT_TYPES,
   createRunStartEvent,
   createMetaEvent,
@@ -198,7 +199,7 @@ export interface SupervisorOptions {
   stallDetection?: StallDetectionConfig;
 }
 
-function emitParentNotification(statusSnapshot: SupervisorStatus, activeSiblingAssignee?: string): void {
+export function emitParentNotification(statusSnapshot: SupervisorStatus, activeSiblingAssignee?: string): void {
   try {
     if (statusSnapshot.status !== 'done' && statusSnapshot.status !== 'error') return;
     if (statusSnapshot.spawn_origin?.kind !== 'xtmux.agent_instance') return;
@@ -768,6 +769,55 @@ export function isJobDead(status: Pick<SupervisorStatus, 'status' | 'pid' | 'tmu
   return false;
 }
 
+export const DEAD_JOB_ERROR = 'Process crashed or was killed';
+
+/**
+ * Terminal transition for a job whose process (or tmux session) is gone: the error
+ * status plus the run_complete event that carries it. Returns null when the job is
+ * still live or has no usable start time.
+ *
+ * Callers persist both and must then call `emitParentNotification` — a dead job left
+ * in a non-terminal status never notifies its parent, which waits forever
+ * (xtrm-wiy5n.4.13).
+ */
+export function buildDeadJobRecovery(
+  status: SupervisorStatus,
+  now: number = Date.now(),
+): { status: SupervisorStatus; event: TimelineEventRunComplete } | null {
+  if (!isJobDead(status) || !Number.isFinite(status.started_at_ms)) return null;
+
+  const recovered: SupervisorStatus = {
+    ...status,
+    status: 'error',
+    current_event: undefined,
+    error: DEAD_JOB_ERROR,
+    last_event_at_ms: now,
+  };
+  const elapsed = Math.max(0, Math.round((now - status.started_at_ms) / 1000));
+
+  return {
+    status: recovered,
+    event: createRunCompleteEvent('ERROR', elapsed, { error: recovered.error, exit_reason: 'crashed' }),
+  };
+}
+
+/**
+ * Best-effort death-cause artifact so a job dir that only ever held steer.pipe still
+ * names why the job vanished.
+ */
+export function writeDeadJobArtifact(jobsDir: string, status: SupervisorStatus): void {
+  try {
+    const dir = join(jobsDir, status.id);
+    mkdirSync(dir, { recursive: true });
+    const line = `${new Date(status.last_event_at_ms ?? Date.now()).toISOString()} ${DEAD_JOB_ERROR}`
+      + ` (job=${status.id} specialist=${status.specialist} pid=${status.pid ?? 'unknown'}`
+      + ` tmux_session=${status.tmux_session ?? 'none'})\n`;
+    appendFileSync(join(dir, 'death.txt'), line, 'utf-8');
+  } catch {
+    // diagnostics only — never block the terminal transition
+  }
+}
+
 export class Supervisor {
   private readonly sqliteClient: ObservabilitySqliteClient | null;
   private readonly resolvedJobsDir: string;
@@ -899,23 +949,12 @@ export class Supervisor {
       return this.withComputedLiveness(status);
     }
 
-    if (!Number.isFinite(status.started_at_ms)) {
+    const recovery = buildDeadJobRecovery(status);
+    if (!recovery) {
       return this.withComputedLiveness(status);
     }
 
-    const now = Date.now();
-    const recoveredStatus: SupervisorStatus = {
-      ...status,
-      status: 'error',
-      current_event: undefined,
-      error: 'Process crashed or was killed',
-      last_event_at_ms: now,
-    };
-    const elapsed = Math.max(0, Math.round((now - status.started_at_ms) / 1000));
-    const runCompleteEvent = createRunCompleteEvent('ERROR', elapsed, {
-      error: recoveredStatus.error,
-      exit_reason: 'crashed',
-    });
+    const { status: recoveredStatus, event: runCompleteEvent } = recovery;
 
     if (this.sqliteClient) {
       const persisted = this.withSqliteOperation('upsertStatusWithEvent:readStatus', (client) => {
@@ -933,6 +972,9 @@ export class Supervisor {
         appendFileSync(eventsPath, JSON.stringify(runCompleteEvent) + '\n', 'utf-8');
       }
     }
+
+    writeDeadJobArtifact(this.resolvedJobsDir, recoveredStatus);
+    emitParentNotification(recoveredStatus, this.activeSiblingAssignee(recoveredStatus));
 
     return this.withComputedLiveness(recoveredStatus);
   }
