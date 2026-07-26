@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { RuntimeOriginV1 } from '../../../src/specialist/runtime-origin.js';
@@ -48,8 +48,11 @@ describe('status-load dead-job reconciliation', () => {
   let previousCwd: string;
   let loadStatuses: typeof import('../../../src/specialist/status-load.js').loadStatuses;
   let store: { statusById: Map<string, any>; eventsById: Map<string, any[]> };
+  let previousFileOutput: string | undefined;
 
   beforeEach(async () => {
+    previousFileOutput = process.env.SPECIALISTS_JOB_FILE_OUTPUT;
+    process.env.SPECIALISTS_JOB_FILE_OUTPUT = 'off';
     vi.resetModules();
     xtmuxSpawnMock.mockReset().mockImplementation(() => ({
       pid: 1, output: [null, '{}', ''], stdout: '{}', stderr: '', status: 0, signal: null,
@@ -82,6 +85,8 @@ describe('status-load dead-job reconciliation', () => {
   });
 
   afterEach(() => {
+    if (previousFileOutput === undefined) delete process.env.SPECIALISTS_JOB_FILE_OUTPUT;
+    else process.env.SPECIALISTS_JOB_FILE_OUTPUT = previousFileOutput;
     process.chdir(previousCwd);
     vi.restoreAllMocks();
     rmSync(tmpDir, { recursive: true, force: true });
@@ -134,6 +139,44 @@ describe('status-load dead-job reconciliation', () => {
 
     expect(second?.status).toBe('error');
     expect(xtmuxSpawnMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('transitions and notifies a file-only dead job with no sqlite client', async () => {
+    process.env.SPECIALISTS_JOB_FILE_OUTPUT = 'on';
+    vi.resetModules();
+    vi.doMock('../../../src/specialist/observability-sqlite.js', () => ({
+      createObservabilitySqliteClient: () => null,
+    }));
+    const fileOnly = await import('../../../src/specialist/status-load.js');
+
+    const jobDir = join(tmpDir, '.specialists', 'jobs', 'dead04');
+    mkdirSync(jobDir, { recursive: true });
+    writeFileSync(join(jobDir, 'status.json'), JSON.stringify(deadStatus('dead04')), 'utf-8');
+
+    const job = fileOnly.loadStatuses().find((status) => status.id === 'dead04');
+
+    expect(job?.status).toBe('error');
+    expect(JSON.parse(readFileSync(join(jobDir, 'status.json'), 'utf-8')).status).toBe('error');
+    expect(readFileSync(join(jobDir, 'events.jsonl'), 'utf-8')).toContain('"status":"ERROR"');
+    expect(existsSync(join(jobDir, 'death.txt'))).toBe(true);
+    expect(xtmuxSpawnMock).toHaveBeenCalledTimes(1);
+    expect(xtmuxSpawnMock.mock.calls[0]![1]).toEqual(expect.arrayContaining(['--id', 'dead04:error']));
+  });
+
+  it('notifies the parent when repairing an active row that already has a terminal event', () => {
+    store.statusById.set('stale01', { ...deadStatus('stale01'), pid: process.pid });
+    store.eventsById.set('stale01', [{
+      t: Date.now(), type: 'run_complete', status: 'ERROR', elapsed_s: 12, error: 'runner threw',
+    }]);
+
+    const job = loadStatuses().find((status) => status.id === 'stale01');
+
+    expect(job?.status).toBe('error');
+    expect(xtmuxSpawnMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(xtmuxSpawnMock.mock.calls[0]![1][xtmuxSpawnMock.mock.calls[0]![1].indexOf('--text') + 1])).toMatchObject({
+      event_name: 'job.failed',
+      body: { transition: 'error', job_id: 'stale01' },
+    });
   });
 
   it('keeps a live job untouched', () => {

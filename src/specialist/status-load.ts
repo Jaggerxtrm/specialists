@@ -1,6 +1,7 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createObservabilitySqliteClient } from './observability-sqlite.js';
+import { isJobFileOutputEnabled } from './job-file-output.js';
 import { resolveJobsDir } from './job-root.js';
 import type { SupervisorStatus } from './supervisor.js';
 import { buildDeadJobRecovery, emitParentNotification, isJobDead, writeDeadJobArtifact } from './supervisor.js';
@@ -214,6 +215,21 @@ function persistDeadJobEvidence(
  * leaves the row active forever, and `emitParentNotification` only fires on done/error,
  * so the parent is never told the job is gone (xtrm-wiy5n.4.13).
  */
+function persistRecoveryToFiles(jobsDir: string, status: SupervisorStatus, event: TimelineEvent): void {
+  if (!isJobFileOutputEnabled()) return;
+  try {
+    const dir = join(jobsDir, status.id);
+    mkdirSync(dir, { recursive: true });
+    const statusPath = join(dir, 'status.json');
+    const tmpPath = `${statusPath}.tmp`;
+    writeFileSync(tmpPath, JSON.stringify(status, null, 2), 'utf-8');
+    renameSync(tmpPath, statusPath);
+    appendFileSync(join(dir, 'events.jsonl'), `${JSON.stringify(event)}\n`, 'utf-8');
+  } catch {
+    // best-effort: the parent is still notified and the row is repaired on the next read
+  }
+}
+
 function reconcileDeadJob(
   status: SupervisorStatus,
   sqliteClient: ReturnType<typeof createObservabilitySqliteClient>,
@@ -232,6 +248,9 @@ function reconcileDeadJob(
   } catch {
     // The parent still gets notified below; the row is repaired on the next read.
   }
+  // File-only deployments (no observability db) never reach SQLite — repair status.json
+  // directly so the transition survives, exactly as the supervisor does.
+  persistRecoveryToFiles(jobsDir, recovery.status, recovery.event);
 
   writeDeadJobArtifact(jobsDir, recovery.status);
   emitParentNotification(recovery.status);
@@ -244,11 +263,11 @@ function reconcileStatusFromEvents(
   sqliteClient: ReturnType<typeof createObservabilitySqliteClient>,
   jobsDir: string,
 ): SupervisorStatus {
-  if (!isActiveStatus(status) || !sqliteClient) return status;
+  if (!isActiveStatus(status)) return status;
 
   let events: TimelineEvent[] = [];
   try {
-    events = sqliteClient.readEvents(status.id);
+    events = sqliteClient?.readEvents(status.id) ?? [];
   } catch {
     events = [];
   }
@@ -269,6 +288,10 @@ function reconcileStatusFromEvents(
       ...(complete.error ? { error: complete.error } : {}),
     };
     persistReconciledStatus(sqliteClient, status, reconciled, events, `terminal run_complete ${complete.status}`);
+    // The run_complete landed but the row stayed active, so the supervisor died before
+    // it could notify. Repairing the row silently would leave the parent waiting; the
+    // idempotency key makes a duplicate harmless if the supervisor did get it out.
+    emitParentNotification(reconciled);
     return reconciled;
   }
 
