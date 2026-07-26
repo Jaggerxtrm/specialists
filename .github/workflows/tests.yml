@@ -1,0 +1,44 @@
+name: tests
+
+permissions:
+  contents: read
+
+# The suite is the merge gate.
+#
+# Deliberately unfiltered: every other workflow here is path-scoped, and the only
+# vitest call in CI (telemetry-contract.yml) names six files. A pull request that
+# touched none of them ran no tests at all. See bead xtrm-wiy5n.4.26.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bun run lint
+      - name: Run test suite
+        run: bun run test
+      # ponytail: the quarantined lane is known-red by construction, so this job
+      # reports its size instead of running it. Un-quarantining is bead
+      # xtrm-wiy5n.4.11; a green quarantined lane means the list is empty and this
+      # step reports 0.
+      - name: Report quarantine count
+        if: always()
+        run: |
+          COUNT=$(grep -cE "^\s+'tests/.*', // ISSUE:" vitest.config.ts)
+          echo "Quarantined suites excluded from this job: **$COUNT** (bead xtrm-wiy5n.4.11)" >> "$GITHUB_STEP_SUMMARY"
