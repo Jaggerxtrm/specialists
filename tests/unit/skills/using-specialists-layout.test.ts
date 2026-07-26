@@ -9,14 +9,19 @@ const SKILL_DIR = join(REPO, 'config/skills/using-specialists');
 const ROOT = join(SKILL_DIR, 'SKILL.md');
 const MAP = JSON.parse(readFileSync(join(SKILL_DIR, 'references/content-migration-map.json'), 'utf8')) as {
   source_headings: string[];
+  source_heading_count: number;
   root: string[];
   resources: Record<string, string[]>;
+  retired: Array<{ heading: string; retired_in: string; why: string; reader_served_by?: string }>;
 };
 
 // The pre-split skill was a single 1416-line file, eagerly injected in full into every
 // session that referenced it (chain-coordinator included). That is the regression this
 // layout exists to prevent.
 const PRE_SPLIT_LINES = 1416;
+// The v3.7 monolith held 41 `## ` sections. Every one is either placed by the migration map or
+// recorded as retired. The sum is frozen: the monolith cannot gain or lose sections after the fact.
+const PRE_SPLIT_SECTIONS = 41;
 const LINE_BUDGET = { min: 250, max: 350, hard: 500 };
 
 const lines = (file: string): number => readFileSync(file, 'utf8').split('\n').length;
@@ -89,6 +94,24 @@ describe('no content loss', () => {
   it('the migration map accounts for every original section exactly once', () => {
     const placed = [...MAP.root, ...Object.values(MAP.resources).flat()];
     expect([...placed].sort()).toEqual([...MAP.source_headings].sort());
+  });
+
+  // The design doc points at this map as the authority for what was retired and why, so the
+  // retirement record has to be checked. Without this, deleting the sole retired entry passes.
+  it('every retired heading states where it was retired and why, and is not also placed', () => {
+    expect(MAP.source_heading_count).toBe(MAP.source_headings.length);
+    // Guards deletion of the record: drop the sole retired entry and the sum stops matching.
+    expect(MAP.source_headings.length + MAP.retired.length).toBe(PRE_SPLIT_SECTIONS);
+
+    const placed = new Set([...MAP.root, ...Object.values(MAP.resources).flat()]);
+    for (const entry of MAP.retired) {
+      expect(entry.heading.trim()).not.toBe('');
+      expect(entry.retired_in.trim()).not.toBe('');
+      expect(entry.why.trim().length).toBeGreaterThan(20);
+      // A heading is either placed somewhere or retired. Never both, never neither.
+      expect(placed.has(entry.heading)).toBe(false);
+      expect(MAP.source_headings).not.toContain(entry.heading);
+    }
   });
 });
 
