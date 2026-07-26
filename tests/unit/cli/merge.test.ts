@@ -1,4 +1,3 @@
-// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -106,7 +105,7 @@ describe('merge CLI', () => {
     runTypecheckGate(testRoot);
 
     expect(spawnSync).not.toHaveBeenCalledWith('bunx', ['tsc', '--noEmit'], expect.any(Object));
-    expect(logSpy).toHaveBeenCalledWith('TypeScript gate: skipped (no tsconfig)');
+    expect(logSpy).toHaveBeenCalledWith('TypeScript gate: skipped (no tsconfig — non-TS repo)');
   });
 
   it('records the temporary publication branch for PR merges', () => {

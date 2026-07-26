@@ -1,4 +1,3 @@
-// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -158,6 +157,9 @@ describe('version-check CLI', () => {
     })).toBeNull();
   });
 
+  // Remote tag is deliberately far above any releasable local version: pinning a real
+  // version here rots the moment package.json passes it, which is how this file was
+  // quarantined (local 3.21.1 > pinned 3.14.0 → no nudge).
   it('parses remote tags, caches result, and nudges on newer release', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'version-check-'));
     process.chdir(tempDir);
@@ -170,7 +172,7 @@ describe('version-check CLI', () => {
       stdout: [
         'abc\trefs/tags/v3.9.0',
         'def\trefs/tags/v3.10.1',
-        'ghi\trefs/tags/v3.14.0',
+        'ghi\trefs/tags/v999.0.0',
       ].join('\n'),
     }));
 
@@ -189,12 +191,12 @@ describe('version-check CLI', () => {
     const { formatListVersionAlert, formatVersionCheckNudge, getVersionCheckResult, markVersionCheckNotified } = await loadModule();
     const result = getVersionCheckResult();
 
-    expect(result?.latestTag).toBe('v3.14.0');
-    expect(formatVersionCheckNudge(result!)).toBe(`specialists v${result!.localVersion} is local; v3.14.0 published — consider /update-specialists before substantial work.`);
-    expect(formatListVersionAlert(result!)).toBe('new version 3.14.0 available, run npm i -g @jaggerxtrm/specialists@3.14.0');
+    expect(result?.latestTag).toBe('v999.0.0');
+    expect(formatVersionCheckNudge(result!)).toBe(`specialists v${result!.localVersion} is local; v999.0.0 published — consider /update-specialists before substantial work.`);
+    expect(formatListVersionAlert(result!)).toBe('new version 999.0.0 available, run npm i -g @jaggerxtrm/specialists@999.0.0');
     expect(writes.length).toBeGreaterThan(0);
 
     markVersionCheckNotified(result!);
-    expect(writes.at(-1)?.payload).toContain('"notified_for_tag": "v3.14.0"');
+    expect(writes.at(-1)?.payload).toContain('"notified_for_tag": "v999.0.0"');
   });
 });
