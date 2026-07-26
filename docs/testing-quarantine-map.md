@@ -185,6 +185,31 @@ Named plainly, per the bead's constraint. None of these are repaired by editing 
 7. **`ChatFeed.render` is 21× over its stated budget** — `tests/unit/cli/chat-feed.test.ts`.
 8. **`.specialists/default/` is still written by `specialists init` but no longer read by the loader** — found while restoring cluster R1 (`src/cli/init.ts:191-234` vs `src/specialist/loader.ts:136-142`). A dead write that leaves stale specialist copies on disk.
 
+## CI does not run the test suite
+
+The bead asks for "CI visibility for quarantine count and regressions". That cannot be built
+yet, because **no workflow runs `npm test`**. The only vitest job in `.github/workflows/` is
+`telemetry-contract.yml`, which runs three named files and only when their sources change:
+
+```yaml
+bun --bun vitest run \
+  tests/unit/specialist/forensic-events.test.ts \
+  tests/unit/specialist/prometheus-projection.test.ts \
+  tests/unit/specialist/observability-sqlite.test.ts
+```
+
+So the quarantine currently changes nothing about CI — it changes what the local pre-PR gate
+runs. Restoring a file makes it real again for every developer running `npm test`, which is
+the gate this project actually enforces, but it does not yet make it real for a pull request.
+
+Correct sequence, in order:
+
+1. Make the default lane hermetic (below) — otherwise a new required check is flaky on day one.
+2. Add a workflow that runs `timeout 480s npm test` on `pull_request`.
+3. Only then report the quarantine count from that job, and fail on growth without an issue link.
+
+Do not do 3 before 1.
+
 ## The default lane is not hermetic
 
 Found while validating this PR, and not a quarantined file: `tests/unit/cli/status.test.ts`
