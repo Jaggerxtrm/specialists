@@ -30,7 +30,7 @@ This root file is a **router**. It carries the policy that applies to every task
 | Write or promote a bead so it is dispatchable | [references/bead-contracts.md](references/bead-contracts.md) |
 | Pick a specialist, or run a chain (QA gates, single-chain, epic, review/fix loop) | [references/chain-recipes.md](references/chain-recipes.md) |
 | Dispatch a chain that depends on prior chain output | [references/dispatch-preconditions.md](references/dispatch-preconditions.md) |
-| Wait on a running job, steer it, rebut it, or escalate | [references/monitoring.md](references/monitoring.md) |
+| Choose the run invocation form (foreground vs `--background`), then wait on a job, steer it, rebut it, or escalate | [references/monitoring.md](references/monitoring.md) |
 | Merge, integrate, restitch, smoke, or recover a failed chain | [references/merge-and-integration.md](references/merge-and-integration.md) |
 | Find where a specialist lives, or which `sp` / `xt` commands exist | [references/registry-and-locations.md](references/registry-and-locations.md) |
 

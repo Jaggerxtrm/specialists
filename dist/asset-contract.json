@@ -72,7 +72,7 @@
     },
     {
       "path": "config/skills/using-specialists/references/monitoring.md",
-      "sha256": "a354c816c5a39fc6dddc8360478ed29f3710f7d1204a284b148bb636e2b71747"
+      "sha256": "60d960487f0609fffc464ae6aa3ddd7db352260eac590e6a424245ea58e72006"
     },
     {
       "path": "config/skills/using-specialists/references/registry-and-locations.md",
@@ -80,7 +80,7 @@
     },
     {
       "path": "config/skills/using-specialists/SKILL.md",
-      "sha256": "af5725c1e034dd9181452704abdaf5eaa0e0476e2f1c54d9734e3a50e49fbdb7"
+      "sha256": "74fb9a29fdcb679c90b34e614c9e43645da5a12ad8cb1d44d10d9a723a2d792d"
     }
   ],
   "shipped_specialists": [
