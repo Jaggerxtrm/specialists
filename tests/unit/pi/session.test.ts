@@ -1,5 +1,5 @@
 // tests/unit/pi/session.test.ts
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { resolve, join } from 'node:path';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -399,10 +399,30 @@ describe('_handleEvent — RPC protocol parsing', () => {
 // ── PiAgentSession behaviour tests ───────────────────────────────────────────
 describe('PiAgentSession', () => {
   let fake: ReturnType<typeof makeFakeProc>;
+  // The resolver's hard-deny of native fs tools is gated on probeExtensionHealth(),
+  // which looks for globally installed pi-gitnexus / pi-serena-tools. Without a
+  // stub global dir these tests pass on a developer box and fail on a clean CI
+  // runner. Pin the probe to a fixture so the outcome does not depend on what the
+  // machine happens to have installed.
+  let npmGlobalDir: string;
+  let prevGlobalDir: string | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();
     fake = makeFakeProc();
+    npmGlobalDir = mkdtempSync(join(tmpdir(), 'pi-npm-global-installed-'));
+    for (const pkg of ['pi-gitnexus', 'pi-serena-tools']) {
+      mkdirSync(join(npmGlobalDir, pkg), { recursive: true });
+      writeFileSync(join(npmGlobalDir, pkg, 'package.json'), JSON.stringify({ name: pkg, version: '0.0.0' }));
+    }
+    prevGlobalDir = process.env.PI_NPM_GLOBAL_DIR;
+    process.env.PI_NPM_GLOBAL_DIR = npmGlobalDir;
+  });
+
+  afterEach(() => {
+    if (prevGlobalDir === undefined) delete process.env.PI_NPM_GLOBAL_DIR;
+    else process.env.PI_NPM_GLOBAL_DIR = prevGlobalDir;
+    rmSync(npmGlobalDir, { recursive: true, force: true });
   });
 
   it('pins spawn cwd to an absolute current working directory by default', async () => {
