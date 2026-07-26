@@ -75,7 +75,7 @@ source_of_truth_for:
 ```bash
 specialists run <name> [--prompt "..."] [--bead <id>] [--worktree] [--job <id>] \
   [--epic <id>] [--force-stale-base] [--context-depth <n>] [--model <provider/model>] [--no-beads] \
-  [--keep-alive|--no-keep-alive] [--json | --raw]
+  [--keep-alive|--no-keep-alive] [--background] [--json | --raw]
 ```
 
 ### Flags
@@ -91,6 +91,7 @@ specialists run <name> [--prompt "..."] [--bead <id>] [--worktree] [--job <id>] 
 - `--no-beads`: Disable tracking bead creation (does **not** disable bead reading when `--bead` is used).
 - `--keep-alive`: Keep session for follow-up `resume` turns (explicit enable).
 - `--no-keep-alive`: Force one-shot run even if specialist YAML has `execution.interactive: true`.
+- `--background`: Detach the run — print the job id and return immediately. Under tmux the job gets its own live-feed session; otherwise the process is re-invoked fully detached. The invoking pane's runtime origin is propagated, so the terminal job notification still reaches the original caller. **Required from an agent pane**: a trailing `&` backgrounds only inside the shell, and an agent bash tool reaps its descendant processes when it returns or times out — which kills the job and reports `SessionKilledError` with zero turns.
 - `--json`: Pi-compatible NDJSON event stream to stdout (`session`, agent/message/turn/tool events).
 - `--raw`: Legacy raw token delta stream.
 
@@ -152,7 +153,7 @@ Notes:
 - `--no-worktree` was removed.
 - Keep-alive default follows the merged specialist config `execution.interactive` (package / global user.json / repo override; default `false`).
 - Precedence: `--no-keep-alive` > `--keep-alive` > merged `execution.interactive`.
-- `--background` is removed and exits with error.
+- `--background` is supported and is the required dispatch form from an agent pane (see Flags).
 - **Auto-bead resolution**: When `--job <id>` is used without `--bead`, bead_id is inferred from the target job's `status.json.bead_id`. Precedence: explicit `--bead` > inferred bead from job > none. A stderr notice indicates when inference occurs.
 
 ---

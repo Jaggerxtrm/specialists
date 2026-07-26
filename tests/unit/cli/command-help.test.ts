@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 function captureIndexHelp(args: string[]): string {
@@ -27,7 +28,30 @@ describe('command-specific --help', () => {
     expect(out).toContain('ad-hoc:');
     expect(out).toContain('--prompt');
     expect(out).toContain('does not disable bead reading');
-    expect(out).not.toContain('--background');
+  });
+
+  it('run --help documents --background as the agent-pane dispatch form', () => {
+    const out = captureIndexHelp(['run', '--help']);
+    expect(out).toContain('--background');
+    expect(out).toContain('Required from an agent pane');
+    // The `&` form must stay marked as insufficient, not as the recommendation.
+    expect(out).toMatch(/`&` is not sufficient|interactive shells only/);
+  });
+
+  // xtrm-wiy5n.4.21: --background was implemented, parsed, and silently dropped from
+  // help. Nothing caught it. This test is the guard: every flag parseArgs accepts must
+  // appear in `sp run --help`, so help and implementation cannot drift apart again.
+  it('every run flag parsed by run.ts appears in run --help', () => {
+    const source = readFileSync(join(process.cwd(), 'src', 'cli', 'run.ts'), 'utf-8');
+    const parsed = [...source.matchAll(/token === '(--[a-z0-9-]+)'/g)].map(m => m[1]);
+    expect(parsed.length).toBeGreaterThan(10);
+
+    // Rejection stubs: parsed only to emit a removal error, deliberately undocumented.
+    const rejected = new Set(['--no-worktree']);
+    const out = captureIndexHelp(['run', '--help']);
+    const undocumented = parsed.filter(f => !rejected.has(f) && !out.includes(f));
+
+    expect(undocumented).toEqual([]);
   });
 
   it('merge --help marks the command broken without executable guidance', () => {
