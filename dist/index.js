@@ -62950,7 +62950,8 @@ async function run37() {
   lines.push("");
   lines.push(`  ${bold12("MCP pattern")}: ${cmd2("use_specialist")} (foreground, returns result directly)`);
   lines.push(`  ${bold12("CLI pattern")}: ${cmd2('specialists run <name> --prompt "..."')} prints ${dim13("[job started: <id>]")} to stderr`);
-  lines.push(`  ${bold12("Shell pattern")}: ${cmd2('specialists run <name> --prompt "..." &')} for native backgrounding`);
+  lines.push(`  ${bold12("Agent pattern")}: ${cmd2('specialists run <name> --prompt "..." --background')} detaches and returns the job id`);
+  lines.push(`  ${bold12("Shell pattern")}: ${cmd2('specialists run <name> --prompt "..." &')} native backgrounding, interactive shells only`);
   lines.push("");
   lines.push(`  ${bold12("Watch progress")} \u2014 stream events as they arrive:`);
   lines.push(`  ${cmd2("specialists feed job_a1b2c3d4")}            # print events so far`);

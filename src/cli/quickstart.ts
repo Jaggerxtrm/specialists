@@ -96,7 +96,8 @@ export async function run(): Promise<void> {
   lines.push('');
   lines.push(`  ${bold('MCP pattern')}: ${cmd('use_specialist')} (foreground, returns result directly)`);
   lines.push(`  ${bold('CLI pattern')}: ${cmd('specialists run <name> --prompt "..."')} prints ${dim('[job started: <id>]')} to stderr`);
-  lines.push(`  ${bold('Shell pattern')}: ${cmd('specialists run <name> --prompt "..." &')} for native backgrounding`);
+  lines.push(`  ${bold('Agent pattern')}: ${cmd('specialists run <name> --prompt "..." --background')} detaches and returns the job id`);
+  lines.push(`  ${bold('Shell pattern')}: ${cmd('specialists run <name> --prompt "..." &')} native backgrounding, interactive shells only`);
   lines.push('');
   lines.push(`  ${bold('Watch progress')} — stream events as they arrive:`);
   lines.push(`  ${cmd('specialists feed job_a1b2c3d4')}            # print events so far`);
