@@ -4,7 +4,6 @@ const quarantined = [
   'tests/integration/chat/control.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/integration/chat/launch.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/integration/chat/mailbox-routing.test.ts', // ISSUE: xtrm-wiy5n.4.11
-  'tests/integration/cli/attach.integration.test.ts', // ISSUE: xtrm-wiy5n.4.10
   'tests/integration/cli/doctor.integration.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/integration/cli/edit.integration.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/integration/cli/end.integration.test.ts', // ISSUE: xtrm-wiy5n.4.11
