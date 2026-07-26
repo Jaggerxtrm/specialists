@@ -64,9 +64,13 @@ Wrapping a foreground `sp run` in a caller-side timeout likewise kills your own 
 row that follows is your timeout, not a product defect. Misreading that cost a full misdiagnosis on
 2026-07-26.
 
-Prefer `sp result <job-id> --wait` over a hand-rolled poll loop — it blocks until the job is terminal
-and needs no cadence at all. Poll only when you must do other work meanwhile, and size the first sleep
-by role:
+For a **one-shot** job, prefer `sp result <job-id> --wait` over a hand-rolled poll loop — it blocks
+until the job is terminal and needs no cadence at all. Do **not** use `--wait` on a `--keep-alive` job:
+it parks in `waiting` after each turn, and `--wait` counts `waiting` as still active
+(`src/cli/result.ts:472`), so it polls until your timeout instead of handing you the turn. Plain
+`sp result <job-id>` returns a waiting job's latest turn; resume it with `sp resume`.
+
+Poll only when you must do other work meanwhile, and size the first sleep by role:
 
 | Role | Typical duration | First sleep |
 |------|------------------|-------------|
@@ -82,9 +86,11 @@ by role:
 - Past 2× the typical duration, inspect with `sp feed <job-id>` before declaring a hang.
 - Pi runtime: dispatch `sp` / `xt` / `gh` from the bash tool, not pi's `process` tool — `process` strips
   PATH and `sp` exits 127 (xtmux-19y). Use an absolute path or `bash -lc` if you must.
-- Operator-offline runs: pair the per-dispatch sleep with a fixed-cadence heartbeat (`/loop 180s sp ps`).
-  The sleep waits for an expected completion; the heartbeat catches the ones that land while you are
-  busy reading another result.
+- Operator-offline runs: pair the per-dispatch sleep with a fixed-cadence heartbeat. The sleep waits for
+  an expected completion; the heartbeat catches the ones that land while you are busy reading another
+  result. **Claude Code** has this built in — `/loop 180s sp ps`. `/loop` is a Claude Code slash command,
+  not a shell or `sp` verb: from **Pi** or any other runtime, schedule the heartbeat externally (cron, a
+  systemd timer, or a detached `while true; do sp ps; sleep 180; done`).
 
 You are not done until every dispatched job is terminal **and consumed**.
 
