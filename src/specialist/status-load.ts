@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { createObservabilitySqliteClient } from './observability-sqlite.js';
 import { resolveJobsDir } from './job-root.js';
 import type { SupervisorStatus } from './supervisor.js';
-import { isJobDead } from './supervisor.js';
+import { buildDeadJobRecovery, emitParentNotification, isJobDead, writeDeadJobArtifact } from './supervisor.js';
 import type { TimelineEvent, TimelineEventRunComplete, TimelineEventTool, TimelineRunMetrics } from './timeline-events.js';
 import { parseTimelineEvent } from './timeline-events.js';
 
@@ -192,6 +192,7 @@ function persistReconciledStatus(
 function persistDeadJobEvidence(
   sqliteClient: ReturnType<typeof createObservabilitySqliteClient>,
   status: SupervisorStatus,
+  nextStatus: SupervisorStatus['status'],
   events: readonly TimelineEvent[],
 ): void {
   if (!sqliteClient || hasStatusLoadEvidence(events, 'dead_job_detected')) return;
@@ -200,16 +201,48 @@ function persistDeadJobEvidence(
       status.id,
       status.specialist,
       status.bead_id,
-      statusLoadEvent('dead_job_detected', status, status.status, 'active status has dead pid or tmux session'),
+      statusLoadEvent('dead_job_detected', status, nextStatus, 'active status has dead pid or tmux session'),
     );
   } catch {
     // best-effort telemetry only
   }
 }
 
+/**
+ * Dead pid/tmux session detected: transition the job to the canonical terminal status
+ * and fire the normal parent notification. Detecting the death without transitioning
+ * leaves the row active forever, and `emitParentNotification` only fires on done/error,
+ * so the parent is never told the job is gone (xtrm-wiy5n.4.13).
+ */
+function reconcileDeadJob(
+  status: SupervisorStatus,
+  sqliteClient: ReturnType<typeof createObservabilitySqliteClient>,
+  jobsDir: string,
+  events: readonly TimelineEvent[],
+): SupervisorStatus {
+  const recovery = buildDeadJobRecovery(status);
+  if (!recovery) {
+    persistDeadJobEvidence(sqliteClient, status, status.status, events);
+    return status;
+  }
+
+  persistDeadJobEvidence(sqliteClient, status, recovery.status.status, events);
+  try {
+    sqliteClient?.upsertStatusWithEvent(recovery.status, recovery.event);
+  } catch {
+    // The parent still gets notified below; the row is repaired on the next read.
+  }
+
+  writeDeadJobArtifact(jobsDir, recovery.status);
+  emitParentNotification(recovery.status);
+
+  return recovery.status;
+}
+
 function reconcileStatusFromEvents(
   status: SupervisorStatus,
   sqliteClient: ReturnType<typeof createObservabilitySqliteClient>,
+  jobsDir: string,
 ): SupervisorStatus {
   if (!isActiveStatus(status) || !sqliteClient) return status;
 
@@ -240,7 +273,7 @@ function reconcileStatusFromEvents(
   }
 
   if (isJobDead(status)) {
-    persistDeadJobEvidence(sqliteClient, status, events);
+    return reconcileDeadJob(status, sqliteClient, jobsDir, events);
   }
 
   return status;
@@ -249,8 +282,9 @@ function reconcileStatusFromEvents(
 function reconcileStatuses(
   statuses: SupervisorStatus[],
   sqliteClient: ReturnType<typeof createObservabilitySqliteClient>,
+  jobsDir: string,
 ): SupervisorStatus[] {
-  return statuses.map((status) => reconcileStatusFromEvents(status, sqliteClient));
+  return statuses.map((status) => reconcileStatusFromEvents(status, sqliteClient, jobsDir));
 }
 
 export function loadStatuses(): SupervisorStatus[] {
@@ -264,7 +298,7 @@ export function loadStatuses(): SupervisorStatus[] {
       ? fileStatuses
       : mergeStatuses(fileStatuses, sqliteStatuses);
 
-    return enrichStatusesWithDerivedCurrentTool(reconcileStatuses(merged, sqliteClient), jobsDir, sqliteClient)
+    return enrichStatusesWithDerivedCurrentTool(reconcileStatuses(merged, sqliteClient, jobsDir), jobsDir, sqliteClient)
       .sort((a, b) => b.started_at_ms - a.started_at_ms);
   } catch {
     return enrichStatusesWithDerivedCurrentTool(fileStatuses.filter(hasStatusId), jobsDir, sqliteClient)
