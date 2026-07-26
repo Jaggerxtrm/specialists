@@ -52186,6 +52186,7 @@ __export(exports_run, {
   startEventTailer: () => startEventTailer,
   run: () => run19,
   resolveBasePin: () => resolveBasePin,
+  formatBackgroundLaunchLine: () => formatBackgroundLaunchLine,
   buildTmuxLiveFeedCommand: () => buildTmuxLiveFeedCommand,
   buildInjectedWriterDiffVariables: () => buildInjectedWriterDiffVariables,
   buildInjectedReviewerDiffVariables: () => buildInjectedReviewerDiffVariables
@@ -52194,6 +52195,20 @@ import { join as join33 } from "path";
 import { existsSync as existsSync28, readFileSync as readFileSync26, readdirSync as readdirSync12, statSync as statSync10 } from "fs";
 import { randomBytes } from "crypto";
 import { spawn as cpSpawn, execSync as execSync5 } from "child_process";
+function formatBackgroundLaunchLine(opts) {
+  if (opts.outputMode !== "json")
+    return `${opts.jobId ?? opts.pid ?? ""}
+`;
+  return `${JSON.stringify({
+    type: "job_started",
+    jobId: opts.jobId,
+    specialist: opts.specialist,
+    detached: true,
+    ...opts.tmuxSession ? { tmuxSession: opts.tmuxSession } : {},
+    ...opts.jobId ? {} : { pid: opts.pid ?? null }
+  })}
+`;
+}
 async function parseArgs9(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
@@ -53011,6 +53026,13 @@ async function run19() {
     if (!jobId) {
       jobId = resolveNewestJobIdFromJobsDir(jobsDir2, oldLatest, launchStartedAt - 1000);
     }
+    const writeLaunch = (id) => process.stdout.write(formatBackgroundLaunchLine({
+      jobId: id,
+      specialist: args.name,
+      outputMode: args.outputMode,
+      tmuxSession: tmuxSessionName,
+      pid: childPid
+    }));
     if (jobId) {
       if (tmuxSessionName) {
         recordTmuxLiveFeedStarted({
@@ -53021,13 +53043,11 @@ async function run19() {
           tmuxSession: tmuxSessionName
         });
       }
-      process.stdout.write(`${jobId}
-`);
+      writeLaunch(jobId);
     } else {
       process.stderr.write(`Warning: job started but ID not yet available. Check specialists status.
 `);
-      process.stdout.write(`${childPid ?? ""}
-`);
+      writeLaunch(null);
     }
     process.exit(0);
   }

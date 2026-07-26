@@ -32,6 +32,20 @@ export interface RunArgs {
     baseRef?: string;
 }
 /**
+ * Stdout line a `--background` launch prints before the parent exits.
+ *
+ * The background branch returns before the NDJSON projector is initialised, so
+ * under `--json` this emits a single `job_started` event rather than a bare id —
+ * otherwise a caller parsing stdout as NDJSON chokes on the first line.
+ */
+export declare function formatBackgroundLaunchLine(opts: {
+    jobId: string | null;
+    specialist: string;
+    outputMode: OutputMode;
+    tmuxSession?: string;
+    pid?: number;
+}): string;
+/**
  * Tail events.jsonl for a job and emit formatted output to stdout.
  * Polls every 100ms; safe for same-process use (no partial-line risk).
  * Returns a stop() function that does a final drain before returning.

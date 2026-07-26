@@ -72,6 +72,31 @@ export interface RunArgs {
   baseRef?: string;
 }
 
+/**
+ * Stdout line a `--background` launch prints before the parent exits.
+ *
+ * The background branch returns before the NDJSON projector is initialised, so
+ * under `--json` this emits a single `job_started` event rather than a bare id —
+ * otherwise a caller parsing stdout as NDJSON chokes on the first line.
+ */
+export function formatBackgroundLaunchLine(opts: {
+  jobId: string | null;
+  specialist: string;
+  outputMode: OutputMode;
+  tmuxSession?: string;
+  pid?: number;
+}): string {
+  if (opts.outputMode !== 'json') return `${opts.jobId ?? opts.pid ?? ''}\n`;
+  return `${JSON.stringify({
+    type: 'job_started',
+    jobId: opts.jobId,
+    specialist: opts.specialist,
+    detached: true,
+    ...(opts.tmuxSession ? { tmuxSession: opts.tmuxSession } : {}),
+    ...(opts.jobId ? {} : { pid: opts.pid ?? null }),
+  })}\n`;
+}
+
 async function parseArgs(argv: string[]): Promise<RunArgs> {
   const name = argv[0];
   if (!name || name.startsWith('--')) {
@@ -1033,6 +1058,14 @@ export async function run(): Promise<void> {
       jobId = resolveNewestJobIdFromJobsDir(jobsDir, oldLatest, launchStartedAt - 1000);
     }
 
+    const writeLaunch = (id: string | null) => process.stdout.write(formatBackgroundLaunchLine({
+      jobId: id,
+      specialist: args.name,
+      outputMode: args.outputMode,
+      tmuxSession: tmuxSessionName,
+      pid: childPid,
+    }));
+
     if (jobId) {
       if (tmuxSessionName) {
         recordTmuxLiveFeedStarted({
@@ -1043,10 +1076,10 @@ export async function run(): Promise<void> {
           tmuxSession: tmuxSessionName,
         });
       }
-      process.stdout.write(`${jobId}\n`);
+      writeLaunch(jobId);
     } else {
       process.stderr.write('Warning: job started but ID not yet available. Check specialists status.\n');
-      process.stdout.write(`${childPid ?? ''}\n`);
+      writeLaunch(null);
     }
     process.exit(0);
   }
