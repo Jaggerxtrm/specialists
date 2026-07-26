@@ -104,11 +104,11 @@ assertion failures behind them. Highest single-file test yield left (44 tests) a
 PR #228 had to route around — that PR placed an assertion outside this file precisely because
 CI would never have run it.
 
-### 6. Unbounded child processes — 6 files, ~17 failures
+### 6. Unbounded child processes — 6 files, 22 failures
 
 | | |
 | --- | --- |
-| Files | `tests/integration/chat/control.test.ts` (5/5), `chat/launch.test.ts` (2/2), `tests/integration/sp-script.test.ts` (1/3), `node-bootstrap.test.ts` (1/1, also cluster 3), `tests/unit/specialist/worktree.test.ts` (6/26), `tests/unit/cli/doctor.test.ts` (partly, 6/14) |
+| Files | `tests/integration/chat/control.test.ts` (5/5), `chat/launch.test.ts` (2/2), `tests/integration/sp-script.test.ts` (1/3), `tests/unit/specialist/worktree.test.ts` (6/26), `tests/unit/specialist/supervisor-sigterm-append.test.ts` (2/2), `tests/unit/cli/doctor.test.ts` (6/14) |
 | Representative error | `Error: Test timed out in 30000ms.` / `in 15000ms` / `Error: Condition not met before timeout` (`supervisor-sigterm-append.test.ts`) |
 | Owner surface | Test-side process spawning; same class as the attach hang fixed under `xtrm-wiy5n.4.10` |
 | Repro | `SPECIALISTS_TEST_QUARANTINED=1 bun --bun vitest run tests/integration/chat/control.test.ts` |
@@ -155,7 +155,7 @@ docs to their new home or it retires with them.
 blame on machine jitter — profile before touching the threshold. Raising these numbers to make
 the files green would be exactly the loosening this bead exists to prevent.
 
-### 10. Individually-owned failures — 6 files
+### 10. Individually-owned failures — 12 files, 22 failures
 
 | File | Failures | Error | Note |
 | --- | --- | --- | --- |
@@ -168,7 +168,7 @@ the files green would be exactly the loosening this bead exists to prevent.
 | `tests/unit/specialist/skill-paths.test.ts` | 3/9 | `expected [ { …(2) } ] to deeply equal []` | |
 | `tests/unit/specialist/runner.test.ts` | 2/54 | `expected "vi.fn()" to not be called at all, but actually been called 1 times` | |
 | `tests/unit/specialist/supervisor-waiting-auto-close.test.ts` | 2/2 | `expected "vi.fn()" to be called once, but got 0 times` | |
-| `tests/unit/specialist/supervisor-sigterm-append.test.ts` | 2/2 | `Error: Condition not met before timeout` | Also cluster 6. |
+| `tests/unit/tools/specialist/use_specialist.tool.test.ts` | 2/2 | `expected "vi.fn()" to be called with arguments: [ { name: 'code-review', …(5) } ]`; `promise resolved "{ status: 'error' }" instead of rejecting` | The MCP tool's call shape and its error contract both drifted from what the test pins. |
 | `tests/unit/cli/init.test.ts` | 1/27 | `expected '# Project…' to contain 'Custom text here.'` | **Real defect.** The case is named "does not overwrite existing AGENTS.md that already has `## Specialists`" and the custom text is gone from the result: `specialists init` destroys user content in `AGENTS.md`. This is data loss on a user file and should be fixed ahead of everything else in this section. |
 | `tests/smoke/sp-chat.smoke.test.ts` | 1/3 | `expected 'hello from smoke\r\n/notes hello…' to match /> (?:\x1b_pi:c\x07)?\x1b\[7m/` | Prompt-rendering assertion against a pty. |
 
@@ -223,6 +223,66 @@ This is a pre-existing flake, not a consequence of restoring files, but it is th
 makes "default `npm test` is deterministic" untrue today. It must not be quarantined — the fix
 is to stub the version check and the `which` probes so the suite stops touching the network.
 Track it separately from this bead.
+
+## Index — every quarantined file, exactly once
+
+The 48 entries of the `quarantined` array in `vitest.config.ts`, each assigned to exactly one
+cluster. This table is the authoritative assignment; a file named elsewhere in this document
+is a cross-reference, not a second home. Adding or removing an array entry means editing this
+table in the same commit.
+
+| # | File | Cluster |
+| --- | --- | --- |
+| 1 | `tests/integration/chat/control.test.ts` | 6 unbounded child processes |
+| 2 | `tests/integration/chat/launch.test.ts` | 6 unbounded child processes |
+| 3 | `tests/integration/chat/mailbox-routing.test.ts` | 10 individually-owned |
+| 4 | `tests/integration/cli/doctor.integration.test.ts` | 7 CLI integration exit status |
+| 5 | `tests/integration/cli/edit.integration.test.ts` | 7 CLI integration exit status |
+| 6 | `tests/integration/cli/end.integration.test.ts` | 1 observability SQLite |
+| 7 | `tests/integration/cli/epic-flows.integration.test.ts` | 1 observability SQLite |
+| 8 | `tests/integration/cli/epic.integration.test.ts` | 1 observability SQLite |
+| 9 | `tests/integration/cli/init.integration.test.ts` | 7 CLI integration exit status |
+| 10 | `tests/integration/cli/merge.integration.test.ts` | 7 CLI integration exit status |
+| 11 | `tests/integration/cli/node.integration.test.ts` | 1 observability SQLite |
+| 12 | `tests/integration/cli/run.integration.test.ts` | 7 CLI integration exit status |
+| 13 | `tests/integration/cli/validate.integration.test.ts` | 7 CLI integration exit status |
+| 14 | `tests/integration/cli/worktree.integration.test.ts` | 7 CLI integration exit status |
+| 15 | `tests/integration/docs/ownership-guidance.integration.test.ts` | 8 prompt / documentation drift |
+| 16 | `tests/integration/node-actions.test.ts` | 3 node coordinator contract |
+| 17 | `tests/integration/node-bootstrap.test.ts` | 3 node coordinator contract |
+| 18 | `tests/integration/sp-script.test.ts` | 6 unbounded child processes |
+| 19 | `tests/smoke/sp-chat.smoke.test.ts` | 10 individually-owned |
+| 20 | `tests/smoke/telemetry-readiness.smoke.test.ts` | 8 prompt / documentation drift |
+| 21 | `tests/unit/cli/chat-feed.test.ts` | 9 performance budgets |
+| 22 | `tests/unit/cli/console-bead-view.test.ts` | 2 console / TUI drift |
+| 23 | `tests/unit/cli/console-e2e-smoke.test.ts` | 2 console / TUI drift |
+| 24 | `tests/unit/cli/console-key-gating.test.ts` | 2 console / TUI drift |
+| 25 | `tests/unit/cli/console-perf.test.ts` | 9 performance budgets |
+| 26 | `tests/unit/cli/console-view-model.test.ts` | 2 console / TUI drift |
+| 27 | `tests/unit/cli/doctor-drift.test.ts` | 10 individually-owned |
+| 28 | `tests/unit/cli/doctor.test.ts` | 6 unbounded child processes |
+| 29 | `tests/unit/cli/edit.test.ts` | 4 missing / renamed runtime functions |
+| 30 | `tests/unit/cli/finalize.test.ts` | 4 missing / renamed runtime functions |
+| 31 | `tests/unit/cli/init.test.ts` | 10 individually-owned |
+| 32 | `tests/unit/cli/list-rules.test.ts` | 10 individually-owned |
+| 33 | `tests/unit/cli/list.test.ts` | 10 individually-owned |
+| 34 | `tests/unit/cli/log.test.ts` | 10 individually-owned |
+| 35 | `tests/unit/cli/run.test.ts` | 5 `run.test.ts` |
+| 36 | `tests/unit/specialist/changelog-drafter.test.ts` | 8 prompt / documentation drift |
+| 37 | `tests/unit/specialist/changelog-keeper.test.ts` | 8 prompt / documentation drift |
+| 38 | `tests/unit/specialist/node-contract.consistency.test.ts` | 3 node coordinator contract |
+| 39 | `tests/unit/specialist/node-coordinator-contract.test.ts` | 3 node coordinator contract |
+| 40 | `tests/unit/specialist/node-supervisor-recovery.test.ts` | 3 node coordinator contract |
+| 41 | `tests/unit/specialist/runner.test.ts` | 10 individually-owned |
+| 42 | `tests/unit/specialist/script-runner.test.ts` | 10 individually-owned |
+| 43 | `tests/unit/specialist/skill-paths.test.ts` | 10 individually-owned |
+| 44 | `tests/unit/specialist/supervisor-sigterm-append.test.ts` | 6 unbounded child processes |
+| 45 | `tests/unit/specialist/supervisor-waiting-auto-close.test.ts` | 10 individually-owned |
+| 46 | `tests/unit/specialist/worktree.test.ts` | 6 unbounded child processes |
+| 47 | `tests/unit/tools/specialist/use_specialist.tool.test.ts` | 10 individually-owned |
+| 48 | `tests/unit/xtrm/beads-commit-gate.test.ts` | 4 missing / renamed runtime functions |
+
+Cluster totals: 1→4, 2→4, 3→5, 4→3, 5→1, 6→6, 7→7, 8→4, 9→2, 10→12. Sum 48.
 
 ## Rules for changing the quarantine array
 
