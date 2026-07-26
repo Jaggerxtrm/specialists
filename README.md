@@ -419,8 +419,7 @@ Use `sp init`, `sp init --global`, `sp setup`, `xt update`, and the release skil
 
 ```bash
 bun run build
-bun test           # bun vitest run (default)
-bun run test:node  # node vitest run (subprocess-safe alternative)
+bun test           # bun vitest run (default; only supported runner)
 sp help
 sp quickstart
 ```
