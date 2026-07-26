@@ -17,6 +17,7 @@ coordination message → message-get
 ```
 
 - A foreground `sp run` streams until it returns; consume that output directly.
+- Dispatch form is authoritative in `sp run --help` — check it before dispatching. A foreground `sp run` BLOCKS the calling shell, so an agent pane with a bash-tool timeout will kill its own job; detach with a trailing `&`. `--bead` and `--prompt` are mutually exclusive. Do not restate the flags here; read the help.
 - For workflow progress, retain the job ID and use `sp feed <job-id> --json`.
 - At terminal status (`done`, `error`, or `cancelled`), use `sp result <job-id> --json` as truth.
 - A `waiting` job exposes its latest turn through `sp result`; continue it with `sp resume <job-id> "<prompt>"`.
