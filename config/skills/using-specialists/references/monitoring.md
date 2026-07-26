@@ -17,7 +17,7 @@ coordination message → message-get
 ```
 
 - A foreground `sp run` streams until it returns; consume that output directly.
-- Dispatch form is authoritative in `sp run --help` — check it before dispatching. A foreground `sp run` BLOCKS the calling shell, so an agent pane with a bash-tool timeout will kill its own job; detach with a trailing `&`. `--bead` and `--prompt` are mutually exclusive. Do not restate the flags here; read the help.
+- Dispatch form. A foreground `sp run` BLOCKS the calling shell until the job ends. From an agent pane, always use `--background`: it detaches at process level, returns the job id immediately, and keeps the parent binding so the terminal notification still arrives. A trailing `&` is NOT sufficient — an agent bash tool reaps descendant processes when it returns or times out, which kills the job and reports `SessionKilledError` with zero turns. `--bead` and `--prompt` are mutually exclusive. Note: `sp run --help` does not currently list `--background`; the flag is implemented in `src/cli/run.ts`.
 - For workflow progress, retain the job ID and use `sp feed <job-id> --json`.
 - At terminal status (`done`, `error`, or `cancelled`), use `sp result <job-id> --json` as truth.
 - A `waiting` job exposes its latest turn through `sp result`; continue it with `sp resume <job-id> "<prompt>"`.
