@@ -1,14 +1,21 @@
 {
   "source_version": "3.7",
   "router_version": "3.8",
-  "source_heading_count": 41,
+  "source_heading_count": 40,
+  "retired": [
+    {
+      "heading": "Notification Via Observability DB (Preferred Over `sp ps` Polling)",
+      "retired_in": "xtrm-wiy5n.4.20",
+      "why": "It taught orchestrators to open `.specialists/db/observability.db` and query `specialist_jobs` directly. That database is private to the repo that owns it and is an implementation detail, not a consumer contract (docs/cli-reference.md, `specialists integration record`) — external consumers shell out to a published verb instead of writing the schema themselves.",
+      "reader_served_by": "references/monitoring.md 'Retrieval hierarchy' (sp result --json / --wait, sp feed --json, sp ps --json) for job state; the /using-kpi skill for genuine analysis of that database."
+    }
+  ],
   "source_headings": [
     "Specialist File Locations",
     "Orchestration Discipline (Paranoid Mode)",
     "Project-Specific Specialists",
     "Mandatory Gates: Seconder, Obligations, Security (Iron-style)",
     "Monitoring Long-Running Jobs: Sleep Timers Are Mandatory",
-    "Notification Via Observability DB (Preferred Over `sp ps` Polling)",
     "Worktree Cleanup After Merge",
     "When To Delegate",
     "Non-Negotiable Rules",
@@ -82,7 +89,6 @@
     ],
     "references/monitoring.md": [
       "Monitoring Long-Running Jobs: Sleep Timers Are Mandatory",
-      "Notification Via Observability DB (Preferred Over `sp ps` Polling)",
       "Monitoring And Steering",
       "Specialist Rebuttal As Routine"
     ],

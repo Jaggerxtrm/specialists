@@ -60,7 +60,7 @@
     },
     {
       "path": "config/skills/using-specialists/references/content-migration-map.json",
-      "sha256": "32ec8787652b925b5c7dde04adff81baf129a5154decc5ffcd1034655da0bd5f"
+      "sha256": "095dc0573b575521ca25cdc4f75d9d12239aad01ec924494819aa8e5ae2910eb"
     },
     {
       "path": "config/skills/using-specialists/references/dispatch-preconditions.md",
@@ -72,7 +72,7 @@
     },
     {
       "path": "config/skills/using-specialists/references/monitoring.md",
-      "sha256": "60d960487f0609fffc464ae6aa3ddd7db352260eac590e6a424245ea58e72006"
+      "sha256": "e64f02b54b0141cf6c02e99b7cb7e32c7ec460eacef3d8010e5fa2da80b42b73"
     },
     {
       "path": "config/skills/using-specialists/references/registry-and-locations.md",
