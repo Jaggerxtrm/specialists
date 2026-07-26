@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { formatBackgroundLaunchLine } from '../../../src/cli/run.js';
+import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
+import { BACKGROUND_LAUNCH_SCHEMA, formatBackgroundLaunchLine } from '../../../src/cli/run.js';
 
 // `sp run --background` exits before the NDJSON projector starts. Help advertises
 // --background and --json in the same options list, so the combination must still
@@ -18,6 +20,7 @@ describe('formatBackgroundLaunchLine', () => {
     expect(line.endsWith('\n')).toBe(true);
     expect(line.trimEnd().includes('\n')).toBe(false);
     expect(JSON.parse(line)).toEqual({
+      schema: BACKGROUND_LAUNCH_SCHEMA,
       type: 'job_started',
       jobId: 'd9663f',
       specialist: 'explorer',
@@ -37,9 +40,34 @@ describe('formatBackgroundLaunchLine', () => {
     })).toBe('4242\n');
   });
 
-  it('leaves --raw on the plain id path', () => {
-    expect(formatBackgroundLaunchLine({
-      jobId: 'd9663f', specialist: 'explorer', outputMode: 'raw',
-    })).toBe('d9663f\n');
+  // A pi consumer must be able to tell a launch event from the run stream it would
+  // get in the foreground, rather than mis-parsing one as the other.
+  it('tags the event with a schema distinct from the pi run stream', () => {
+    const event = JSON.parse(formatBackgroundLaunchLine({
+      jobId: 'd9663f', specialist: 'explorer', outputMode: 'json',
+    }));
+    expect(event.schema).toBe('specialists.background_launch.v1');
+    expect(event.type).not.toBe('session');
+    expect(event.type).not.toBe('agent_start');
+  });
+});
+
+describe('sp run --background --raw', () => {
+  // --raw promises LLM text deltas; a detached run has none to hand back, so the
+  // caller would read a 6-char job id as model output. Reject instead.
+  it('is rejected before any job starts', () => {
+    const entry = join(process.cwd(), 'dist', 'index.js');
+    let stderr = '';
+    let status = 0;
+    try {
+      execFileSync('bun', [entry, 'run', 'explorer', '--prompt', 'hi', '--background', '--raw'], {
+        encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (err: any) {
+      status = err.status;
+      stderr = String(err.stderr ?? '');
+    }
+    expect(status).toBe(1);
+    expect(stderr).toContain('--background and --raw are mutually exclusive');
   });
 });
