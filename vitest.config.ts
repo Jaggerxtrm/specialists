@@ -1,5 +1,14 @@
 import { defineConfig } from 'vitest/config';
 
+// Refuse to run the suite under Node. bun:sqlite is a Bun builtin; without it,
+// createObservabilitySqliteClient() returns null and product code throws deep
+// inside supervisor.writeStatusFile with a message that names neither the runner
+// nor the workaround (bead xtrm-wiy5n.4.34).
+if (typeof (globalThis as { Bun?: unknown }).Bun === 'undefined') {
+  console.error('specialists: test suite requires bun. Run: bun --bun vitest run');
+  process.exit(1);
+}
+
 const quarantined = [
   'tests/integration/chat/control.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/integration/chat/launch.test.ts', // ISSUE: xtrm-wiy5n.4.11
