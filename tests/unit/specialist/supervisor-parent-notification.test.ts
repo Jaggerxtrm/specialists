@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createObservabilitySqliteClientAtPath } from '../../../src/specialist/observability-sqlite.js';
 import type { RuntimeOriginV1 } from '../../../src/specialist/runtime-origin.js';
 import { Supervisor, type SupervisorStatus } from '../../../src/specialist/supervisor.js';
 
@@ -76,6 +77,7 @@ describe('Supervisor parent terminal notification', () => {
   let tmpDir: string;
   let jobsDir: string;
   let originalFileOutput: string | undefined;
+  let originalDataHome: string | undefined;
   const supervisors: Supervisor[] = [];
 
   beforeEach(() => {
@@ -84,6 +86,15 @@ describe('Supervisor parent terminal notification', () => {
     tmpDir = mkdtempSync(join(tmpdir(), 'supervisor-parent-notification-'));
     jobsDir = join(tmpDir, 'jobs');
     mkdirSync(jobsDir, { recursive: true });
+    // Supervisor throws on upsertStatus when no observability db exists. Resolution
+    // falls back to <git-root>/.specialists/db, which only exists on a machine that
+    // has run `sp init` — so these tests passed locally and failed on a clean CI
+    // runner. Give the suite its own db instead of borrowing the developer's.
+    originalDataHome = process.env.XDG_DATA_HOME;
+    process.env.XDG_DATA_HOME = join(tmpDir, 'xdg-data');
+    createObservabilitySqliteClientAtPath(
+      join(process.env.XDG_DATA_HOME, 'specialists', 'observability.db'),
+    )?.close();
     xtmuxSpawnMock.mockReset().mockImplementation(successfulSpawn);
     bdSpawnMock.mockReset().mockImplementation((_command: string, args: string[]) => ({
       ...successfulSpawn(),
@@ -96,6 +107,8 @@ describe('Supervisor parent terminal notification', () => {
     supervisors.length = 0;
     if (originalFileOutput === undefined) delete process.env.SPECIALISTS_JOB_FILE_OUTPUT;
     else process.env.SPECIALISTS_JOB_FILE_OUTPUT = originalFileOutput;
+    if (originalDataHome === undefined) delete process.env.XDG_DATA_HOME;
+    else process.env.XDG_DATA_HOME = originalDataHome;
     vi.restoreAllMocks();
     rmSync(tmpDir, { recursive: true, force: true });
   });
