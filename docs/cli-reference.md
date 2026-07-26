@@ -91,8 +91,20 @@ specialists run <name> [--prompt "..."] [--bead <id>] [--worktree] [--job <id>] 
 - `--no-beads`: Disable tracking bead creation (does **not** disable bead reading when `--bead` is used).
 - `--keep-alive`: Keep session for follow-up `resume` turns (explicit enable).
 - `--no-keep-alive`: Force one-shot run even if specialist YAML has `execution.interactive: true`.
-- `--background`: Detach the run — print the job id and return immediately. Under tmux the job gets its own live-feed session; otherwise the process is re-invoked fully detached. The invoking pane's runtime origin is propagated, so the terminal job notification still reaches the original caller. **Required from an agent pane**: a trailing `&` backgrounds only inside the shell, and an agent bash tool reaps its descendant processes when it returns or times out — which kills the job and reports `SessionKilledError` with zero turns.
-- `--json`: Pi-compatible NDJSON event stream to stdout (`session`, agent/message/turn/tool events).
+- `--background`: Detach the run — print the job id and return immediately. Under tmux the job gets its own live-feed session; otherwise the process is re-invoked fully detached. The invoking pane's runtime origin is propagated, so the terminal job notification still reaches the original caller. **Required from an agent pane**: a trailing `&` backgrounds only inside the shell, and an agent bash tool reaps its descendant processes when it returns or times out — which kills the job and reports `SessionKilledError` with zero turns. Mutually exclusive with `--raw`.
+
+#### Background-launch event (`--background --json`)
+
+A detached launch cannot emit the pi run stream — that stream belongs to the child, whose stdout the parent never sees. Instead the parent prints exactly one line, tagged with its own schema so a strict pi consumer can tell it apart from `session`/`agent_start`:
+
+```json
+{"schema":"specialists.background_launch.v1","type":"job_started","jobId":"d9663f","specialist":"explorer","detached":true,"tmuxSession":"sp-explorer-a1b2c3"}
+```
+
+`tmuxSession` is present only when tmux provisioned a live-feed session. If the job id never landed, `jobId` is `null` and `pid` carries the detached child's pid instead. For the run's actual events, follow up with `specialists feed <job-id> --json`; for its output, `specialists result <job-id> --json`.
+
+`--background --raw` is rejected: `--raw` promises LLM text deltas, and a detached run has none to give the caller.
+- `--json`: Pi-compatible NDJSON event stream to stdout (`session`, agent/message/turn/tool events). **With `--background` this is not the run stream** — see the background-launch event below.
 - `--raw`: Legacy raw token delta stream.
 
 ### Examples

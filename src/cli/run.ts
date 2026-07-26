@@ -73,10 +73,22 @@ export interface RunArgs {
 }
 
 /**
+ * Schema tag on the single event a `--background --json` launch prints.
+ *
+ * A detached launch is NOT the pi-compatible run stream that `--json` produces in
+ * the foreground (`session` → `agent_start` → message/turn/tool events): that
+ * stream belongs to the detached child, which the parent never sees. Rather than
+ * fake a `session` event for a run it has no output for, the parent emits one
+ * launch event carrying this discriminator, so a strict pi consumer can tell the
+ * two apart instead of silently mis-parsing one as the other.
+ */
+export const BACKGROUND_LAUNCH_SCHEMA = 'specialists.background_launch.v1';
+
+/**
  * Stdout line a `--background` launch prints before the parent exits.
  *
- * The background branch returns before the NDJSON projector is initialised, so
- * under `--json` this emits a single `job_started` event rather than a bare id —
+ * The background branch returns before the JSON projector is initialised, so
+ * under `--json` this emits a single launch event rather than a bare id —
  * otherwise a caller parsing stdout as NDJSON chokes on the first line.
  */
 export function formatBackgroundLaunchLine(opts: {
@@ -88,6 +100,7 @@ export function formatBackgroundLaunchLine(opts: {
 }): string {
   if (opts.outputMode !== 'json') return `${opts.jobId ?? opts.pid ?? ''}\n`;
   return `${JSON.stringify({
+    schema: BACKGROUND_LAUNCH_SCHEMA,
     type: 'job_started',
     jobId: opts.jobId,
     specialist: opts.specialist,
@@ -176,6 +189,18 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
 
   if (worktree && reuseJobId !== undefined) {
     console.error('Error: --worktree and --job are mutually exclusive. Use one or the other.');
+    process.exit(1);
+  }
+
+  // --raw is a stream of LLM text deltas. A detached run has no stream to hand the
+  // caller — the child's stdout is discarded (or belongs to its tmux pane) — so the
+  // parent would print a job id where the script expects model output.
+  if (background && outputMode === 'raw') {
+    console.error(
+      'Error: --background and --raw are mutually exclusive.\n' +
+      'A detached run cannot stream text deltas back to the caller. Use --background --json\n' +
+      'for a parseable launch event, then `specialists result <job-id>` for the output.',
+    );
     process.exit(1);
   }
 
