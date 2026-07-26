@@ -7,7 +7,7 @@
       "dependencies": {
         "@earendil-works/pi-tui": "0.75.5",
         "@modelcontextprotocol/sdk": "1.29.0",
-        "hono": "4.12.26",
+        "hono": "4.12.32",
         "qs": "6.15.2",
         "yaml": "2.9.0",
         "zod": "3.25.76",
@@ -28,6 +28,7 @@
     "@hono/node-server": "^1.19.13",
     "esbuild": "^0.28.1",
     "fast-uri": "^3.1.2",
+    "hono": "^4.12.32",
     "ip-address": "^10.2.0",
     "path-to-regexp": "^8.4.0",
     "qs": "6.15.2",
@@ -283,7 +284,7 @@
 
     "hasown": ["hasown@2.0.3", "", { "dependencies": { "function-bind": "^1.1.2" } }, "sha512-ej4AhfhfL2Q2zpMmLo7U1Uv9+PyhIZpgQLGT1F9miIGmiCJIoCgSmczFdrc97mWT4kVY72KA+WnnhJ5pghSvSg=="],
 
-    "hono": ["hono@4.12.26", "", {}, "sha512-uyZtpnYxM9CmQ7QsQknM4zN8EftNqhON1qYeIKM0Se67CCEe2c44xyGURwB0axX2fBDu1dqHrHAc1hmNT8ITkw=="],
+    "hono": ["hono@4.12.32", "", {}, "sha512-XcuyW9qE2kJn07PkecMOBd5Vq/hMy7mmGw+idz1yblbg9N17ijJODrvPkn7/dwL3Kulj8LcRJ69DLOWf91dRUg=="],
 
     "html-escaper": ["html-escaper@2.0.2", "", {}, "sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg=="],
 
