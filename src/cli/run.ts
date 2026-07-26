@@ -78,7 +78,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     console.error(
       'Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] ' +
       '[--worktree] [--job <id>] [--force-job] [--epic <id>] [--base-sha <sha>] [--base-ref <branch>] [--accept-stale-base --reason <text>] [--context-depth <n>] [--model <model>] ' +
-      '[--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--json|--raw]',
+      '[--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--background] [--json|--raw]',
     );
     process.exit(1);
   }
@@ -113,7 +113,8 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     if (token === '--no-bead-notes') { noBeadNotes  = true; continue; }
     if (token === '--keep-alive')    { keepAlive    = true; noKeepAlive = false; continue; }
     if (token === '--no-keep-alive') { keepAlive    = undefined; noKeepAlive = true; continue; }
-    // Compatibility only; user-facing help directs asynchronous runs through shell `&`.
+    // Supported dispatch form for agent panes — see the --background branch below.
+    // Shell `&` is not equivalent: it backgrounds only inside the shell.
     if (token === '--background')    { background   = true; continue; }
     if (token === '--json')          { outputMode   = 'json'; continue; }
     if (token === '--raw')           { outputMode   = 'raw';  continue; }

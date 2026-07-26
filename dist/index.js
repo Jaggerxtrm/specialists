@@ -52197,7 +52197,7 @@ import { spawn as cpSpawn, execSync as execSync5 } from "child_process";
 async function parseArgs9(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
-    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] ' + "[--worktree] [--job <id>] [--force-job] [--epic <id>] [--base-sha <sha>] [--base-ref <branch>] [--accept-stale-base --reason <text>] [--context-depth <n>] [--model <model>] " + "[--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--json|--raw]");
+    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] ' + "[--worktree] [--job <id>] [--force-job] [--epic <id>] [--base-sha <sha>] [--base-ref <branch>] [--accept-stale-base --reason <text>] [--context-depth <n>] [--model <model>] " + "[--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--background] [--json|--raw]");
     process.exit(1);
   }
   let prompt = "";
@@ -65676,7 +65676,8 @@ async function run42() {
     "    MCP:   use_specialist (foreground, returns result directly)",
     '    CLI:   specialists run <name> --prompt "..."       # job ID prints on stderr',
     "           specialists ps|feed|log|result <job-id>       # observe/progress/debug/final output",
-    '    Shell: specialists run <name> --prompt "..." &      # native shell backgrounding',
+    '    Agent: specialists run <name> --prompt "..." --background  # detached; use from an agent pane',
+    '    Shell: specialists run <name> --prompt "..." &      # native shell backgrounding (interactive only)',
     "",
     "  Job workflow",
     "    specialists list --live                       # \u2192 interactive session picker",
@@ -73898,7 +73899,9 @@ async function run43() {
         "Usage: specialists run <name> [options]",
         "",
         "Run a specialist. Streams output to stdout until completion.",
-        "For native asynchronous execution, append `&` in the calling shell.",
+        "For asynchronous execution, use --background. From an agent pane that is the",
+        "required form: a trailing `&` backgrounds only inside the shell, and an agent",
+        "bash tool reaps its descendants on return or timeout, killing the job.",
         "",
         "Primary modes:",
         "  tracked:    specialists run <name> --bead <id>",
@@ -73914,6 +73917,14 @@ async function run43() {
         "  --no-bead-notes      Do not append completion notes to an external --bead",
         "  --model <model>      Override the configured model for this run",
         "  --keep-alive         Keep session alive for follow-up prompts",
+        "  --no-keep-alive      Force a single-turn run even if the specialist defaults to keep-alive",
+        "  --background         Detach the run: print the job id and return immediately.",
+        "                       Required from an agent pane \u2014 `&` is not sufficient there.",
+        "                       Under tmux the job gets a live feed session; otherwise the",
+        "                       process is re-invoked detached. Parent binding is preserved,",
+        "                       so the terminal job notification still reaches the caller.",
+        "  --json               Emit a pi-compatible NDJSON event stream on stdout",
+        "  --raw                Emit raw LLM text deltas (legacy)",
         "  --worktree           Explicitly provision (or reuse) a bd-managed worktree derived from --bead.",
         "                       Requires --bead. Mutually exclusive with --job.",
         "  --job <id>           Reuse the workspace of a prior job (must have been started with",
@@ -73956,7 +73967,8 @@ async function run43() {
         "Async execution patterns:",
         "  MCP:   use_specialist (foreground, returns result directly)",
         "  CLI:   run prints [job started: <id>] on stderr, then use ps/feed/result",
-        '  Shell: specialists run <name> --prompt "..." &',
+        '  Agent: specialists run <name> --prompt "..." --background   # survives a tool timeout',
+        '  Shell: specialists run <name> --prompt "..." &              # interactive shells only',
         ""
       ].join(`
 `));

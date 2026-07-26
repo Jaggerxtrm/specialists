@@ -28,9 +28,9 @@ describe('help CLI — run()', () => {
     expect(combined).toContain('--prompt');
   });
 
-  it('does not advertise the legacy background flag and marks merge commands broken', () => {
+  it('advertises --background for agent panes and marks merge commands broken', () => {
     const combined = captureTopLevelHelp();
-    expect(combined).not.toContain('--background');
+    expect(combined).toContain('--background');
     expect(combined).toContain('merge [broken]');
     expect(combined).toContain('epic merge [broken]');
   });
