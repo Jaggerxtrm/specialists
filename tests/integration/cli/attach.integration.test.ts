@@ -6,9 +6,26 @@ import { spawnSync } from 'node:child_process';
 import type { SupervisorStatus } from '../../../src/specialist/supervisor.js';
 
 const repoRoot = resolve(import.meta.dirname, '../../..');
-const hasScript = spawnSync('which', ['script'], { stdio: 'ignore' }).status === 0;
-const hasTimeout = spawnSync('which', ['timeout'], { stdio: 'ignore' }).status === 0;
-const canPty = hasScript && hasTimeout;
+
+function probeStatus(command: string, args: string[], expected: number): boolean {
+  return spawnSync(command, args, { stdio: 'ignore', timeout: 15_000 }).status === expected;
+}
+
+/**
+ * Probe the pty tooling's *interface*, not just its presence: a host can carry GNU
+ * `timeout` on PATH next to a BSD `script` that rejects `-c`/`-e` (macOS with a
+ * coreutils gnubin dir). Existence checks would pass there and the suite would fail
+ * instead of skipping. This runs the exact flag set the harness uses and requires the
+ * child's exit status to come back through `-e`.
+ */
+const canPty = probeStatus(
+  'timeout',
+  ['--kill-after=2', '5', 'script', '-q', '-e', '-c', 'exit 7', '/dev/null'],
+  7,
+);
+
+/** pgrep's documented no-match status is 1; anything else means the orphan check is untrustworthy. */
+const canPgrep = probeStatus('pgrep', ['-xf', 'specialists-attach-probe-no-such-process'], 1);
 
 /** Upper bound for any single pty-backed attach run, in seconds. */
 const PTY_LIMIT_S = 15;
@@ -54,8 +71,13 @@ function runInPty(
   );
 }
 
+/** `script -c` runs its argument through a shell, so every word must be quoted. */
+function shQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
 function attachCommand(args: string[]): string {
-  return `bun run ${join(repoRoot, 'src/index.ts')} ${args.join(' ')}`;
+  return ['bun', 'run', join(repoRoot, 'src/index.ts'), ...args].map(shQuote).join(' ');
 }
 
 /** `script` folds stderr into the pty, so all CLI output lands on stdout. */
@@ -160,7 +182,7 @@ describe('integration: specialists attach', () => {
     expect(elapsedMs).toBeLessThan(PTY_LIMIT_S * 1000);
   }, 30_000);
 
-  (canPty ? it : it.skip)('bounds a stuck attach and leaves no orphan process', async () => {
+  ((canPty && canPgrep) ? it : it.skip)('bounds a stuck attach and leaves no orphan process', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'specialists-int-attach-stuck-'));
     await writeStatus(tempDir, 'stuck-attach-job', { status: 'running' });
     // No input: the TUI waits forever. This is the regression the bound exists for.
@@ -172,7 +194,9 @@ describe('integration: specialists attach', () => {
 
     expect(result.status).not.toBe(0);
     expect(elapsedMs).toBeLessThan((stuckLimitSeconds + 5) * 1000);
-    expect(spawnSync('pgrep', ['-f', 'attach stuck-attach-job'], { stdio: 'ignore' }).status).not.toBe(0);
+    // Require pgrep's no-match status exactly: a missing or erroring pgrep returns null/2, and
+    // accepting those would let the test claim "no orphan" without having looked.
+    expect(spawnSync('pgrep', ['-f', 'attach stuck-attach-job'], { stdio: 'ignore' }).status).toBe(1);
   }, 30_000);
 });
 
