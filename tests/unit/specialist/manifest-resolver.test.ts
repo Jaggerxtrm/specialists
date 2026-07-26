@@ -1,4 +1,3 @@
-// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LEGACY_PERMISSION_TOOL_STRINGS, resolveManifestTools, type ToolCatalog, type ToolTier } from '../../../src/specialist/manifest-resolver.js';
@@ -7,12 +6,12 @@ const SPECIALISTS = ['explorer', 'sync-docs', 'executor', 'researcher'] as const
 
 const TIERS: readonly ToolTier[] = ['READ_ONLY', 'LOW', 'MEDIUM', 'HIGH'];
 async function loadCatalogs(): Promise<readonly ToolCatalog[]> {
-  const index = JSON.parse(await readFile(join(process.cwd(), '.specialists/catalog/index.json'), 'utf8')) as { catalogs: ToolCatalog[] };
+  const index = JSON.parse(await readFile(join(process.cwd(), 'config/catalog/index.json'), 'utf8')) as { catalogs: ToolCatalog[] };
   return index.catalogs;
 }
 
 async function loadCatalogDefaults(): Promise<Record<string, { denied_natives_when_extension?: readonly string[]; denied_natives_mode?: 'soft' | 'hard' }>> {
-  const index = JSON.parse(await readFile(join(process.cwd(), '.specialists/catalog/index.json'), 'utf8')) as { default_overrides?: Record<string, { denied_natives_when_extension?: readonly string[]; denied_natives_mode?: 'soft' | 'hard' }> };
+  const index = JSON.parse(await readFile(join(process.cwd(), 'config/catalog/index.json'), 'utf8')) as { default_overrides?: Record<string, { denied_natives_when_extension?: readonly string[]; denied_natives_mode?: 'soft' | 'hard' }> };
   return index.default_overrides ?? {};
 }
 

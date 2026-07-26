@@ -32,31 +32,21 @@ const quarantined = [
   'tests/unit/cli/edit.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/cli/finalize.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/cli/init.test.ts', // ISSUE: xtrm-wiy5n.4.11
-  'tests/unit/cli/integration.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/cli/list-rules.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/cli/list.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/cli/log.test.ts', // ISSUE: xtrm-wiy5n.4.11
-  'tests/unit/cli/merge.test.ts', // ISSUE: xtrm-wiy5n.4.11
-  'tests/unit/cli/quickstart.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/cli/run.test.ts', // ISSUE: xtrm-wiy5n.4.11
-  'tests/unit/cli/version-check.test.ts', // ISSUE: xtrm-wiy5n.4.11
-  'tests/unit/scripts/pr-workflow-trust.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/specialist/changelog-drafter.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/specialist/changelog-keeper.test.ts', // ISSUE: xtrm-wiy5n.4.11
-  'tests/unit/specialist/manifest-resolver.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/specialist/node-contract.consistency.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/specialist/node-coordinator-contract.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/specialist/node-supervisor-recovery.test.ts', // ISSUE: xtrm-wiy5n.4.11
-  'tests/unit/specialist/run_parallel.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/specialist/runner.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/specialist/script-runner.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/specialist/skill-paths.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/specialist/supervisor-sigterm-append.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/specialist/supervisor-waiting-auto-close.test.ts', // ISSUE: xtrm-wiy5n.4.11
-  'tests/unit/specialist/template-hygiene.test.ts', // ISSUE: xtrm-wiy5n.4.11
-  'tests/unit/specialist/tool-catalog.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/specialist/worktree.test.ts', // ISSUE: xtrm-wiy5n.4.11
-  'tests/unit/tools/specialist/start_specialist.tool.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/tools/specialist/use_specialist.tool.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/xtrm/beads-commit-gate.test.ts', // ISSUE: xtrm-wiy5n.4.11
 ];

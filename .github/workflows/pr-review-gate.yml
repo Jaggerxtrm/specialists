@@ -7,6 +7,9 @@ name: pr-review-gate
 #   - `gh workflow run pr-review-gate.yml -F pr=<n>` (workflow_dispatch)
 #   - push any commit (or an empty one) to the PR branch
 
+permissions:
+  contents: read
+
 on:
   pull_request:
     types: [opened, synchronize, reopened]

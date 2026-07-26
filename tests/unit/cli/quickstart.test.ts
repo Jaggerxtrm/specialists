@@ -1,4 +1,3 @@
-// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 // tests/unit/cli/quickstart.test.ts
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
@@ -77,7 +76,8 @@ describe('quickstart CLI — run()', () => {
 
   it('lists all MCP tools', async () => {
     const out = await captureOutput();
-    const tools = ['specialist_init', 'list_specialists', 'use_specialist', 'start_specialist', 'feed_specialist'];
+    // start_specialist was removed with the deprecated MCP tools in 04384c48.
+    const tools = ['specialist_init', 'list_specialists', 'use_specialist', 'feed_specialist'];
     for (const tool of tools) {
       expect(out, `missing MCP tool: ${tool}`).toContain(tool);
     }

@@ -11,9 +11,13 @@ Install dependencies with `bun install --frozen-lockfile` before running tests.
 | `npm run test:bun` | `bun:sqlite` tests unsupported by Vitest's Node environment | Green |
 | `npm run test:supervisor` | FIFO-heavy Supervisor suite isolated from worktree runs | Tracked by `unitAI-9n93`; run outside nested specialist sessions |
 
-The initial inventory found 57 failing/noisy files; a bounded rerun added `chat/launch.test.ts`, so 58 files are tracked under `xtrm-wiy5n.4.11`. `attach.integration.test.ts` was quarantined separately under `xtrm-wiy5n.4.10` and is back in the default baseline. `vitest.config.ts` is the source of truth; do not add an exclusion without an `// ISSUE: ...` link. Quarantine is routing, not a pass claim.
+The initial inventory found 57 failing/noisy files; a bounded rerun added `chat/launch.test.ts`, so 58 files were tracked under `xtrm-wiy5n.4.11`. `attach.integration.test.ts` was quarantined separately under `xtrm-wiy5n.4.10` and is back in the default baseline. 48 files remain quarantined.
 
-Bound full runs with `timeout 480s npm test`; the baseline completes in about 56 seconds on the reference worktree.
+`vitest.config.ts` is the source of truth for *which* files are out; [`docs/testing-quarantine-map.md`](testing-quarantine-map.md) is the source of truth for *why*. Every quarantined file belongs to exactly one cluster there, with a root cause, an owner surface, a reproduction command, and a restoration order — plus the list of real defects the quarantine is currently hiding. Do not add an exclusion without an `// ISSUE: ...` link and a cluster entry, and do not remove one by relaxing an assertion. Quarantine is routing, not a pass claim.
+
+The quarantined lane does not hang: `timeout 480s npm run test:quarantined` completes in about 215 seconds and runs 523 tests, of which 350 pass. That passing majority is coverage CI does not execute — see the map for why it is not simply switched on.
+
+Bound full runs with `timeout 480s npm test`; the baseline completes in about 90 seconds on an unloaded reference worktree, and up to ~140 seconds when the machine is busy.
 
 ## Interactive CLI tests must bound their pty
 

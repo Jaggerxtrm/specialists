@@ -1,4 +1,3 @@
-// ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 import { describe, it, expect } from 'vitest';
 import { loadToolCatalogIndex, SPECIALIST_TOOL_PRECEDENCE } from '../../../src/specialist/tool-catalog.js';
 import { readFile } from 'node:fs/promises';
@@ -33,7 +32,7 @@ function readCatalog(path: string) {
 
 describe('tool catalog foundation', () => {
   it('encodes precedence order', async () => {
-    const index = await readCatalog('.specialists/catalog/index.json');
+    const index = await readCatalog('config/catalog/index.json');
     expect(index.precedence_order).toEqual(SPECIALIST_TOOL_PRECEDENCE);
     expect(index.catalogs.map(c => c.catalog)).toEqual(['native', 'gitnexus', 'serena']);
   });
@@ -44,7 +43,7 @@ describe('tool catalog foundation', () => {
   });
 
   it('validates native catalog content', async () => {
-    const index = await readCatalog('.specialists/catalog/index.json');
+    const index = await readCatalog('config/catalog/index.json');
     const native = index.catalogs.find(c => c.catalog === 'native');
     expect(native?.package).toBe('specialists');
     expect(native?.version).toBe('3.11.0');
@@ -52,7 +51,7 @@ describe('tool catalog foundation', () => {
   });
 
   it('validates gitnexus catalog content', async () => {
-    const index = await readCatalog('.specialists/catalog/index.json');
+    const index = await readCatalog('config/catalog/index.json');
     const gitnexus = index.catalogs.find(c => c.catalog === 'gitnexus');
     expect(gitnexus?.package).toBe('pi-gitnexus');
     expect(gitnexus?.version).toBe('0.6.1');
@@ -60,7 +59,7 @@ describe('tool catalog foundation', () => {
   });
 
   it('validates serena catalog content', async () => {
-    const index = await readCatalog('.specialists/catalog/index.json');
+    const index = await readCatalog('config/catalog/index.json');
     const serena = index.catalogs.find(c => c.catalog === 'serena');
     expect(serena?.package).toBe('pi-serena-tools');
     expect(serena?.version).toBe('0.1.0');
