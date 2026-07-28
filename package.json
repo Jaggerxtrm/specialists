@@ -36,6 +36,7 @@
     "config/hooks/",
     "config/presets.json",
     "docs/overrides-guide.md",
+    "CHANGELOG.md",
     "LICENSE",
     "!config/benchmarks/",
     "!config/skills/**/evals/",
