@@ -9,9 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v3.21.2] — 2026-07-28
+
+### Added
+
+- **Notify parent on terminal jobs** ([0873ac2](https://github.com/xtrm-dev/specialists/commit/0873ac214163b9fb9c7be88c424393eacfbafad7))
+
+- **Advance terminal bead assignee** ([f718df6](https://github.com/xtrm-dev/specialists/commit/f718df6839d0f5c6d700b7c5ab6fe01da62e01b9))
+
 ### Fixed
 
 - **Resolve docs review gate findings** ([ec64645](https://github.com/xtrm-dev/specialists/commit/ec64645053f1cfe5f097275d40a8fe8bd84ee49a))
+
+- **Align CLI honesty and coordinator prompt** ([4253782](https://github.com/xtrm-dev/specialists/commit/4253782779e87e6e67eb39c8b7509808d17b8f69))
+
+- **Preserve terminal notification contract** ([54bf9f7](https://github.com/xtrm-dev/specialists/commit/54bf9f760bda247909b10358e85a92e57adedf28))
+
+- **Retain active sibling assignee** ([f30d10b](https://github.com/xtrm-dev/specialists/commit/f30d10b94c76decbdc4b0c967d40d0fe9413b122))
+
+- **Bound the attach integration pty and un-quarantine it (#226)** ([c3eca68](https://github.com/xtrm-dev/specialists/commit/c3eca6828b4d2eba1d575264e67e1d9c309c14e9))
+
+- **Restore monitoring doctrine lost in DOC-01 (#227)** ([0501e02](https://github.com/xtrm-dev/specialists/commit/0501e02c9ff2719185c4462a87f6745aa76ebedb))
+
+- **Document --background in sp run help and guard the drift (#228)** ([d410d9b](https://github.com/xtrm-dev/specialists/commit/d410d9be725994f35e6f72d4188217d85700bb2d))
+
+- **Reject --background --raw and tag the background launch schema (#229)** ([b1c00f9](https://github.com/xtrm-dev/specialists/commit/b1c00f96ac21dd9f24a266d770144e9b9190a586))
+
+- **Transition dead jobs to error so the parent is notified (#232)** ([e7d467a](https://github.com/xtrm-dev/specialists/commit/e7d467ad8f2ad72c45f63800a7ca364ae61c55bf))
+
+- **Raise hono floor to 4.12.32 (xtrm-wiy5n.4.35) (#236)** ([8cd968c](https://github.com/xtrm-dev/specialists/commit/8cd968cdccb1208546e3aaa6a8a575806a732671))
+
+- **Refuse Node runner with a clear one-line message (xtrm-wiy5n.4.34) (#237)** ([f2940d3](https://github.com/xtrm-dev/specialists/commit/f2940d3e3a4bf839b3fa3618bc94c01253ff3361))
 
 ### Other changes
 
@@ -52,6 +80,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Clean README whitespace** ([d1afc58](https://github.com/xtrm-dev/specialists/commit/d1afc58d0ff1cc41c768d016c1cf5a875c45cb3d))
 
 - **Wave-2 — pull_request_review_comment trigger + preserve CR verdicts** ([91cf32d](https://github.com/xtrm-dev/specialists/commit/91cf32dc6e86bcb121501bee478230792d0f0fa6))
+
+- **Remove tracked open issues export (#218)** ([dc8cde3](https://github.com/xtrm-dev/specialists/commit/dc8cde3145e40c52e3b23d3865413c4a5c57571e))
+
+- **Establish issue-linked baseline quarantine** ([3ce56be](https://github.com/xtrm-dev/specialists/commit/3ce56be6920845430d614feb85338cc4ae25805f))
+
+- **Simplify specialist monitoring guidance** ([a2619d7](https://github.com/xtrm-dev/specialists/commit/a2619d76c3a39867934f8440fe3681413bad1ee3))
+
+- **Retire completion marker consumer** ([5c48981](https://github.com/xtrm-dev/specialists/commit/5c489813e2c8fecdc71c11f27adca6ed470cbae3))
+
+- **Route sp run dispatch form to the CLI help (#225)** ([844ae6c](https://github.com/xtrm-dev/specialists/commit/844ae6c8bc9beacff7e86ae0088d611435f97225))
+
+- **Map all 58 quarantined suites and restore 10 (#230)** ([ba8526c](https://github.com/xtrm-dev/specialists/commit/ba8526cd867733b8c73ee56ed5142e01e36a09f8))
+
+- **Run the test suite on every pull request (#231)** ([c95b35c](https://github.com/xtrm-dev/specialists/commit/c95b35c2f039895b1c93d88d14d8f1f3ec2bbed2))
+
+- **Pin bun to 1.3.14 in PR workflows (xtrm-wiy5n.4.30) (#233)** ([e7fadb8](https://github.com/xtrm-dev/specialists/commit/e7fadb8165792289ea57b1961632576bc5bf9d61))
+
+- **Stop the progressive-disclosure doc stating counts that go stale (xtrm-wiy5n.4.23) (#235)** ([69daedd](https://github.com/xtrm-dev/specialists/commit/69daedda077d3c90661e27b506ad4949903676bc))
+
+- **Commit the injected block, conditioned on runtime support (xtrm-wiy5n.4.36) (#238)** ([731b423](https://github.com/xtrm-dev/specialists/commit/731b4232cf8a3cb74bafee685e4658d6accccc8f))
 
 ## [v3.21.1] — 2026-07-22
 
