@@ -135,7 +135,7 @@ stateDiagram-v2
     cancelled --> [*]
 ```
 
-Specialists persists job status and events in SQLite. Terminal transitions publish one bounded pointer to the verified parent through xtmux, including the exact `sp result <job-id> --json` retrieval command. Notification failure never rolls back a completed job.
+Specialists persists job status and events in SQLite. Successful and error terminal transitions publish one bounded pointer to the verified parent through xtmux, including the exact `sp result <job-id> --json` retrieval command. Notification failure never rolls back a completed job.
 
 Dead processes are reconciled to `error` so an orchestrator is not left waiting forever.
 
@@ -319,7 +319,7 @@ Specialists records:
 - Results are evidence for the orchestrator; they do not independently expand scope.
 - Review roles should not share the implementer’s contaminated context.
 - A terminal notification is a pointer, not the full private result.
-- Bead-note and result persistence are fail-open relative to job completion.
+- Parent notification and Bead-note append are fail-open relative to job completion.
 - Git and the operator remain the integration authority.
 
 ## Current boundaries
