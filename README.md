@@ -17,6 +17,11 @@
 >
 > The README is an orientation surface, not a substitute for the live command contract. For development or integration work, clone and inspect Specialists, Core, and xtmux together rather than relying only on npm package contents.
 
+> [!NOTE]
+> **Naming**
+>
+> **XTRM** is the whole stack. **Core** is its control-plane component. The current npm package name `xtrm-tools` refers to Core only as a transitional distribution name and is planned for retirement during monorepo consolidation.
+
 **Specialists is a role-bounded cognitive and execution runtime for getting real software work done.**
 
 It is not merely “run many agents.” It gives an orchestrator fresh, scoped faculties—explorer, debugger, executor, test-engineer, reviewer, security auditor, researcher, documentation specialist—without forcing every hypothesis, tool trace, and decision into one contaminated context window.
@@ -53,12 +58,12 @@ flowchart LR
 | Component | Responsibility |
 |---|---|
 | **Specialists** | Execute and persist bounded jobs, results, handoffs, telemetry, and review evidence |
-| **XTRM Tools** | Launch and govern orchestrators, distribute skills/policies, aggregate topology, maintain the stack |
+| **Core** | Launch and govern orchestrators, distribute skills/policies, aggregate topology, and maintain XTRM |
 | **xtmux** | Carry runtime identity, messages, waits, monitors, completed turns, and terminal pointers |
 | **Beads** | Hold the durable task contract and cross-session memory |
 | **Git / GitHub** | Remain the publication and integration authority |
 
-Installing [xtrm-tools](https://github.com/xtrm-dev/core) is a strong operational requirement. Specialists expects the rest of the XTRM stack to provide the normal launcher, hooks, skills, Beads workflow, and coordination substrate.
+Installing [Core](https://github.com/xtrm-dev/core) is a strong operational requirement. Core is currently distributed on npm under the transitional package name `xtrm-tools`. Specialists expects Core and the rest of XTRM to provide the normal launcher, hooks, skills, Beads workflow, and coordination substrate.
 
 ## Why bounded specialist contexts
 
@@ -148,6 +153,7 @@ Specialists is Bun-first and expects the XTRM stack to be installed explicitly:
 curl -fsSL https://bun.sh/install | bash
 
 # XTRM stack
+# `xtrm-tools` is the current transitional npm package name for Core.
 npm install --global \
   xtrm-tools \
   @jaggerxtrm/xtmux \
@@ -165,9 +171,9 @@ sp list
 Package specialist definitions intentionally ship without forcing one provider/model choice. Machine-level configuration supplies model assignments:
 
 ```bash
-sp models
 sp edit --global
-sp doctor --specialists
+sp setup --fetch-benchmarks --json
+sp setup --plan <budget-preset>
 ```
 
 Configuration layers:
@@ -319,7 +325,7 @@ Specialists records:
 - Results are evidence for the orchestrator; they do not independently expand scope.
 - Review roles should not share the implementer’s contaminated context.
 - A terminal notification is a pointer, not the full private result.
-- Parent notification and Bead-note append are fail-open relative to job completion.
+- Parent notification and automatic Bead-note append are fail-open relative to job completion; the completed result remains available through `sp result`.
 - Git and the operator remain the integration authority.
 
 ## Current boundaries
