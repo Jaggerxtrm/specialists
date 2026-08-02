@@ -1,0 +1,138 @@
+{
+  "schema": "specialists.k1.characterization.v1",
+  "captured_at": "2026-08-02",
+  "source": {
+    "specialists_version": "@jaggerxtrm/specialists v3.21.2",
+    "specialists_commit": "fce9e4db8616f43fe74a0fec962265c0b39bde9c",
+    "core_commit": "9b823f80d373a4cb82173ec594f525b1f20caa39",
+    "execution_note_commit": "018e203247f4a9796a1677ec22281e9c7422f880"
+  },
+  "bead_id": "unitAI-e67up.1",
+  "specialist": "chain-coordinator",
+  "render_task": {
+    "pi": {
+      "ok": true,
+      "surface": "pi",
+      "context_depth": 3,
+      "prompt_hash": "8d21feaaa0fc5a3c",
+      "initial_prompt_bytes": 2483,
+      "skill_prefix": "/skill:using-specialists\n\n",
+      "skill_prefix_bytes": 26,
+      "components": [
+        { "kind": "task_template", "name": "task_template", "tokens": 466, "bytes": 1864 },
+        { "kind": "bead_context", "name": "own", "tokens": 280, "bytes": 1120 },
+        { "kind": "bead_context", "name": "parent", "tokens": 3, "bytes": 12 },
+        { "kind": "mandatory_rule", "name": "workflow-quick-rules", "tokens": 82, "bytes": 327 },
+        { "kind": "mandatory_rule", "name": "core-session-boundary", "tokens": 30, "bytes": 119 },
+        { "kind": "mandatory_rule", "name": "git-workflow-safe", "tokens": 31, "bytes": 122 }
+      ],
+      "mandatory_rules": {
+        "sets_loaded": ["workflow-quick-rules", "core-session-boundary", "git-workflow-safe"],
+        "rules_count": 3,
+        "inline_rules_count": 0,
+        "globals_disabled": false
+      },
+      "skills": ["<global-skills>/using-specialists/SKILL.md"]
+    },
+    "claude": {
+      "ok": true,
+      "surface": "claude",
+      "context_depth": 3,
+      "prompt_hash": "bf983c33eb2e9c45",
+      "initial_prompt_bytes": 2477,
+      "skill_prefix": "/using-specialists\n\n",
+      "skill_prefix_bytes": 20,
+      "components": [
+        { "kind": "task_template", "name": "task_template", "tokens": 466, "bytes": 1864 },
+        { "kind": "bead_context", "name": "own", "tokens": 280, "bytes": 1120 },
+        { "kind": "bead_context", "name": "parent", "tokens": 3, "bytes": 12 },
+        { "kind": "mandatory_rule", "name": "workflow-quick-rules", "tokens": 82, "bytes": 327 },
+        { "kind": "mandatory_rule", "name": "core-session-boundary", "tokens": 30, "bytes": 119 },
+        { "kind": "mandatory_rule", "name": "git-workflow-safe", "tokens": 31, "bytes": 122 }
+      ],
+      "mandatory_rules": {
+        "sets_loaded": ["workflow-quick-rules", "core-session-boundary", "git-workflow-safe"],
+        "rules_count": 3,
+        "inline_rules_count": 0,
+        "globals_disabled": false
+      },
+      "skills": ["<global-skills>/using-specialists/SKILL.md"]
+    }
+  },
+  "render_skill_prefix": {
+    "pi": { "surface": "pi", "skill_prefix": "/skill:using-specialists\n\n", "skill_prefix_bytes": 26 },
+    "claude": { "surface": "claude", "skill_prefix": "/using-specialists\n\n", "skill_prefix_bytes": 20 }
+  },
+  "view_raw": {
+    "pi": {
+      "metadata": { "name": "chain-coordinator", "version": "1.0.0", "category": "orchestration" },
+      "execution": {
+        "model": "openai-codex/gpt-5.6-luna",
+        "surface_models": null,
+        "interactive": true,
+        "permission_required": "LOW",
+        "thinking_level": "high",
+        "bare": false,
+        "prompt_limit_bytes": null,
+        "stdout_limit_bytes": null
+      },
+      "prompt": { "system_present": true, "task_template_bytes": 7, "skill_inherit": null },
+      "skills": ["<global-skills>/using-specialists/SKILL.md"]
+    },
+    "claude": {
+      "metadata": { "name": "chain-coordinator", "version": "1.0.0", "category": "orchestration" },
+      "execution": {
+        "model": "openai-codex/gpt-5.6-luna",
+        "surface_models": null,
+        "interactive": true,
+        "permission_required": "LOW",
+        "thinking_level": "high",
+        "bare": false,
+        "prompt_limit_bytes": null,
+        "stdout_limit_bytes": null
+      },
+      "prompt": { "system_present": true, "task_template_bytes": 7, "skill_inherit": null },
+      "skills": ["<global-skills>/using-specialists/SKILL.md"]
+    }
+  },
+  "help": {
+    "root": {
+      "bytes": 9484,
+      "lines": 150,
+      "sha256_16": "93cf695dae2e8e9c",
+      "required_lines": [
+        "xt pi [name]               Start a Pi session in a sandboxed xt worktree",
+        "xt claude [name]           Start a Claude session in a sandboxed xt worktree"
+      ]
+    },
+    "render_task": {
+      "bytes": 862,
+      "lines": 19,
+      "sha256_16": "9232bfda417f3cbe",
+      "required_lines": [
+        "Usage: specialists render-task <name> --bead <id> [options]",
+        "never emits prompt.system (the launcher owns that via `view --raw`).",
+        "--surface pi|claude    Interactive surface being launched (default: pi)"
+      ]
+    },
+    "view": {
+      "bytes": 804,
+      "lines": 20,
+      "sha256_16": "ebab10cfb3ea4f9f",
+      "required_lines": [
+        "Usage: specialists view <name> [options]",
+        "specialists view <name>         Render one specialist in human-friendly sections"
+      ]
+    }
+  },
+  "provider_surface_separation": {
+    "model": "openai-codex/gpt-5.4",
+    "mapped_backend": "openai-codex/gpt-5.4",
+    "surface_model_pi": "openai-codex/gpt-5.4",
+    "surface_model_claude": "openai-codex/gpt-5.4",
+    "render_task_codex_exit": 1,
+    "render_task_codex_error": "--surface must be 'pi' or 'claude' (got 'codex')",
+    "render_skill_prefix_codex_exit": 1,
+    "render_skill_prefix_codex_error": "--surface must be 'pi' or 'claude' (got 'codex')"
+  }
+}
