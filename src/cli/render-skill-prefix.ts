@@ -5,7 +5,7 @@
 // (unitAI-6639v.1) intact without reimplementing derivation/dedup logic.
 //
 // Surfaces: pi (`/skill:<name>`), claude (`/<name>`), and the native codex
-// surface (K3, unitAI-e67up.2; `$<name>`, experimental until GATE-IFACE).
+// surface (K3, unitAI-e67up.2; `$<name>`; experimental until K5 promotion).
 import { loadSpecialistForSurface, type Surface } from './render-task.js';
 import { buildSkillPrefix } from '../specialist/task-prompt.js';
 

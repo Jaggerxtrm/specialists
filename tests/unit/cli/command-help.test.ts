@@ -182,6 +182,10 @@ describe('command-specific --help', () => {
     expect(out).toContain('--surface codex');
     expect(out).toContain('$skill-name');
     expect(out.toLowerCase()).toContain('experimental');
+    // Review round 2: GATE-IFACE has already passed; it must not be described
+    // as the pending gate for this source change.
+    expect(out).not.toContain('until GATE-IFACE');
+    expect(out).toContain('K5 promotion');
   });
 
   it('render-skill-prefix --help documents all three surface syntaxes', () => {

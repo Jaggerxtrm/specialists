@@ -31,7 +31,8 @@ export function deriveSkillName(path: string): string {
  * Pi uses `/skill:<name>` commands separated by spaces; Claude uses `/<name>`
  * commands separated by newlines; native Codex (K3, unitAI-e67up.2) uses
  * `$<name>` references separated by spaces. Names come from the loader-validated
- * skill paths. The codex surface is experimental until GATE-IFACE (K5).
+ * skill paths. The codex surface is experimental until K5 promotion
+ * (GATE-IFACE has already passed).
  */
 export function buildSkillPrefix(specialist: Specialist['specialist'], surface: Surface): string {
   const paths = specialist.skills?.paths ?? [];
@@ -96,7 +97,7 @@ export interface TaskPromptInput {
   /**
    * Turn-1 skill-load surface (unitAI-qeguh). Defaults to 'pi' — sp run is pi-only;
    * xt claude --role passes 'claude' via `sp render-task --surface claude`, and the
-   * native Codex launcher (K3, experimental until GATE-IFACE) passes 'codex'.
+   * native Codex launcher (K3, experimental until K5 promotion) passes 'codex'.
    */
   surface?: Surface;
 }
