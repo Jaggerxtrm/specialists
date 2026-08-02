@@ -8,6 +8,7 @@ const fixtureDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../fixtu
 const fixture = JSON.parse(readFileSync(resolve(fixtureDir, 'chain-coordinator.json'), 'utf8')) as any;
 const golden = JSON.parse(readFileSync(resolve(fixtureDir, 'chain-coordinator-render-golden.json'), 'utf8')) as any;
 const surfaces = ['pi', 'claude'] as const;
+const canonicalRenderError = "specialist 'chain-coordinator': specialist 'chain-coordinator' has no model configured. Run: sp edit --global chain-coordinator.execution.model <model-id> (or 'sp init --global' to create the global user config file first).";
 
 function shortHash(value: string): string {
   return createHash('sha256').update(value).digest('hex').slice(0, 16);
@@ -41,6 +42,7 @@ describe('K1 characterization fixture provenance', () => {
       expect(renderProbe.command).not.toContain('|');
       expect(renderProbe.exit).toBe(1);
       expect(renderProbe.ok).toBe(false);
+      expect(renderProbe.error.message).toBe(canonicalRenderError);
 
       const viewProbe = fixture.view_capture.probes[surface];
       expect(viewProbe.command).toBe(`sp view chain-coordinator --raw --surface ${surface}`);
