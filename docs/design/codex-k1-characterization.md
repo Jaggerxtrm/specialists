@@ -11,11 +11,11 @@ This packet records the current Specialists contracts that K3 must extend withou
 | Artifact | Revision |
 | --- | --- |
 | Specialists | `@jaggerxtrm/specialists v3.21.2`, `fce9e4db8616f43fe74a0fec962265c0b39bde9c` |
-| Core launcher reference | `9b823f80d373a4cb82173ec594f525b1f20caa39`, `docs/xt-pi-role.md` |
-| Shared KAN-127 execution note | `018e203247f4a9796a1677ec22281e9c7422f880` |
+| Core launcher reference | [`9b823f80d373a4cb82173ec594f525b1f20caa39` / `docs/xt-pi-role.md`](https://github.com/xtrm-dev/core/blob/9b823f80d373a4cb82173ec594f525b1f20caa39/docs/xt-pi-role.md) |
+| Shared KAN-127 execution note | [`018e203247f4a9796a1677ec22281e9c7422f880` / `docs/shared/xtrm-codex-kan-127-execution-note.md`](https://github.com/xtrm-dev/xtrm/blob/018e203247f4a9796a1677ec22281e9c7422f880/docs/shared/xtrm-codex-kan-127-execution-note.md) |
 | Capture | `chain-coordinator`, bead `unitAI-e67up.1`, context depth `3` |
 
-The external KAN-127 note was read from the local xtrm checkout. It is evidence only; this PR changes Specialists only.
+The external [KAN-127 note](https://github.com/xtrm-dev/xtrm/blob/018e203247f4a9796a1677ec22281e9c7422f880/docs/shared/xtrm-codex-kan-127-execution-note.md) was read from the local xtrm checkout. It is evidence only; this PR changes Specialists only.
 
 ## 1. Ownership and seams
 
@@ -104,7 +104,7 @@ The Specialists renderer does not create a prompt file or a job. Core owns trans
 
 ## 5. Launcher behavior relevant to Specialists
 
-The Core launcher reference establishes these compatibility facts:
+The [Core launcher reference](https://github.com/xtrm-dev/core/blob/9b823f80d373a4cb82173ec594f525b1f20caa39/docs/xt-pi-role.md) establishes these compatibility facts:
 
 - `--role` resolves the effective Specialist config for the selected runtime.
 - `--bead` and `--prompt` are mutually exclusive.
@@ -135,7 +135,7 @@ Current render APIs accept only `pi` and `claude`. The model spelling `openai-co
 
 ## 7. K2 outcome fields Specialists must consume
 
-The KAN-127 K2 note defines the additive generic launch outcome. The field **names and reason-code enum remain Core-owned**. Specialists must consume the stable contract without inventing a private Codex schema.
+The [KAN-127 K2 note](https://github.com/xtrm-dev/xtrm/blob/018e203247f4a9796a1677ec22281e9c7422f880/docs/shared/xtrm-codex-kan-127-execution-note.md) defines the additive generic launch outcome. The field **names and reason-code enum remain Core-owned**. Specialists must consume the stable contract without inventing a private Codex schema.
 
 The required outcome concepts are:
 
