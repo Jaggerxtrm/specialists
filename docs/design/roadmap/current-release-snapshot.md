@@ -2,24 +2,33 @@
 
 **Status:** mutable current-state ledger  
 **Last reconciled:** 2026-08-02, Europe/Rome  
-**Requirements canon:** `enhanced-prd.md`  
-**Sequencing canon:** `xtrm-dev/xtrm/docs/shared/xtrm-current-execution-plan.md`  
+**Requirements canon:** [`enhanced-prd.md`](enhanced-prd.md)  
+**Semantic roadmap:** [`specialists-roadmap.md`](specialists-roadmap.md)  
+**Current sequencing:** [XTRM current execution plan](https://github.com/xtrm-dev/xtrm/blob/main/docs/shared/xtrm-current-execution-plan.md)  
+**Machine graph:** [XTRM current execution plan JSON](https://github.com/xtrm-dev/xtrm/blob/main/docs/shared/xtrm-current-execution-plan.json)  
 
 ## Purpose
 
-The Specialists PRD and roadmap are large semantic and requirements documents. Their embedded release snapshots are historical after the next coordinated release.
+The PRD and roadmap are large, slow-changing semantic documents. Their embedded release snapshots become historical after a coordinated release.
 
-This file is the compact current-state ledger used before planning or dispatch. It records what is released, what exists only in source, and what remains genuinely unimplemented.
+This file is the compact current-state ledger used before planning or dispatch. It records what is released, what exists only in source, and what remains unimplemented.
 
-Authority order:
+It does not override accepted architecture or requirements.
 
-```text
-released package and current code
-→ executable schemas/tests/public contracts
-→ this snapshot and the XTRM current execution plan
-→ roadmap and PRD work packages
-→ Jira projections and historical planning artifacts
-```
+## Authority by claim type
+
+Different documents are authoritative for different claims:
+
+| Claim type | Authority |
+|---|---|
+| Current release identity and landed/source-only state | released package, current code, executable tests/contracts, then this snapshot |
+| Current implementation sequence and promotion gates | [XTRM current execution plan](https://github.com/xtrm-dev/xtrm/blob/main/docs/shared/xtrm-current-execution-plan.md) |
+| Specialist runtime architecture, Opportunities and semantic decisions | [`specialists-roadmap.md`](specialists-roadmap.md), execution-protocol ownership decision and chain-template canon |
+| Accepted programme scope, invariants, work-package gates and success criteria | [`enhanced-prd.md`](enhanced-prd.md) |
+| Portfolio status | Jira projection after reconciliation |
+| Implementation tasks, dependencies and completion | repository-local Beads and Git evidence |
+
+A release/status refresh may change a capability from planned to delivered. It may not silently redesign an accepted semantic decision or delete PRD scope.
 
 ## Released trio
 
@@ -69,7 +78,7 @@ Released:
 - canonical Beads event streaming;
 - Pi, Claude and Codex lifecycle hooks;
 - bounded capture, terminal monitor projection and orphan cleanup;
-- clarified reply/FYI/receipt/fulfilment semantics.
+- reply/FYI/receipt/fulfilment semantics.
 
 ## Partially delivered roadmap surfaces
 
@@ -101,15 +110,17 @@ Released:
 
 ## Chain-template truth
 
-The template directory currently contains fifteen formula files. They are valid source assets, not a released orchestration product.
+Fifteen formula files exist in source. They are not a released orchestration product.
 
-The released `sp` command catalog has no `chain` command. The roadmap's `review`, `approve`, `insert` and semantic-edge helper remain design work.
+The semantic canon is [XTRM chain templates](https://github.com/xtrm-dev/xtrm/blob/main/docs/substrate/chain_templates.md). The local [`chain-templates/README.md`](chain-templates/README.md) documents source-asset and Beads formula mechanics; it is not the semantic authority.
+
+The released `sp` command catalog has no `chain` command. The roadmap's composition commands and semantic-edge helper remain design work.
 
 Do not report chain templates as production-ready until:
 
 1. the catalog ships through a supported package/install path;
 2. one pure compiler emits a persisted `ResolvedChain`;
-3. the minimum activation execution protocol is enforced;
+3. the minimum activation protocol is enforced;
 4. manual composition commands exist;
 5. the reducer derives next transitions from persisted evidence;
 6. a coordinated released-trio fixture passes.
@@ -126,16 +137,29 @@ deterministic public command outcomes
 → Eval Core and measured authority promotion
 ```
 
-Detailed workstream IDs, dependencies and promotion gates live in the XTRM current execution plan and its JSON companion.
+Detailed workstream IDs, dependencies and gates live in the current execution plan and JSON companion.
 
 ## Before every planning or implementation run
 
 1. Refresh all three release versions and default heads.
 2. Inspect recent merged PRs and existing Beads.
 3. Classify claims as released, source-only, partial, superseded or unimplemented.
-4. Use the current execution plan rather than the dates embedded in the PRD.
-5. Update this snapshot in the same coordinated release wave when any classification changes.
+4. Use the current execution plan for sequencing.
+5. Use the roadmap/PRD for semantics, accepted scope and acceptance.
+6. Update this snapshot in the same coordinated release wave when classifications change.
 
-## Supersession note
+## Supersession boundary
 
-The `24 July 2026` release table embedded in `enhanced-prd.md` remains historical evidence for that reconciliation. This file supersedes it for current release identity and landed-state claims. The PRD remains authoritative for accepted requirements, invariants and work-package acceptance.
+The `24 July 2026` release table embedded in `enhanced-prd.md` remains historical evidence for that reconciliation.
+
+This file supersedes it only for:
+
+- current package versions;
+- current default-branch drift;
+- delivered/source-only/partial/unimplemented classification.
+
+It does not supersede:
+
+- PRD scope, invariants, gates or success criteria;
+- roadmap Opportunities, architectural decisions or substrate reads-forward;
+- the execution-protocol semantic contract.
