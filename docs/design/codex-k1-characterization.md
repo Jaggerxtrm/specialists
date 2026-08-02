@@ -25,8 +25,8 @@ The external [KAN-127 note](https://github.com/xtrm-dev/xtrm/blob/018e203247f4a9
 | Specialist role identity | `specialist.metadata.name` and `specialist.execution.interactive` | A role is a named Specialist configuration. Specialists has no Codex role alias. |
 | Effective model | `sp view <name> --raw --surface <surface>` → `resolveSurfaceModel()` | `execution.surface_models[surface]` wins; otherwise `execution.model` is returned unchanged. |
 | Pi/Claude task rendering | `renderTaskPrompt()` in `src/specialist/task-prompt.ts` | One task assembly path. It excludes `prompt.system`; it adds bead context, boundary rules and mandatory rules. |
-| Interactive task envelope | `sp render-task <name> --bead <id> --surface pi|claude` | Read-only JSON envelope. It creates no job, worktree, session, bead, note or status row. |
-| Turn-one skill loading | `sp render-skill-prefix <name> --surface pi|claude` | Pi emits `/skill:<name>` commands separated by spaces. Claude emits `/<name>` commands separated by newlines. |
+| Interactive task envelope | `sp render-task <name> --bead <id> --surface <surface>` where `<surface>` is `pi` or `claude` | Read-only JSON envelope. It creates no job, worktree, session, bead, note or status row. |
+| Turn-one skill loading | `sp render-skill-prefix <name> --surface <surface>` where `<surface>` is `pi` or `claude` | Pi emits `/skill:<name>` commands separated by spaces. Claude emits `/<name>` commands separated by newlines. |
 | Human/config inspection | `sp view <name> [--section ...] [--surface ...] [--raw]` | `--raw` emits the merged effective spec used by the launcher. `--surface` is a model selector, not proof that a runtime surface exists. |
 | Provider/model execution | `PiAgentSession.create()` and `PiAgentSession.start()` | A slash-qualified `openai-codex/...` model records backend `openai-codex` and starts Pi with `--model <provider/model>`. It is not a surface identifier. |
 | Standalone provider helper | `mapSpecialistBackend()` in `src/pi/backendMap.ts` | For `openai-codex/gpt-5.4`, the pass-through result is a helper probe only; it is not the Pi session launch backend for a slash-qualified model. |
@@ -47,9 +47,9 @@ The external [KAN-127 note](https://github.com/xtrm-dev/xtrm/blob/018e203247f4a9
 | Job/RPC/status creation | yes | no; Core owns its session | no; Core owns its session |
 | Prompt hash | over final task body | emitted by `render-task` | emitted by `render-task` |
 
-The shared body components are the same for both role surfaces. The **full** `initial_prompt` is intentionally not byte-identical when skills are declared because the position-zero skill syntax differs. The captured fixture records this: Pi is 2,483 bytes with hash `8d21feaaa0fc5a3c`; Claude is 2,477 bytes with hash `bf983c33eb2e9c45`.
+The shared body components are the same for both role surfaces. The **full** `initial_prompt` is intentionally not byte-identical when skills are declared because the position-zero skill syntax differs. The normalized golden records this: Pi is 2,323 bytes with hash `238faa1112e89503`; Claude is 2,317 bytes with hash `a51454a464b2794f`.
 
-The existing parity tests cover the shared rendering seam and surface-specific prefix behavior. The characterization fixture adds the task envelope from the shared `renderTaskPrompt()` seam, plus a normalized view projection, help artifacts and model values for a released Specialists checkout. Because the canonical `chain-coordinator` config has no model, the CLI refuses to load it; the fixture records that CLI probe separately and does not hide the failure behind a machine-local override. Its `view_projection` model and thinking values are the canonical repository values (`null` and `low`); it is not literal `sp view --raw` output, and omitted optional keys must not be inferred from it.
+The existing parity tests cover the shared rendering seam and surface-specific prefix behavior. The characterization fixture adds the task envelope from the shared `renderTaskPrompt()` seam, a deterministic normalized render golden, a normalized view projection, help artifacts and model values for a released Specialists checkout. Because the canonical `chain-coordinator` config has no model, each CLI render probe refuses to load it; the fixture records separate Pi and Claude results and does not hide the failure behind a machine-local override. Its `view_projection` model and thinking values are the canonical repository values (`null` and `low`); it is not literal `sp view --raw` output, and omitted optional keys must not be inferred from it.
 
 ## 3. Machine-readable output contracts
 
@@ -74,6 +74,15 @@ skills
 
 `components` contains bounded measurements only. It does not expose full prompt bodies outside `initial_prompt`. Stable failure codes are `usage`, `specialist_not_found`, `bead_not_found`, `template_render_failed` and `mandatory_rules_failed`.
 
+The canonical null-model config cannot run through `sp render-task`. The fixture records these separate probes:
+
+```text
+sp render-task chain-coordinator --bead unitAI-e67up.1 --surface pi      -> exit 1, specialist_not_found
+sp render-task chain-coordinator --bead unitAI-e67up.1 --surface claude  -> exit 1, specialist_not_found
+```
+
+The independently checkable golden is `tests/fixtures/codex-k1/chain-coordinator-render-golden.json`. It stores the render-relevant bead fields, an empty completed-blocker list, normalized cwd `<worktree>`, and the complete Pi/Claude `initial_prompt` values with their hashes and byte counts. The golden does not read live bead state or a machine-specific worktree path.
+
 ### `render-skill-prefix`
 
 Successful output is:
@@ -93,7 +102,14 @@ Successful output is:
 
 ### `view --raw`
 
-The command `sp view chain-coordinator --raw --surface pi|claude` emits the merged effective Specialist configuration. The fixture's `view_projection` is a normalized projection of that literal JSON captured with the canonical repository config and no global override layer. It records selected fields and path-normalizes skill paths; it does not imply that omitted optional keys are emitted as `null`. The launcher consumes the execution model, thinking level, system prompt, skills and surface-specific model resolution. `prompt.system` is available here for the runtime launcher, but it is not part of the task-side `render-task` envelope.
+These separate commands emit the merged effective Specialist configuration:
+
+```text
+sp view chain-coordinator --raw --surface pi
+sp view chain-coordinator --raw --surface claude
+```
+
+The fixture records each successful result under `view_capture.probes` and `view_projection`. The projection is normalized from the literal JSON captured with the canonical repository config and no global override layer. It records selected fields and path-normalizes skill paths; it does not imply that omitted optional keys are emitted as `null`. The launcher consumes the execution model, thinking level, system prompt, skills and surface-specific model resolution. `prompt.system` is available here for the runtime launcher, but it is not part of the task-side `render-task` envelope.
 
 ## 4. Byte ceilings
 
@@ -104,7 +120,7 @@ The command `sp view chain-coordinator --raw --surface pi|claude` emits the merg
 | Script stdout | `execution.stdout_limit_bytes` is optional; `null`/unset inherits the shipped capture limit. |
 | Core literal `--prompt` | Core launcher reference caps the combined system/body payload at `50 KiB`. |
 | Core rendered `--bead` | Core preserves the rendered task up to the portable Linux argument limit of `131,071` bytes. |
-| Captured K1 render | The fixture records 2,483 bytes for Pi and 2,477 bytes for Claude before any Core launch transport. |
+| Captured K1 render | The normalized golden records 2,323 bytes for Pi and 2,317 bytes for Claude before any Core launch transport. |
 
 The Specialists renderer does not create a prompt file or a job. Core owns transport and its byte guard.
 

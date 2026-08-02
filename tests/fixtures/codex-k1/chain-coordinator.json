@@ -15,10 +15,31 @@
   "render_task_capture": {
     "mode": "direct_renderTaskPrompt_with_canonical_spec",
     "canonical_config": "config/specialists/chain-coordinator.specialist.json",
-    "cli_probe": {
-      "command": "sp render-task chain-coordinator --bead unitAI-e67up.1 --surface pi|claude",
-      "exit": 1,
-      "error": "specialist 'chain-coordinator' has no model configured"
+    "golden_render": {
+      "file": "tests/fixtures/codex-k1/chain-coordinator-render-golden.json",
+      "mode": "serialized_render_inputs_and_initial_prompt",
+      "normalized_cwd": "<worktree>",
+      "surfaces": ["pi", "claude"]
+    },
+    "cli_probes": {
+      "pi": {
+        "command": "sp render-task chain-coordinator --bead unitAI-e67up.1 --surface pi",
+        "exit": 1,
+        "ok": false,
+        "error": {
+          "code": "specialist_not_found",
+          "message": "specialist 'chain-coordinator' has no model configured"
+        }
+      },
+      "claude": {
+        "command": "sp render-task chain-coordinator --bead unitAI-e67up.1 --surface claude",
+        "exit": 1,
+        "ok": false,
+        "error": {
+          "code": "specialist_not_found",
+          "message": "specialist 'chain-coordinator' has no model configured"
+        }
+      }
     }
   },
   "render_task": {
@@ -77,11 +98,24 @@
   },
   "view_capture": {
     "mode": "normalized_projection",
-    "command": "sp view chain-coordinator --raw --surface pi|claude",
     "owner": "xtrm-dev/specialists",
-    "normalization": "Selected fields from the literal JSON output; this projection is not the command output.",
+    "normalization": "Selected fields from each literal JSON output; this projection is not the command output.",
     "omitted_optional_keys_are_not_emitted_as_null": true,
-    "absolute_skill_paths_replaced_with": "~/.xtrm/skills/default/..."
+    "absolute_skill_paths_replaced_with": "~/.xtrm/skills/default/...",
+    "probes": {
+      "pi": {
+        "command": "sp view chain-coordinator --raw --surface pi",
+        "exit": 0,
+        "ok": true,
+        "projection": "view_projection.pi"
+      },
+      "claude": {
+        "command": "sp view chain-coordinator --raw --surface claude",
+        "exit": 0,
+        "ok": true,
+        "projection": "view_projection.claude"
+      }
+    }
   },
   "view_projection": {
     "pi": {
