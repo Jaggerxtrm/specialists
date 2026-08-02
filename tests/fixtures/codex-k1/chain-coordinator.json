@@ -5,10 +5,22 @@
     "specialists_version": "@jaggerxtrm/specialists v3.21.2",
     "specialists_commit": "fce9e4db8616f43fe74a0fec962265c0b39bde9c",
     "core_commit": "9b823f80d373a4cb82173ec594f525b1f20caa39",
-    "execution_note_commit": "018e203247f4a9796a1677ec22281e9c7422f880"
+    "execution_note_commit": "018e203247f4a9796a1677ec22281e9c7422f880",
+    "configuration_mode": "canonical_repository",
+    "canonical_config": "config/specialists/chain-coordinator.specialist.json",
+    "global_overrides_used": false
   },
   "bead_id": "unitAI-e67up.1",
   "specialist": "chain-coordinator",
+  "render_task_capture": {
+    "mode": "direct_renderTaskPrompt_with_canonical_spec",
+    "canonical_config": "config/specialists/chain-coordinator.specialist.json",
+    "cli_probe": {
+      "command": "sp render-task chain-coordinator --bead unitAI-e67up.1 --surface pi|claude",
+      "exit": 1,
+      "error": "specialist 'chain-coordinator' has no model configured"
+    }
+  },
   "render_task": {
     "pi": {
       "ok": true,
@@ -32,7 +44,7 @@
         "inline_rules_count": 0,
         "globals_disabled": false
       },
-      "skills": ["<global-skills>/using-specialists/SKILL.md"]
+      "skills": ["~/.xtrm/skills/default/using-specialists/SKILL.md"]
     },
     "claude": {
       "ok": true,
@@ -56,7 +68,7 @@
         "inline_rules_count": 0,
         "globals_disabled": false
       },
-      "skills": ["<global-skills>/using-specialists/SKILL.md"]
+      "skills": ["~/.xtrm/skills/default/using-specialists/SKILL.md"]
     }
   },
   "render_skill_prefix": {
@@ -67,32 +79,32 @@
     "pi": {
       "metadata": { "name": "chain-coordinator", "version": "1.0.0", "category": "orchestration" },
       "execution": {
-        "model": "openai-codex/gpt-5.6-luna",
+        "model": null,
         "surface_models": null,
         "interactive": true,
         "permission_required": "LOW",
-        "thinking_level": "high",
+        "thinking_level": "low",
         "bare": false,
         "prompt_limit_bytes": null,
         "stdout_limit_bytes": null
       },
       "prompt": { "system_present": true, "task_template_bytes": 7, "skill_inherit": null },
-      "skills": ["<global-skills>/using-specialists/SKILL.md"]
+      "skills": ["~/.xtrm/skills/default/using-specialists/SKILL.md"]
     },
     "claude": {
       "metadata": { "name": "chain-coordinator", "version": "1.0.0", "category": "orchestration" },
       "execution": {
-        "model": "openai-codex/gpt-5.6-luna",
+        "model": null,
         "surface_models": null,
         "interactive": true,
         "permission_required": "LOW",
-        "thinking_level": "high",
+        "thinking_level": "low",
         "bare": false,
         "prompt_limit_bytes": null,
         "stdout_limit_bytes": null
       },
       "prompt": { "system_present": true, "task_template_bytes": 7, "skill_inherit": null },
-      "skills": ["<global-skills>/using-specialists/SKILL.md"]
+      "skills": ["~/.xtrm/skills/default/using-specialists/SKILL.md"]
     }
   },
   "help": {
@@ -127,7 +139,16 @@
   },
   "provider_surface_separation": {
     "model": "openai-codex/gpt-5.4",
-    "mapped_backend": "openai-codex/gpt-5.4",
+    "standalone_backend_helper": {
+      "function": "mapSpecialistBackend",
+      "result": "openai-codex/gpt-5.4",
+      "source": "src/pi/backendMap.ts"
+    },
+    "pi_session": {
+      "session_meta_backend": "openai-codex",
+      "provider_args": ["--model", "openai-codex/gpt-5.4"],
+      "source": ["src/pi/session.ts:PiAgentSession.create", "src/pi/session.ts:PiAgentSession.start"]
+    },
     "surface_model_pi": "openai-codex/gpt-5.4",
     "surface_model_claude": "openai-codex/gpt-5.4",
     "render_task_codex_exit": 1,

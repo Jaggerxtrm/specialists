@@ -13,9 +13,10 @@ This packet records the current Specialists contracts that K3 must extend withou
 | Specialists | `@jaggerxtrm/specialists v3.21.2`, `fce9e4db8616f43fe74a0fec962265c0b39bde9c` |
 | Core launcher reference | [`9b823f80d373a4cb82173ec594f525b1f20caa39` / `docs/xt-pi-role.md`](https://github.com/xtrm-dev/core/blob/9b823f80d373a4cb82173ec594f525b1f20caa39/docs/xt-pi-role.md) |
 | Shared KAN-127 execution note | [`018e203247f4a9796a1677ec22281e9c7422f880` / `docs/shared/xtrm-codex-kan-127-execution-note.md`](https://github.com/xtrm-dev/xtrm/blob/018e203247f4a9796a1677ec22281e9c7422f880/docs/shared/xtrm-codex-kan-127-execution-note.md) |
-| Capture | `chain-coordinator`, bead `unitAI-e67up.1`, context depth `3` |
+| Canonical Specialist config | [`fce9e4db8616f43fe74a0fec962265c0b39bde9c` / `config/specialists/chain-coordinator.specialist.json`](https://github.com/xtrm-dev/specialists/blob/fce9e4db8616f43fe74a0fec962265c0b39bde9c/config/specialists/chain-coordinator.specialist.json) |
+| Capture | `chain-coordinator`, bead `unitAI-e67up.1`, context depth `3`, isolated `HOME` with no global overrides |
 
-The external [KAN-127 note](https://github.com/xtrm-dev/xtrm/blob/018e203247f4a9796a1677ec22281e9c7422f880/docs/shared/xtrm-codex-kan-127-execution-note.md) was read from the local xtrm checkout. It is evidence only; this PR changes Specialists only.
+The external [KAN-127 note](https://github.com/xtrm-dev/xtrm/blob/018e203247f4a9796a1677ec22281e9c7422f880/docs/shared/xtrm-codex-kan-127-execution-note.md) was read from the local xtrm checkout. It is evidence only; this PR changes Specialists only. The fixture uses the canonical repository config with an isolated `HOME`; it does not depend on `~/.config/specialists/user.json`, `.specialists/user/`, or another machine-local override.
 
 ## 1. Ownership and seams
 
@@ -27,7 +28,8 @@ The external [KAN-127 note](https://github.com/xtrm-dev/xtrm/blob/018e203247f4a9
 | Interactive task envelope | `sp render-task <name> --bead <id> --surface pi|claude` | Read-only JSON envelope. It creates no job, worktree, session, bead, note or status row. |
 | Turn-one skill loading | `sp render-skill-prefix <name> --surface pi|claude` | Pi emits `/skill:<name>` commands separated by spaces. Claude emits `/<name>` commands separated by newlines. |
 | Human/config inspection | `sp view <name> [--section ...] [--surface ...] [--raw]` | `--raw` emits the merged effective spec used by the launcher. `--surface` is a model selector, not proof that a runtime surface exists. |
-| Provider execution | `mapSpecialistBackend()` and Pi session startup | `openai-codex/...` remains a provider/model value. It is not a surface identifier. |
+| Provider/model execution | `PiAgentSession.create()` and `PiAgentSession.start()` | A slash-qualified `openai-codex/...` model records backend `openai-codex` and starts Pi with `--model <provider/model>`. It is not a surface identifier. |
+| Standalone provider helper | `mapSpecialistBackend()` in `src/pi/backendMap.ts` | For `openai-codex/gpt-5.4`, the pass-through result is a helper probe only; it is not the Pi session launch backend for a slash-qualified model. |
 | Interactive launch | Core `xt pi --role` / `xt claude --role` | Core owns runtime launch, worktree, tmux and managed configuration. Specialists supplies role/config and task/result semantics. |
 
 ## 2. Current Pi/Claude matrix
@@ -47,7 +49,7 @@ The external [KAN-127 note](https://github.com/xtrm-dev/xtrm/blob/018e203247f4a9
 
 The shared body components are the same for both role surfaces. The **full** `initial_prompt` is intentionally not byte-identical when skills are declared because the position-zero skill syntax differs. The captured fixture records this: Pi is 2,483 bytes with hash `8d21feaaa0fc5a3c`; Claude is 2,477 bytes with hash `bf983c33eb2e9c45`.
 
-The existing parity tests cover the shared rendering seam and surface-specific prefix behavior. The characterization fixture adds the real CLI envelope, view, help and model values for a released Specialists checkout.
+The existing parity tests cover the shared rendering seam and surface-specific prefix behavior. The characterization fixture adds the task envelope from the shared `renderTaskPrompt()` seam, plus view, help and model values for a released Specialists checkout. Because the canonical `chain-coordinator` config has no model, the CLI refuses to load it; the fixture records that CLI probe separately and does not hide the failure behind a machine-local override. Its `view_raw` model and thinking values are the canonical repository values (`null` and `low`).
 
 ## 3. Machine-readable output contracts
 
@@ -87,7 +89,7 @@ Successful output is:
 
 ### `view --raw`
 
-The output is the merged effective Specialist configuration. The launcher consumes the execution model, thinking level, system prompt, skills and surface-specific model resolution. `prompt.system` is available here for the runtime launcher, but it is not part of the task-side `render-task` envelope.
+The output is the merged effective Specialist configuration. The fixture captures this command with the canonical repository config and no global override layer. The launcher consumes the execution model, thinking level, system prompt, skills and surface-specific model resolution. `prompt.system` is available here for the runtime launcher, but it is not part of the task-side `render-task` envelope.
 
 ## 4. Byte ceilings
 
@@ -123,15 +125,17 @@ These are reference-contract facts, not a live Core launch from this Specialists
 The following negative proof was captured:
 
 ```text
-model                         openai-codex/gpt-5.4
-mapped backend                openai-codex/gpt-5.4
-surface model (pi)            openai-codex/gpt-5.4
-surface model (claude)        openai-codex/gpt-5.4
-render-task --surface codex  exit 1; usage error
-render-skill-prefix codex    exit 1; usage error
+model                                      openai-codex/gpt-5.4
+standalone mapSpecialistBackend() result   openai-codex/gpt-5.4  [helper only]
+Pi session metadata backend                openai-codex
+Pi session provider args                   --model openai-codex/gpt-5.4
+surface model (pi)                        openai-codex/gpt-5.4
+surface model (claude)                    openai-codex/gpt-5.4
+render-task --surface codex               exit 1; usage error
+render-skill-prefix codex                 exit 1; usage error
 ```
 
-Current render APIs accept only `pi` and `claude`. The model spelling `openai-codex/gpt-5.4` passes through as a provider/model string; it never selects a Codex surface. K3 must add a distinct Codex runtime/surface contract rather than widening this value into an alias.
+Current render APIs accept only `pi` and `claude`. The model spelling `openai-codex/gpt-5.4` passes through as a provider/model string; it never selects a Codex surface. In source, `PiAgentSession.create()` derives session metadata backend `openai-codex` from the slash prefix, while `PiAgentSession.start()` forwards the complete value through `--model`. K3 must add a distinct Codex runtime/surface contract rather than widening this value into an alias.
 
 ## 7. K2 outcome fields Specialists must consume
 
