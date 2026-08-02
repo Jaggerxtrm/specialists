@@ -28,7 +28,7 @@
         "ok": false,
         "error": {
           "code": "specialist_not_found",
-          "message": "specialist 'chain-coordinator' has no model configured"
+          "message": "specialist 'chain-coordinator': specialist 'chain-coordinator' has no model configured. Run: sp edit --global chain-coordinator.execution.model <model-id> (or 'sp init --global' to create the global user config file first)."
         }
       },
       "claude": {
@@ -37,7 +37,7 @@
         "ok": false,
         "error": {
           "code": "specialist_not_found",
-          "message": "specialist 'chain-coordinator' has no model configured"
+          "message": "specialist 'chain-coordinator': specialist 'chain-coordinator' has no model configured. Run: sp edit --global chain-coordinator.execution.model <model-id> (or 'sp init --global' to create the global user config file first)."
         }
       }
     }
