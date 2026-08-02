@@ -49,7 +49,7 @@ The external [KAN-127 note](https://github.com/xtrm-dev/xtrm/blob/018e203247f4a9
 
 The shared body components are the same for both role surfaces. The **full** `initial_prompt` is intentionally not byte-identical when skills are declared because the position-zero skill syntax differs. The captured fixture records this: Pi is 2,483 bytes with hash `8d21feaaa0fc5a3c`; Claude is 2,477 bytes with hash `bf983c33eb2e9c45`.
 
-The existing parity tests cover the shared rendering seam and surface-specific prefix behavior. The characterization fixture adds the task envelope from the shared `renderTaskPrompt()` seam, plus view, help and model values for a released Specialists checkout. Because the canonical `chain-coordinator` config has no model, the CLI refuses to load it; the fixture records that CLI probe separately and does not hide the failure behind a machine-local override. Its `view_raw` model and thinking values are the canonical repository values (`null` and `low`).
+The existing parity tests cover the shared rendering seam and surface-specific prefix behavior. The characterization fixture adds the task envelope from the shared `renderTaskPrompt()` seam, plus a normalized view projection, help artifacts and model values for a released Specialists checkout. Because the canonical `chain-coordinator` config has no model, the CLI refuses to load it; the fixture records that CLI probe separately and does not hide the failure behind a machine-local override. Its `view_projection` model and thinking values are the canonical repository values (`null` and `low`); it is not literal `sp view --raw` output, and omitted optional keys must not be inferred from it.
 
 ## 3. Machine-readable output contracts
 
@@ -87,9 +87,13 @@ Successful output is:
 }
 ```
 
+### Help artifacts
+
+`help.root` is the external Core artifact from `xt --help` at Core commit `9b823f80d373a4cb82173ec594f525b1f20caa39`. It contains `xt pi` and `xt claude` lines, so it is not Specialists root help. The Specialists artifacts use `sp render-task --help` and `sp view --help`; `sp help` is not represented by `help.root`.
+
 ### `view --raw`
 
-The output is the merged effective Specialist configuration. The fixture captures this command with the canonical repository config and no global override layer. The launcher consumes the execution model, thinking level, system prompt, skills and surface-specific model resolution. `prompt.system` is available here for the runtime launcher, but it is not part of the task-side `render-task` envelope.
+The command `sp view chain-coordinator --raw --surface pi|claude` emits the merged effective Specialist configuration. The fixture's `view_projection` is a normalized projection of that literal JSON captured with the canonical repository config and no global override layer. It records selected fields and path-normalizes skill paths; it does not imply that omitted optional keys are emitted as `null`. The launcher consumes the execution model, thinking level, system prompt, skills and surface-specific model resolution. `prompt.system` is available here for the runtime launcher, but it is not part of the task-side `render-task` envelope.
 
 ## 4. Byte ceilings
 
