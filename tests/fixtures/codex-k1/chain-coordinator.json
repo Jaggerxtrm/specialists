@@ -75,7 +75,15 @@
     "pi": { "surface": "pi", "skill_prefix": "/skill:using-specialists\n\n", "skill_prefix_bytes": 26 },
     "claude": { "surface": "claude", "skill_prefix": "/using-specialists\n\n", "skill_prefix_bytes": 20 }
   },
-  "view_raw": {
+  "view_capture": {
+    "mode": "normalized_projection",
+    "command": "sp view chain-coordinator --raw --surface pi|claude",
+    "owner": "xtrm-dev/specialists",
+    "normalization": "Selected fields from the literal JSON output; this projection is not the command output.",
+    "omitted_optional_keys_are_not_emitted_as_null": true,
+    "absolute_skill_paths_replaced_with": "~/.xtrm/skills/default/..."
+  },
+  "view_projection": {
     "pi": {
       "metadata": { "name": "chain-coordinator", "version": "1.0.0", "category": "orchestration" },
       "execution": {
@@ -109,6 +117,10 @@
   },
   "help": {
     "root": {
+      "owner": "xtrm-dev/core",
+      "commit": "9b823f80d373a4cb82173ec594f525b1f20caa39",
+      "command": "xt --help",
+      "artifact": "Core xt root help; not Specialists sp help",
       "bytes": 9484,
       "lines": 150,
       "sha256_16": "93cf695dae2e8e9c",
@@ -118,6 +130,8 @@
       ]
     },
     "render_task": {
+      "owner": "xtrm-dev/specialists",
+      "command": "sp render-task --help",
       "bytes": 862,
       "lines": 19,
       "sha256_16": "9232bfda417f3cbe",
@@ -128,6 +142,8 @@
       ]
     },
     "view": {
+      "owner": "xtrm-dev/specialists",
+      "command": "sp view --help",
       "bytes": 804,
       "lines": 20,
       "sha256_16": "ebab10cfb3ea4f9f",
