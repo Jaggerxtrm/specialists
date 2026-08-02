@@ -54,6 +54,9 @@
   },
   "experimental": {
     "status": "experimental",
-    "promotion_gate": "GATE-IFACE (K5)"
+    "promotion_gate": "K5",
+    "gate_iface": "passed",
+    "k5_requires": "completed K3/K4 parity evidence plus the already-passed GATE-IFACE",
+    "merge_policy": "source merge may occur after K3 evidence; no release or promotion promise before K4/K5"
   }
 }

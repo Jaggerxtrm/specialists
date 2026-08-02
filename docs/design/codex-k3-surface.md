@@ -1,7 +1,7 @@
 # K3 — Native Codex role/render surface
 
 **Bead:** `unitAI-e67up.2`
-**Status:** implemented; experimental until `GATE-IFACE` (K5)
+**Status:** implemented; experimental until K5 promotion (GATE-IFACE has already passed)
 **Characterization baseline:** [`docs/design/codex-k1-characterization.md`](codex-k1-characterization.md) (K1, `unitAI-e67up.1`)
 **Separation fixture:** [`tests/fixtures/codex-k3/provider-surface-separation.json`](../../tests/fixtures/codex-k3/provider-surface-separation.json)
 
@@ -21,7 +21,7 @@ the structured launch outcome.
 | Skill prefix | `sp render-skill-prefix <name> --surface codex` | Emits the `$<name>` block, byte-identical to `render-task`'s `skill_prefix` metadata. |
 | Model validation | `loadSpecialistForSurface()` in `src/cli/render-task.ts` | Pi/Claude keep the historical `loader.get()` gate exactly (hard-fail on null/empty `execution.model`). Codex resolves `execution.surface_models.codex` first, else `execution.model`; a config with neither fails with the canonical `SpecialistMissingModelError` shape under error code `specialist_not_found`. |
 | View | `sp view <name> [--raw] --surface codex` | Unchanged code path: `resolveSurfaceModel()` already prefers `execution.surface_models[name]` for any surface name and passes the model through verbatim as data. |
-| Help | `render-task`/`render-bead`/`render-skill-prefix`/`view` help blocks | Codex documented and marked experimental; K1-pinned help lines preserved byte-for-byte. |
+| Help | `render-task`/`render-bead`/`render-skill-prefix`/`view` help blocks | Codex documented and marked experimental until K5 promotion; K1-pinned help lines preserved byte-for-byte. |
 
 ## 2. Parity and byte ceilings
 
@@ -67,4 +67,7 @@ retrieval) belongs to K4/K5.
 Direct `codex exec` as a Specialist backend, Core worktrees, xtmux lifecycle
 domains, native Codex subagents, MCP/plugin bundles, a second job/result
 authority, and production promotion. The surface stays backward-compatible and
-experimental until `GATE-IFACE` passes (K5).
+remains experimental until K5 promotion. GATE-IFACE has already passed; K5
+requires completed K3/K4 parity evidence plus that passed gate. Source merge
+may occur after K3 evidence; no release or promotion promise exists before
+K4/K5.

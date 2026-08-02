@@ -49,7 +49,14 @@ describe('K3 separation fixture provenance', () => {
       schema_version: 'xtrm.command-outcome.v1',
       prose_parsing: false,
     });
-    expect(fixture.experimental).toMatchObject({ status: 'experimental', promotion_gate: 'GATE-IFACE (K5)' });
+    // Gate ordering (review round 2): GATE-IFACE has already passed and is not
+    // the K3 merge gate; the surface stays experimental until K5 promotion, and
+    // K5 requires completed K3/K4 parity evidence plus that passed gate.
+    expect(fixture.experimental).toMatchObject({
+      status: 'experimental',
+      promotion_gate: 'K5',
+      gate_iface: 'passed',
+    });
   });
 });
 

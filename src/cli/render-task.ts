@@ -151,7 +151,7 @@ export function renderAndEmit(
  *
  * Pi/Claude keep the historical runtime gate exactly as K1 pinned it:
  * `loader.get()` hard-fails on a null/empty `execution.model`. The native
- * codex surface (K3, unitAI-e67up.2; experimental until GATE-IFACE) resolves
+ * codex surface (K3, unitAI-e67up.2; experimental until K5 promotion) resolves
  * its own effective model — `execution.surface_models.codex` wins, otherwise
  * `execution.model` — so a codex-only configuration is renderable while a
  * configuration with no usable model fails with the canonical missing-model
