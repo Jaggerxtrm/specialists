@@ -11,12 +11,12 @@
 // The parsing/rendering/emission below is shared verbatim with the roleless
 // sibling `sp render-bead` (src/cli/render-bead.ts) — there is exactly one
 // task-side assembly path, and both verbs emit the same envelope shape.
-import { SpecialistLoader } from '../specialist/loader.js';
+import { SpecialistLoader, SpecialistMissingModelError } from '../specialist/loader.js';
 import { BeadsClient } from '../specialist/beads.js';
 import { renderTaskPrompt } from '../specialist/task-prompt.js';
 import type { Specialist } from '../specialist/schema.js';
 
-export type Surface = 'pi' | 'claude';
+export type Surface = 'pi' | 'claude' | 'codex';
 
 /** Flags shared by every render verb. `render-task` adds a positional specialist name. */
 export interface RenderArgs {
@@ -57,8 +57,8 @@ export function parseRenderArgs(argv: string[]): RenderArgs {
     else if (!arg.startsWith('-')) positional.push(arg);
   }
 
-  if (surface !== 'pi' && surface !== 'claude') {
-    fail('usage', `--surface must be 'pi' or 'claude' (got '${surface}')`);
+  if (surface !== 'pi' && surface !== 'claude' && surface !== 'codex') {
+    fail('usage', `--surface must be 'pi', 'claude' or 'codex' (got '${surface}')`);
   }
   if (!Number.isFinite(contextDepth) || contextDepth < 0) {
     fail('usage', `--context-depth must be a non-negative number (got '${contextDepth}')`);
@@ -146,14 +146,38 @@ export function renderAndEmit(
   }, null, 2)}\n`);
 }
 
-const USAGE = 'Usage: specialists render-task <name> --bead <id> [--cwd <path>] [--context-depth <n>] [--surface pi|claude]';
+/**
+ * Load a specialist for the requested surface.
+ *
+ * Pi/Claude keep the historical runtime gate exactly as K1 pinned it:
+ * `loader.get()` hard-fails on a null/empty `execution.model`. The native
+ * codex surface (K3, unitAI-e67up.2; experimental until GATE-IFACE) resolves
+ * its own effective model — `execution.surface_models.codex` wins, otherwise
+ * `execution.model` — so a codex-only configuration is renderable while a
+ * configuration with no usable model fails with the canonical missing-model
+ * error shape. The surface is selected ONLY by this flag: a model spelling
+ * such as `openai-codex/...` is provider data and never aliases the codex
+ * surface.
+ */
+export async function loadSpecialistForSurface(name: string, surface: Surface): Promise<Specialist> {
+  const loader = new SpecialistLoader();
+  if (surface !== 'codex') return loader.get(name);
+  const spec = await loader.getEffective(name);
+  if (!spec) throw new Error(`Specialist not found: ${name}`);
+  const execution = spec.specialist.execution;
+  const model = execution.surface_models?.codex ?? execution.model;
+  if (!model) throw new SpecialistMissingModelError(name);
+  return spec;
+}
+
+const USAGE = 'Usage: specialists render-task <name> --bead <id> [--cwd <path>] [--context-depth <n>] [--surface pi|claude|codex]';
 
 export async function run(): Promise<void> {
   const args = parseRenderArgs(process.argv.slice(3));
   const name = args.positional[0] ?? '';
   if (!name || !args.beadId) fail('usage', USAGE);
 
-  const spec = await new SpecialistLoader().get(name).catch((error: unknown) => {
+  const spec = await loadSpecialistForSurface(name, args.surface).catch((error: unknown) => {
     fail('specialist_not_found', `specialist '${name}': ${(error as Error)?.message ?? String(error)}`);
   });
 

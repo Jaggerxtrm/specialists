@@ -21,6 +21,6 @@ describe('render-skill-prefix CLI', () => {
 
     const { run } = await import('../../../src/cli/render-skill-prefix.js');
     await expect(run()).rejects.toThrow('exit:1');
-    expect(output.join('')).toContain('Usage: specialists render-skill-prefix <name> [--surface pi|claude]');
+    expect(output.join('')).toContain('Usage: specialists render-skill-prefix <name> [--surface pi|claude|codex]');
   });
 });

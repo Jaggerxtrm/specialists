@@ -1,0 +1,59 @@
+{
+  "schema": "specialists.k3.separation.v1",
+  "mode": "negative_proof_provider_model_vs_native_codex_surface",
+  "bead": {
+    "id": "unitAI-e67up.2",
+    "parent": "unitAI-e67up"
+  },
+  "captured_at": "2026-08-02",
+  "source": {
+    "owner": "xtrm-dev/specialists",
+    "branch": "xt/codex-specialists-k3",
+    "configuration_mode": "in-process probes with mocked loader and beads clients",
+    "probe_tests": [
+      "tests/unit/cli/render-codex-surface.test.ts",
+      "tests/unit/fixtures/codex-k3-separation.test.ts"
+    ]
+  },
+  "provider_spelling": "openai-codex/gpt-5.4",
+  "probes": {
+    "default_surface_is_pi": {
+      "command": "sp render-task codex-probe --bead unitAI-e67up.2",
+      "ok": true,
+      "surface": "pi"
+    },
+    "explicit_pi_stays_pi": {
+      "command": "sp render-task codex-probe --bead unitAI-e67up.2 --surface pi",
+      "ok": true,
+      "surface": "pi"
+    },
+    "codex_requires_explicit_flag": {
+      "command": "sp render-task codex-probe --bead unitAI-e67up.2 --surface codex",
+      "ok": true,
+      "surface": "codex",
+      "skill_prefix": "$using-specialists\n\n"
+    },
+    "provider_spelling_rejected_as_surface": {
+      "command": "sp render-task codex-probe --bead unitAI-e67up.2 --surface openai-codex/gpt-5.4",
+      "exit": 1,
+      "ok": false,
+      "error_code": "usage",
+      "error_message": "--surface must be 'pi', 'claude' or 'codex' (got 'openai-codex/gpt-5.4')"
+    },
+    "task_body_byte_parity": {
+      "rule": "initial_prompt after the position-0 skill prefix is byte-identical across pi and codex; bounded component measurements are identical; byte ceilings apply unchanged",
+      "owner": "tests/unit/cli/render-codex-surface.test.ts"
+    }
+  },
+  "k2_boundary": {
+    "owner": "xtrm-dev/core",
+    "core_commit": "1ed512a49efaf75f3e84c128f9d82958ece09d3a",
+    "schema_version": "xtrm.command-outcome.v1",
+    "consumed_by_specialists_at_k3": "none: Specialists supplies render-task, render-bead, render-skill-prefix and view --raw to the Core launcher; Core owns launch, worktree, tmux transport and the structured outcome; Specialists does not parse Core prose",
+    "prose_parsing": false
+  },
+  "experimental": {
+    "status": "experimental",
+    "promotion_gate": "GATE-IFACE (K5)"
+  }
+}

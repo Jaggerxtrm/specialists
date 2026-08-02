@@ -139,6 +139,7 @@ describe('buildSkillPrefix', () => {
     const s = spec('$prompt');
     expect(buildSkillPrefix(s, 'pi')).toBe('');
     expect(buildSkillPrefix(s, 'claude')).toBe('');
+    expect(buildSkillPrefix(s, 'codex')).toBe('');
   });
 
   it('emits Pi commands space-separated and byte-identically', () => {
@@ -162,6 +163,25 @@ describe('buildSkillPrefix', () => {
     expect(buildSkillPrefix(s, 'pi')).toBe('/skill:skill-creator\n\n');
   });
 
+  // K3 (unitAI-e67up.2): native Codex uses `$skill-name` references — a distinct
+  // syntax that is neither Pi's /skill:<name> nor Claude's /<name>.
+  it('emits one Codex $skill-name reference followed by one blank line', () => {
+    const s = spec('$prompt', { skills: { paths: ['a/b/using-specialists/SKILL.md'] } });
+    expect(buildSkillPrefix(s, 'codex')).toBe('$using-specialists\n\n');
+  });
+
+  it('emits Codex references space-separated on one line, then one blank line', () => {
+    const s = spec('$prompt', { skills: { paths: ['a/b/using-specialists/SKILL.md', 'a/b/pi-quick.md'] } });
+    expect(buildSkillPrefix(s, 'codex')).toBe('$using-specialists $pi-quick\n\n');
+  });
+
+  it('preserves skills.paths declaration order and dedups on the codex surface', () => {
+    const s = spec('$prompt', {
+      skills: { paths: ['x/foo/SKILL.md', 'y/bar.md', 'z/foo/SKILL.md'] },
+    });
+    expect(buildSkillPrefix(s, 'codex')).toBe('$foo $bar\n\n');
+  });
+
   it('rejects newline, control, and leading-punctuation skill names without reflecting them', () => {
     const paths = [
       'a/evil\nname/SKILL.md',
@@ -172,7 +192,7 @@ describe('buildSkillPrefix', () => {
       'a/_bad.md',
     ];
     for (const path of paths) {
-      for (const surface of ['claude', 'pi'] as const) {
+      for (const surface of ['claude', 'pi', 'codex'] as const) {
         expect(() => buildSkillPrefix(spec('$prompt', { skills: { paths: [path] } }), surface))
           .toThrow('Invalid skill name derived from skills.paths');
       }
@@ -204,6 +224,36 @@ describe('renderTaskPrompt — surface-specific skill prefix baked into initial_
     expect(out.initial_prompt).toContain(BEAD.title);
   });
 
+  it('bakes the exact Codex $skill-name prefix at position 0, then the prior task body', () => {
+    const s = spec('$prompt', { skills: { paths: ['x/using-specialists/SKILL.md', 'x/pi-quick.md'] } });
+    const out = renderTaskPrompt({ ...base, specialist: s, surface: 'codex' });
+    expect(out.skillPrefix).toBe('$using-specialists $pi-quick\n\n');
+    expect(out.initial_prompt.startsWith('$using-specialists $pi-quick\n\n')).toBe(true);
+    expect(out.initial_prompt).toContain(BEAD.title);
+  });
+
+  it('codex shares the task body byte-for-byte with pi; only the position-0 prefix differs', () => {
+    // K1 parity contract extended to the third surface: bead context, boundary
+    // rules, MANDATORY_RULES and byte ceilings apply identically; the only
+    // approved difference is the surface-specific turn-1 skill syntax.
+    const s = spec('$prompt', { skills: { paths: ['x/using-specialists/SKILL.md'] } });
+    const pi = renderTaskPrompt({ ...base, specialist: s, surface: 'pi' });
+    const codex = renderTaskPrompt({ ...base, specialist: s, surface: 'codex' });
+    expect(codex.initial_prompt.slice(codex.skillPrefix.length))
+      .toBe(pi.initial_prompt.slice(pi.skillPrefix.length));
+    expect(codex.prompt_hash).not.toBe(pi.prompt_hash); // prefix participates in the hash
+  });
+
+  it('without declared skills all three surfaces are byte-identical', () => {
+    const s = spec('$prompt');
+    const pi = renderTaskPrompt({ ...base, specialist: s, surface: 'pi' });
+    const claude = renderTaskPrompt({ ...base, specialist: s, surface: 'claude' });
+    const codex = renderTaskPrompt({ ...base, specialist: s, surface: 'codex' });
+    expect(codex.initial_prompt).toBe(pi.initial_prompt);
+    expect(codex.initial_prompt).toBe(claude.initial_prompt);
+    expect(codex.prompt_hash).toBe(pi.prompt_hash);
+  });
+
   it('emits no prefix (position-0 fallback surface) when no declared skills', () => {
     const out = renderTaskPrompt({ ...base, specialist: spec('$prompt'), surface: 'pi' });
     expect(out.skillPrefix).toBe('');
@@ -223,7 +273,7 @@ describe('renderTaskPrompt — surface-specific skill prefix baked into initial_
 
   it('parity: buildSkillPrefix output === prefix baked into initial_prompt', () => {
     const s = spec('$prompt', { skills: { paths: ['x/foo/SKILL.md', 'y/bar.md'] } });
-    for (const surface of ['pi', 'claude'] as const) {
+    for (const surface of ['pi', 'claude', 'codex'] as const) {
       const out = renderTaskPrompt({ ...base, specialist: s, surface });
       const helper = buildSkillPrefix(s, surface);
       expect(out.skillPrefix).toBe(helper);

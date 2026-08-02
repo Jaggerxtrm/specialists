@@ -10,7 +10,7 @@ import type { Specialist } from './schema.js';
 const MANDATORY_RULES_TOKEN_LIMIT = 2000;
 const SKILL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-export type Surface = 'pi' | 'claude';
+export type Surface = 'pi' | 'claude' | 'codex';
 
 /**
  * Derive a skill's invocation name from its declared path.
@@ -29,7 +29,9 @@ export function deriveSkillName(path: string): string {
  * Empty string when the specialist declares no skills — caller must NOT prepend anything.
  * Dedup by derived name, preserving skills.paths JSON declaration order.
  * Pi uses `/skill:<name>` commands separated by spaces; Claude uses `/<name>`
- * commands separated by newlines. Names come from the loader-validated skill paths.
+ * commands separated by newlines; native Codex (K3, unitAI-e67up.2) uses
+ * `$<name>` references separated by spaces. Names come from the loader-validated
+ * skill paths. The codex surface is experimental until GATE-IFACE (K5).
  */
 export function buildSkillPrefix(specialist: Specialist['specialist'], surface: Surface): string {
   const paths = specialist.skills?.paths ?? [];
@@ -47,6 +49,7 @@ export function buildSkillPrefix(specialist: Specialist['specialist'], surface: 
   }
   if (names.length === 0) return '';
   if (surface === 'claude') return `${names.map((n) => `/${n}`).join('\n')}\n\n`;
+  if (surface === 'codex') return `${names.map((n) => `$${n}`).join(' ')}\n\n`;
   return `${names.map((n) => `/skill:${n}`).join(' ')}\n\n`;
 }
 
@@ -92,7 +95,8 @@ export interface TaskPromptInput {
   appendExecutionContext?: (task: string, cwd: string, variables: Record<string, string>) => string;
   /**
    * Turn-1 skill-load surface (unitAI-qeguh). Defaults to 'pi' — sp run is pi-only;
-   * xt claude --role passes 'claude' via `sp render-task --surface claude`.
+   * xt claude --role passes 'claude' via `sp render-task --surface claude`, and the
+   * native Codex launcher (K3, experimental until GATE-IFACE) passes 'codex'.
    */
   surface?: Surface;
 }

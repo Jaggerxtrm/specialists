@@ -92,7 +92,7 @@ describe('sp render-bead', () => {
   });
 
   it('emits an empty skill_prefix so position 0 is never a slash command', async () => {
-    for (const surface of ['pi', 'claude']) {
+    for (const surface of ['pi', 'claude', 'codex']) {
       stdout = [];
       const out = await render(BEAD.id, '--surface', surface);
       expect(out.skill_prefix).toBe('');
@@ -127,7 +127,9 @@ describe('sp render-bead', () => {
   });
 
   it('rejects an unsupported --surface through the shared parser', async () => {
-    argv(BEAD.id, '--surface', 'codex');
+    // 'codex' is supported since K3 (unitAI-e67up.2); provider spellings and
+    // unknown surfaces stay usage errors.
+    argv(BEAD.id, '--surface', 'codex-exec');
     const { run } = await import('../../../src/cli/render-bead.js');
     expect(() => run()).toThrow('exit:1');
     expect(JSON.parse(stdout.join('')).error.code).toBe('usage');
