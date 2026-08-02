@@ -1,32 +1,81 @@
-# Roadmap — specialists-runtime cleanup + substrate-alignment
+# Specialists Roadmap Index
 
-Workaround/adaptation we designed to bridge today's runtime to substrate without waiting for substrate to land. **This is the actionable work for the next ~3–4 days of specialists-auto execution.**
+This directory contains requirements, semantic design and historical reconciliation material for the pre-Substrate Specialists runtime programme.
+
+Do not infer current implementation state from document dates or old handoff Beads. Begin with the mutable release snapshot and the current XTRM execution packet.
 
 ## What to read when
 
 | When | File | What it gives you |
 |---|---|---|
-| **You're picking up the work** | bd bead `unitAI-wxi9e` (P0) | Handoff: pointer index + 3 meta-phases (validation → planning → auto-execution) + per-phase smoke checkpoints + do-not list |
-| **You want the plan** | [`specialists-roadmap.md`](specialists-roadmap.md) | Canonical roadmap — 12 opportunities, 8 phases (0–7), decisions D1–D30, parallelization map, friction catalog, reads-forward to substrate |
-| **You're about to install chain templates** | [`chain-templates/README.md`](chain-templates/README.md) + the 13 `.formula.json` | Phase 0.a target — copy to `~/.beads/formulas/`; substrate-aligned shape; post-pour wire-edges spec |
-| **You're cross-checking design history** | [`history/substrate-reconciliation.md`](history/substrate-reconciliation.md) | The substrate-author's decision-delta against the roadmap. Already applied to the canonical roadmap. Read for context only. |
-| **You're cross-checking handoff context** | [`history/handoff-from-substrate-design.md`](history/handoff-from-substrate-design.md) | The handoff from the substrate-design author to the specialists-runtime work. Names the open questions deferred to the next-agent-with-code-visibility. Already addressed in the roadmap. |
+| **You need current release and landed-state truth** | [`current-release-snapshot.md`](current-release-snapshot.md) | Current Core/Specialists/xtmux release ledger and delivered/partial/unimplemented classification |
+| **You need the current implementation sequence** | [XTRM current execution plan](https://github.com/xtrm-dev/xtrm/blob/main/docs/shared/xtrm-current-execution-plan.md) | Critical path, workstream IDs, dependencies, gates and Jira disposition |
+| **You need the machine-readable dependency graph** | [XTRM execution-plan JSON](https://github.com/xtrm-dev/xtrm/blob/main/docs/shared/xtrm-current-execution-plan.json) | Referential workstream/gate graph for local planning |
+| **You are compiling the plan into local Beads** | [XTRM local coordinator bootstrap](https://github.com/xtrm-dev/xtrm/blob/main/docs/shared/xtrm-local-coordinator-bootstrap.md) | Repository-owned Beads structure, first audit wave and dispatch restrictions |
+| **You need accepted requirements and success criteria** | [`enhanced-prd.md`](enhanced-prd.md) | Canonical implementation PRD and work-package acceptance |
+| **You need bridge-runtime architecture and accepted Opportunities** | [`specialists-roadmap.md`](specialists-roadmap.md) | Semantic decisions, substrate reads-forward and historical implementation rationale |
+| **You need canonical chain semantics** | [XTRM chain-template canon](https://github.com/xtrm-dev/xtrm/blob/main/docs/substrate/chain_templates.md) | Canonical pipeline, template semantics, composition and evolution rules |
+| **You need local formula/source mechanics** | [`chain-templates/README.md`](chain-templates/README.md) and the formula files | Beads formula mechanics, source catalog and bridge limitations; not the semantic canon |
+| **You need prompt/eval design detail** | [`chains-prompt-evals.md`](chains-prompt-evals.md) | Chain context, prompt experimentation and evaluation design |
+| **You need historical substrate reconciliation** | [`history/substrate-reconciliation.md`](history/substrate-reconciliation.md) | Design-delta history already absorbed into the canonical roadmap |
+| **You need the original substrate handoff** | [`history/handoff-from-substrate-design.md`](history/handoff-from-substrate-design.md) | Historical handoff context only |
 
-## What this is NOT
+## Authority by claim type
 
-- Not substrate design — that's [`../substrate/`](../substrate/). The roadmap reads forward to substrate sections.
-- Not implementation — the roadmap is the plan; implementation happens via the handoff bead.
-- Not retrofit of existing artifacts (specialists, beads, etc.) — the roadmap is forward-only where retrofit cost would dominate.
+```text
+release and landed-state claims
+  released packages/current code → current-release-snapshot.md
 
-## Key inputs (live system state, not files in this directory)
+current sequencing and promotion gates
+  xtrm current execution plan + JSON graph
 
-- `config/specialists/*.specialist.json` — 19 package-tier specialists (the dispatch catalog)
-- `config/mandatory-rules/` — 20 rule files (template_sets injection)
-- `config/skills/` — operator-facing skills (canonical sources)
-- `src/specialist/` + `src/cli/` — runtime + CLI surface to modify
-- `~/.beads/formulas/` — chain template install target (Phase 0.a populates from `chain-templates/`)
-- `bd memories <keyword>` / `bd recall <key>` — persistent project memory (576+ entries)
+runtime architecture and semantic decisions
+  specialists-roadmap.md + execution-protocol decisions + chain-template canon
 
-## Active bead
+accepted programme scope and success criteria
+  enhanced-prd.md
 
-`unitAI-wxi9e` (P0) — HANDOFF: specialists-runtime cleanup + substrate-alignment — fresh-session validation → planning → specialists-auto execution.
+implementation tasks and completion
+  repository-local Beads + Git evidence
+```
+
+A current-state update may classify an accepted capability as delivered, partial or residual. It may not silently redesign roadmap decisions or remove PRD scope.
+
+## Chain-template status
+
+Fifteen `.formula.json` source assets exist. They are not yet a released orchestration product.
+
+Before production promotion, the programme requires:
+
+- supported package/install delivery;
+- one pure compiler to `specialists.resolved-chain.v1`;
+- persisted draft and approved topology;
+- manual `sp chain review|insert|approve|show`;
+- minimum `specialists.execution.v1` enforcement;
+- evidence-driven reducer and exact scheduler intents;
+- released-trio end-to-end fixture.
+
+Do not install or dispatch production chains merely because the source formulas exist.
+
+## What this directory is not
+
+- It is not the Substrate design; that lives under [`../substrate/`](../substrate/).
+- It is not the mutable release ledger; use `current-release-snapshot.md`.
+- It is not the current dispatch queue; use repository-local Beads compiled from the XTRM execution plan.
+- It is not authority to start every PRD work package concurrently.
+
+## Current implementation centre
+
+```text
+approved root contract
+→ persisted deterministic execution shape
+→ exact idempotent command intent
+→ validated participant result
+→ evidence-driven next transition
+```
+
+The first executable packet is limited to deterministic command outcomes, the minimum activation protocol, the chain compiler/durable spine and the reducer/promotion fixture. Evaluation, memory, adapters and product surfaces remain gated later programmes.
+
+## Merge-order requirement
+
+This index depends on the four canonical files introduced by `xtrm-dev/xtrm#31`. Merge that PR before this Specialists reconciliation so the direct `main` links resolve in fresh checkouts.
