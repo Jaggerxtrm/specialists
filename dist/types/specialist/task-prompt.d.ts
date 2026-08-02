@@ -2,7 +2,7 @@ import { buildMandatoryRulesInjection } from './mandatory-rules.js';
 import { type BeadRecord } from './beads.js';
 import { type PayloadComponentMeasurement } from './payload-measure.js';
 import type { Specialist } from './schema.js';
-export type Surface = 'pi' | 'claude';
+export type Surface = 'pi' | 'claude' | 'codex';
 /**
  * Derive a skill's invocation name from its declared path.
  *   `.../<name>/SKILL.md` → `<name>` (folder-based skill)
@@ -15,7 +15,9 @@ export declare function deriveSkillName(path: string): string;
  * Empty string when the specialist declares no skills — caller must NOT prepend anything.
  * Dedup by derived name, preserving skills.paths JSON declaration order.
  * Pi uses `/skill:<name>` commands separated by spaces; Claude uses `/<name>`
- * commands separated by newlines. Names come from the loader-validated skill paths.
+ * commands separated by newlines; native Codex (K3, unitAI-e67up.2) uses
+ * `$<name>` references separated by spaces. Names come from the loader-validated
+ * skill paths. The codex surface is experimental until GATE-IFACE (K5).
  */
 export declare function buildSkillPrefix(specialist: Specialist['specialist'], surface: Surface): string;
 export declare function buildBeadBoundaryInstruction(cwd: string, worktreeBoundary?: string): string;
@@ -47,7 +49,8 @@ export interface TaskPromptInput {
     appendExecutionContext?: (task: string, cwd: string, variables: Record<string, string>) => string;
     /**
      * Turn-1 skill-load surface (unitAI-qeguh). Defaults to 'pi' — sp run is pi-only;
-     * xt claude --role passes 'claude' via `sp render-task --surface claude`.
+     * xt claude --role passes 'claude' via `sp render-task --surface claude`, and the
+     * native Codex launcher (K3, experimental until GATE-IFACE) passes 'codex'.
      */
     surface?: Surface;
 }

@@ -1,7 +1,7 @@
 import type { SpecialistRunner, RunOptions } from './runner.js';
 import { type RuntimeOriginV1, type SpecialistSpawnOriginV1 } from './runtime-origin.js';
 import type { BeadsClient } from './beads.js';
-import { type TimelineEvent, type TimelineEventControlSignal } from './timeline-events.js';
+import { type TimelineEvent, type TimelineEventControlSignal, type TimelineEventRunComplete } from './timeline-events.js';
 import type { SessionRunMetrics, SessionTokenUsage } from '../pi/session.js';
 type ActivePiSession = {
     close(): Promise<void>;
@@ -125,6 +125,7 @@ export interface SupervisorOptions {
     /** Stall detection thresholds — merged with STALL_DETECTION_DEFAULTS */
     stallDetection?: StallDetectionConfig;
 }
+export declare function emitParentNotification(statusSnapshot: SupervisorStatus, activeSiblingAssignee?: string): void;
 export declare function formatHandoffBlock(result: {
     output: string;
     promptHash?: string;
@@ -153,6 +154,25 @@ export declare const AUTO_COMMIT_NOISE_PREFIXES: readonly [".xtrm/", ".wolf/", "
 export declare function gitnexusHasEmbeddings(cwd: string): boolean;
 export declare function isPidAlive(pid: number | undefined): boolean;
 export declare function isJobDead(status: Pick<SupervisorStatus, 'status' | 'pid' | 'tmux_session'>): boolean;
+export declare const DEAD_JOB_ERROR = "Process crashed or was killed";
+/**
+ * Terminal transition for a job whose process (or tmux session) is gone: the error
+ * status plus the run_complete event that carries it. Returns null when the job is
+ * still live or has no usable start time.
+ *
+ * Callers persist both and must then call `emitParentNotification` — a dead job left
+ * in a non-terminal status never notifies its parent, which waits forever
+ * (xtrm-wiy5n.4.13).
+ */
+export declare function buildDeadJobRecovery(status: SupervisorStatus, now?: number): {
+    status: SupervisorStatus;
+    event: TimelineEventRunComplete;
+} | null;
+/**
+ * Best-effort death-cause artifact so a job dir that only ever held steer.pipe still
+ * names why the job vanished.
+ */
+export declare function writeDeadJobArtifact(jobsDir: string, status: SupervisorStatus): void;
 export declare class Supervisor {
     private opts;
     private readonly sqliteClient;

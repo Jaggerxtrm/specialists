@@ -3,8 +3,11 @@
 // Consumed by xtrm-tools (`xt --role`) so it can reuse the exact prefix that
 // `sp render-task` bakes into initial_prompt, keeping the sp/xt parity contract
 // (unitAI-6639v.1) intact without reimplementing derivation/dedup logic.
-import { SpecialistLoader } from '../specialist/loader.js';
-import { buildSkillPrefix, type Surface } from '../specialist/task-prompt.js';
+//
+// Surfaces: pi (`/skill:<name>`), claude (`/<name>`), and the native codex
+// surface (K3, unitAI-e67up.2; `$<name>`, experimental until GATE-IFACE).
+import { loadSpecialistForSurface, type Surface } from './render-task.js';
+import { buildSkillPrefix } from '../specialist/task-prompt.js';
 
 type ErrorCode = 'usage' | 'specialist_not_found';
 
@@ -23,12 +26,12 @@ export async function run(): Promise<void> {
     else if (!arg.startsWith('-')) positional.push(arg);
   }
   const name = positional[0] ?? '';
-  if (!name) fail('usage', 'Usage: specialists render-skill-prefix <name> [--surface pi|claude]');
-  if (surface !== 'pi' && surface !== 'claude') {
-    fail('usage', `--surface must be 'pi' or 'claude' (got '${surface}')`);
+  if (!name) fail('usage', 'Usage: specialists render-skill-prefix <name> [--surface pi|claude|codex]');
+  if (surface !== 'pi' && surface !== 'claude' && surface !== 'codex') {
+    fail('usage', `--surface must be 'pi', 'claude' or 'codex' (got '${surface}')`);
   }
 
-  const spec = await new SpecialistLoader().get(name).catch((error: unknown) => {
+  const spec = await loadSpecialistForSurface(name, surface).catch((error: unknown) => {
     fail('specialist_not_found', `specialist '${name}': ${(error as Error)?.message ?? String(error)}`);
   });
 

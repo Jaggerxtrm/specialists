@@ -16,7 +16,7 @@
 import { SpecialistSchema, type Specialist } from '../specialist/schema.js';
 import { fail, parseRenderArgs, renderAndEmit } from './render-task.js';
 
-const USAGE = 'Usage: specialists render-bead <id> [--cwd <path>] [--context-depth <n>] [--surface pi|claude]';
+const USAGE = 'Usage: specialists render-bead <id> [--cwd <path>] [--context-depth <n>] [--surface pi|claude|codex]';
 
 /**
  * The minimal specialist a roleless render stands in for: the bead context and

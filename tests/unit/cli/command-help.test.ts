@@ -170,4 +170,24 @@ describe('command-specific --help', () => {
     expect(out).not.toContain('epic resolve');
     expect(out).not.toContain('specialists report list');
   });
+
+  // K1 (unitAI-e67up.1) pinned these render-task help lines as required fixture
+  // evidence; K3 (unitAI-e67up.2) must keep them byte-present while documenting
+  // the experimental native codex surface below them.
+  it('render-task --help keeps the K1 pinned lines and documents the codex surface', () => {
+    const out = captureIndexHelp(['render-task', '--help']);
+    expect(out).toContain('Usage: specialists render-task <name> --bead <id> [options]');
+    expect(out).toContain('never emits prompt.system (the launcher owns that via `view --raw`).');
+    expect(out).toContain('  --surface pi|claude    Interactive surface being launched (default: pi)');
+    expect(out).toContain('--surface codex');
+    expect(out).toContain('$skill-name');
+    expect(out.toLowerCase()).toContain('experimental');
+  });
+
+  it('render-skill-prefix --help documents all three surface syntaxes', () => {
+    const out = captureIndexHelp(['render-skill-prefix', '--help']);
+    expect(out).toContain('Usage: specialists render-skill-prefix <name> [--surface pi|claude|codex]');
+    expect(out).toContain('/skill:<name>');
+    expect(out).toContain('$<name>');
+  });
 });
