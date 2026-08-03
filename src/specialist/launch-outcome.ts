@@ -204,9 +204,12 @@ export function validateLaunchOutcome(value: unknown): LaunchOutcome {
 
   if (value.runtime !== undefined) {
     if (!isObject(value.runtime)) fail('invalid_outcome', 'runtime must be an object');
+    // Core marks version required whenever runtime exists: an explicit null
+    // is legal, an absent key is not.
+    if (!('version' in value.runtime)) fail('invalid_outcome', 'runtime.version is required when runtime is present');
     outcome.runtime = {
       name: enumValue(value.runtime.name, 'runtime.name', RUNTIMES),
-      version: value.runtime.version === null || value.runtime.version === undefined
+      version: value.runtime.version === null
         ? null
         : boundedString(value.runtime.version, 'runtime.version', 128),
     };
@@ -215,9 +218,14 @@ export function validateLaunchOutcome(value: unknown): LaunchOutcome {
   if (value.identity !== undefined) {
     if (!isObject(value.identity)) fail('invalid_outcome', 'identity must be an object');
     const identity = value.identity;
+    // Core marks all four identity keys required whenever identity exists:
+    // explicit nulls are legal, absent keys are not.
+    for (const key of ['thread_id', 'session_name', 'tmux_session_id', 'pane_id']) {
+      if (!(key in identity)) fail('invalid_outcome', `identity.${key} is required when identity is present`);
+    }
     const nullableId = (field: 'thread_id' | 'session_name'): string | null => {
       const v = identity[field];
-      if (v === null || v === undefined) return null;
+      if (v === null) return null;
       return boundedString(v, `identity.${field}`, 256);
     };
     outcome.identity = {

@@ -217,4 +217,42 @@ describe('launch-outcome consumer (xtrm.command-outcome.v1)', () => {
       }
     });
   });
+
+  // Review round 3 on PR #247: the Core schema marks runtime.version and all
+  // four identity keys as required whenever the enclosing block exists. An
+  // explicit null is legal; an absent key is not.
+  describe('Core schema property-presence enforcement', () => {
+    it('rejects a runtime block missing the version key', () => {
+      const base = JSON.parse(codexFixture());
+      delete base.runtime.version;
+      expect(errorOf(() => validateLaunchOutcome(base)).code).toBe('invalid_outcome');
+    });
+
+    it('keeps an explicit runtime.version null legal', () => {
+      const base = JSON.parse(codexFixture());
+      base.runtime.version = null;
+      expect(validateLaunchOutcome(base).runtime?.version).toBeNull();
+    });
+
+    it.each(['thread_id', 'session_name', 'tmux_session_id', 'pane_id'])(
+      'rejects an identity block missing %s',
+      (key) => {
+        const base = JSON.parse(codexFixture());
+        delete base.identity[key];
+        expect(errorOf(() => validateLaunchOutcome(base)).code).toBe('invalid_outcome');
+      },
+    );
+
+    it('keeps an all-null identity legal', () => {
+      const base = JSON.parse(codexFixture());
+      base.identity = { thread_id: null, session_name: null, tmux_session_id: null, pane_id: null };
+      const outcome = validateLaunchOutcome(base);
+      expect(outcome.identity).toEqual({
+        thread_id: null,
+        session_name: null,
+        tmux_session_id: null,
+        pane_id: null,
+      });
+    });
+  });
 });
