@@ -17857,6 +17857,11 @@ class LaunchOutcomeError extends Error {
   }
 }
 var CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
+var REASON_CODE_RE = /^[a-z][a-z0-9_]*$/;
+var TOKEN_RE = /^[a-z][a-z0-9-]*$/;
+var DOTTED_TOKEN_RE = /^[a-z][a-z0-9.-]*$/;
+var TMUX_SESSION_ID_RE = /^\$[0-9]+$/;
+var PANE_ID_RE = /^%[0-9]+$/;
 var STATUSES = ["ok", "degraded", "noop", "rejected", "failed"];
 var RUNTIMES = ["pi", "claude", "codex"];
 var READINESS_STATUSES = ["ready", "unverified", "not_ready"];
@@ -17880,6 +17885,17 @@ function boundedString(value, field, maxLength, allowEmpty = false) {
     fail("invalid_outcome", `${field} contains control characters`);
   return value;
 }
+function patternString(value, field, maxLength, pattern) {
+  const s = boundedString(value, field, maxLength);
+  if (!pattern.test(s))
+    fail("invalid_outcome", `${field} does not match the contracted pattern`);
+  return s;
+}
+function nullablePatternString(value, field, maxLength, pattern) {
+  if (value === null || value === undefined)
+    return null;
+  return patternString(value, field, maxLength, pattern);
+}
 function enumValue(value, field, allowed) {
   if (typeof value !== "string" || !allowed.includes(value)) {
     fail("invalid_outcome", `${field} must be one of: ${allowed.join(", ")}`);
@@ -17891,7 +17907,7 @@ function mutationRecord(value, field) {
     fail("invalid_outcome", `${field} must be an object`);
   if (typeof value.completed !== "boolean")
     fail("invalid_outcome", `${field}.completed must be a boolean`);
-  return { completed: value.completed, kind: boundedString(value.kind, `${field}.kind`, 96) };
+  return { completed: value.completed, kind: patternString(value.kind, `${field}.kind`, 96, DOTTED_TOKEN_RE) };
 }
 function parseLaunchOutcome(raw) {
   try {
@@ -17913,7 +17929,7 @@ function validateLaunchOutcome(value) {
   const outcome = {
     schema_version: schemaVersion,
     status: enumValue(value.status, "status", STATUSES),
-    reason_code: boundedString(value.reason_code, "reason_code", 64),
+    reason_code: patternString(value.reason_code, "reason_code", 64, REASON_CODE_RE),
     summary: boundedString(value.summary, "summary", 240),
     runtime: null,
     identity: null,
@@ -17930,7 +17946,7 @@ function validateLaunchOutcome(value) {
       fail("invalid_outcome", "runtime must be an object");
     outcome.runtime = {
       name: enumValue(value.runtime.name, "runtime.name", RUNTIMES),
-      version: value.runtime.version === null || value.runtime.version === undefined ? null : boundedString(value.runtime.version, "runtime.version", 128, true)
+      version: value.runtime.version === null || value.runtime.version === undefined ? null : boundedString(value.runtime.version, "runtime.version", 128)
     };
   }
   if (value.identity !== undefined) {
@@ -17946,8 +17962,8 @@ function validateLaunchOutcome(value) {
     outcome.identity = {
       thread_id: nullableId("thread_id"),
       session_name: nullableId("session_name"),
-      tmux_session_id: nullableId("tmux_session_id"),
-      pane_id: nullableId("pane_id")
+      tmux_session_id: nullablePatternString(identity2.tmux_session_id, "identity.tmux_session_id", 32, TMUX_SESSION_ID_RE),
+      pane_id: nullablePatternString(identity2.pane_id, "identity.pane_id", 32, PANE_ID_RE)
     };
   }
   if (value.worktree !== undefined) {
@@ -17976,9 +17992,9 @@ function validateLaunchOutcome(value) {
       fail("invalid_outcome", "safety_profile.hook_trust must be 'preserved'");
     }
     outcome.safety_profile = {
-      name: boundedString(value.safety_profile.name, "safety_profile.name", 64),
-      sandbox: boundedString(value.safety_profile.sandbox, "safety_profile.sandbox", 64),
-      approvals: boundedString(value.safety_profile.approvals, "safety_profile.approvals", 64),
+      name: patternString(value.safety_profile.name, "safety_profile.name", 64, TOKEN_RE),
+      sandbox: patternString(value.safety_profile.sandbox, "safety_profile.sandbox", 64, TOKEN_RE),
+      approvals: patternString(value.safety_profile.approvals, "safety_profile.approvals", 64, TOKEN_RE),
       hook_trust: "preserved"
     };
   }
@@ -17993,7 +18009,7 @@ function validateLaunchOutcome(value) {
     if (!isObject(effect))
       fail("invalid_outcome", `side_effects[${index}] must be an object`);
     const entry = {
-      kind: boundedString(effect.kind, `side_effects[${index}].kind`, 96),
+      kind: patternString(effect.kind, `side_effects[${index}].kind`, 96, DOTTED_TOKEN_RE),
       status: enumValue(effect.status, `side_effects[${index}].status`, SIDE_EFFECT_STATUSES)
     };
     if (effect.id !== undefined)

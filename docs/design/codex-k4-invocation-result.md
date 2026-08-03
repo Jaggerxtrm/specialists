@@ -47,7 +47,7 @@ Pi provider/model spelling and never appears in the outcome contract.
 
 | Concern | Seam | K4 change |
 | --- | --- | --- |
-| Outcome consumer | `src/specialist/launch-outcome.ts` (new) | Validates `xtrm.command-outcome.v1`: required fields, enums, ceilings and control-char rejection; refuses unknown `schema_version`; tolerates unknown fields (forward compatibility) and never echoes them. |
+| Outcome consumer | `src/specialist/launch-outcome.ts` (new) | Validates `xtrm.command-outcome.v1`: required fields, enums, contracted patterns (`reason_code`, tokens, dottedTokens, tmux pane/session ids), ceilings and control-char rejection; refuses unknown `schema_version`; tolerates unknown fields (forward compatibility) and never echoes them. |
 | Launcher-handoff verb | `sp launch-outcome <file>` (new, read-only) | Emits `{ ok: true, …projection }` or `{ ok: false, error: { code, message } }`; stable codes `usage`, `file_not_read`, `invalid_json`, `unsupported_schema`, `invalid_outcome`. Creates no job, worktree, session, bead, note or status row. |
 | Library surface | `src/lib.ts` | Additive exports of the consumer API and types. |
 | Fixtures | `tests/fixtures/codex-k4/` | Codex-ready, pi-unverified (parity pair) and wrong-schema outcomes, captured against the Core schema at the gate commit. |

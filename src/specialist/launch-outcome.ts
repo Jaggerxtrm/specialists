@@ -104,6 +104,15 @@ export interface LaunchOutcome {
 export type LaunchOutcomeProjection = LaunchOutcome;
 
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
+// Pattern ownership stays with Core (packages/contracts/schemas/
+// xtrm.command-outcome.v1.json at the gate commit). The consumer mirrors
+// them so a hostile or corrupted outcome cannot smuggle arbitrary shapes
+// through the contracted fields.
+const REASON_CODE_RE = /^[a-z][a-z0-9_]*$/;
+const TOKEN_RE = /^[a-z][a-z0-9-]*$/;
+const DOTTED_TOKEN_RE = /^[a-z][a-z0-9.-]*$/;
+const TMUX_SESSION_ID_RE = /^\$[0-9]+$/;
+const PANE_ID_RE = /^%[0-9]+$/;
 const STATUSES = ['ok', 'degraded', 'noop', 'rejected', 'failed'] as const;
 const RUNTIMES = ['pi', 'claude', 'codex'] as const;
 const READINESS_STATUSES = ['ready', 'unverified', 'not_ready'] as const;
@@ -127,6 +136,17 @@ function boundedString(value: unknown, field: string, maxLength: number, allowEm
   return value;
 }
 
+function patternString(value: unknown, field: string, maxLength: number, pattern: RegExp): string {
+  const s = boundedString(value, field, maxLength);
+  if (!pattern.test(s)) fail('invalid_outcome', `${field} does not match the contracted pattern`);
+  return s;
+}
+
+function nullablePatternString(value: unknown, field: string, maxLength: number, pattern: RegExp): string | null {
+  if (value === null || value === undefined) return null;
+  return patternString(value, field, maxLength, pattern);
+}
+
 function enumValue<T extends string>(value: unknown, field: string, allowed: readonly T[]): T {
   if (typeof value !== 'string' || !(allowed as readonly string[]).includes(value)) {
     fail('invalid_outcome', `${field} must be one of: ${allowed.join(', ')}`);
@@ -137,7 +157,7 @@ function enumValue<T extends string>(value: unknown, field: string, allowed: rea
 function mutationRecord(value: unknown, field: string): LaunchOutcomeMutationRecord {
   if (!isObject(value)) fail('invalid_outcome', `${field} must be an object`);
   if (typeof value.completed !== 'boolean') fail('invalid_outcome', `${field}.completed must be a boolean`);
-  return { completed: value.completed, kind: boundedString(value.kind, `${field}.kind`, 96) };
+  return { completed: value.completed, kind: patternString(value.kind, `${field}.kind`, 96, DOTTED_TOKEN_RE) };
 }
 
 export function parseLaunchOutcome(raw: string): unknown {
@@ -169,7 +189,7 @@ export function validateLaunchOutcome(value: unknown): LaunchOutcome {
   const outcome: LaunchOutcome = {
     schema_version: schemaVersion,
     status: enumValue(value.status, 'status', STATUSES),
-    reason_code: boundedString(value.reason_code, 'reason_code', 64),
+    reason_code: patternString(value.reason_code, 'reason_code', 64, REASON_CODE_RE),
     summary: boundedString(value.summary, 'summary', 240),
     runtime: null,
     identity: null,
@@ -188,14 +208,14 @@ export function validateLaunchOutcome(value: unknown): LaunchOutcome {
       name: enumValue(value.runtime.name, 'runtime.name', RUNTIMES),
       version: value.runtime.version === null || value.runtime.version === undefined
         ? null
-        : boundedString(value.runtime.version, 'runtime.version', 128, true),
+        : boundedString(value.runtime.version, 'runtime.version', 128),
     };
   }
 
   if (value.identity !== undefined) {
     if (!isObject(value.identity)) fail('invalid_outcome', 'identity must be an object');
     const identity = value.identity;
-    const nullableId = (field: string): string | null => {
+    const nullableId = (field: 'thread_id' | 'session_name'): string | null => {
       const v = identity[field];
       if (v === null || v === undefined) return null;
       return boundedString(v, `identity.${field}`, 256);
@@ -203,8 +223,8 @@ export function validateLaunchOutcome(value: unknown): LaunchOutcome {
     outcome.identity = {
       thread_id: nullableId('thread_id'),
       session_name: nullableId('session_name'),
-      tmux_session_id: nullableId('tmux_session_id'),
-      pane_id: nullableId('pane_id'),
+      tmux_session_id: nullablePatternString(identity.tmux_session_id, 'identity.tmux_session_id', 32, TMUX_SESSION_ID_RE),
+      pane_id: nullablePatternString(identity.pane_id, 'identity.pane_id', 32, PANE_ID_RE),
     };
   }
 
@@ -232,9 +252,9 @@ export function validateLaunchOutcome(value: unknown): LaunchOutcome {
       fail('invalid_outcome', "safety_profile.hook_trust must be 'preserved'");
     }
     outcome.safety_profile = {
-      name: boundedString(value.safety_profile.name, 'safety_profile.name', 64),
-      sandbox: boundedString(value.safety_profile.sandbox, 'safety_profile.sandbox', 64),
-      approvals: boundedString(value.safety_profile.approvals, 'safety_profile.approvals', 64),
+      name: patternString(value.safety_profile.name, 'safety_profile.name', 64, TOKEN_RE),
+      sandbox: patternString(value.safety_profile.sandbox, 'safety_profile.sandbox', 64, TOKEN_RE),
+      approvals: patternString(value.safety_profile.approvals, 'safety_profile.approvals', 64, TOKEN_RE),
       hook_trust: 'preserved',
     };
   }
@@ -248,7 +268,7 @@ export function validateLaunchOutcome(value: unknown): LaunchOutcome {
   for (const [index, effect] of value.side_effects.entries()) {
     if (!isObject(effect)) fail('invalid_outcome', `side_effects[${index}] must be an object`);
     const entry: LaunchOutcomeSideEffect = {
-      kind: boundedString(effect.kind, `side_effects[${index}].kind`, 96),
+      kind: patternString(effect.kind, `side_effects[${index}].kind`, 96, DOTTED_TOKEN_RE),
       status: enumValue(effect.status, `side_effects[${index}].status`, SIDE_EFFECT_STATUSES),
     };
     if (effect.id !== undefined) entry.id = effect.id === null ? null : boundedString(effect.id, `side_effects[${index}].id`, 256);

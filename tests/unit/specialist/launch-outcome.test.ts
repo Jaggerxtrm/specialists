@@ -148,4 +148,73 @@ describe('launch-outcome consumer (xtrm.command-outcome.v1)', () => {
     base.status = 'exploded';
     expect(errorOf(() => validateLaunchOutcome(base)).code).toBe('invalid_outcome');
   });
+
+  // Review blocker on PR #247: the consumer must enforce the Core schema
+  // patterns (packages/contracts/schemas/xtrm.command-outcome.v1.json at
+  // gate commit 1ed512a4), not only types and ceilings.
+  describe('Core schema pattern enforcement', () => {
+    it('rejects a reason_code outside ^[a-z][a-z0-9_]*$', () => {
+      for (const bad of ['Session-Created', 'session-created', '9created', '_created']) {
+        const base = JSON.parse(codexFixture());
+        base.reason_code = bad;
+        expect(errorOf(() => validateLaunchOutcome(base)).code).toBe('invalid_outcome');
+      }
+    });
+
+    it('rejects an empty runtime.version (minLength 1 when non-null)', () => {
+      const base = JSON.parse(codexFixture());
+      base.runtime.version = '';
+      expect(errorOf(() => validateLaunchOutcome(base)).code).toBe('invalid_outcome');
+      // null stays legal: released harnesses may not expose a version.
+      base.runtime.version = null;
+      expect(validateLaunchOutcome(base).runtime?.version).toBeNull();
+    });
+
+    it('rejects tmux_session_id outside ^\\$[0-9]+$ (max 32)', () => {
+      for (const bad of ['session-7', '$7a', '$', '$' + '1'.repeat(32)]) {
+        const base = JSON.parse(codexFixture());
+        base.identity.tmux_session_id = bad;
+        expect(errorOf(() => validateLaunchOutcome(base)).code).toBe('invalid_outcome');
+      }
+      // null stays legal (launches outside tmux).
+      const base = JSON.parse(codexFixture());
+      base.identity.tmux_session_id = null;
+      expect(validateLaunchOutcome(base).identity?.tmux_session_id).toBeNull();
+    });
+
+    it('rejects pane_id outside ^%[0-9]+$ (max 32)', () => {
+      for (const bad of ['%42a', 'pane42', '%', '%' + '1'.repeat(32)]) {
+        const base = JSON.parse(codexFixture());
+        base.identity.pane_id = bad;
+        expect(errorOf(() => validateLaunchOutcome(base)).code).toBe('invalid_outcome');
+      }
+      const base = JSON.parse(codexFixture());
+      base.identity.pane_id = null;
+      expect(validateLaunchOutcome(base).identity?.pane_id).toBeNull();
+    });
+
+    it('rejects safety_profile name/sandbox/approvals outside the token pattern', () => {
+      for (const field of ['name', 'sandbox', 'approvals'] as const) {
+        for (const bad of ['YOLO', 'yolo_off', 'yolo.off']) {
+          const base = JSON.parse(codexFixture());
+          base.safety_profile[field] = bad;
+          expect(errorOf(() => validateLaunchOutcome(base)).code).toBe('invalid_outcome');
+        }
+      }
+    });
+
+    it('rejects mutation and side-effect kinds outside the dottedToken pattern', () => {
+      const cases: Array<(v: Record<string, unknown>) => void> = [
+        (v) => { v.authoritative_mutation.kind = 'Tmux_Session'; },
+        (v) => { v.authoritative_mutation.kind = 'tmux session'; },
+        (v) => { v.persistence.kind = 'Worktree_Metadata'; },
+        (v) => { (v.side_effects as Array<Record<string, unknown>>)[0].kind = 'Worktree.Created'; },
+      ];
+      for (const mutate of cases) {
+        const base = JSON.parse(codexFixture());
+        mutate(base);
+        expect(errorOf(() => validateLaunchOutcome(base)).code).toBe('invalid_outcome');
+      }
+    });
+  });
 });
