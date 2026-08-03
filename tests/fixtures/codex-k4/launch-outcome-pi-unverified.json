@@ -1,0 +1,49 @@
+{
+  "schema_version": "xtrm.command-outcome.v1",
+  "status": "ok",
+  "reason_code": "session_created",
+  "summary": "Pi role session created in a detached tmux pane.",
+  "runtime": {
+    "name": "pi",
+    "version": "0.50.0"
+  },
+  "identity": {
+    "thread_id": null,
+    "session_name": "xt-pi-probe",
+    "tmux_session_id": "$8",
+    "pane_id": "%43"
+  },
+  "worktree": {
+    "path": "/tmp/xtrm/worktrees/pi-probe",
+    "branch": "pi/pi-probe",
+    "owner": "core"
+  },
+  "readiness": {
+    "status": "unverified",
+    "source": "tmux-pane"
+  },
+  "safety_profile": {
+    "name": "default",
+    "sandbox": "off",
+    "approvals": "default",
+    "hook_trust": "preserved"
+  },
+  "persistence": {
+    "completed": true,
+    "kind": "worktree.session-metadata"
+  },
+  "authoritative_mutation": {
+    "completed": true,
+    "kind": "tmux.session"
+  },
+  "side_effects": [],
+  "next_actions": [
+    {
+      "kind": "attach",
+      "required": false,
+      "argv": ["xt", "attach", "pi/pi-probe"],
+      "display": "xt attach pi/pi-probe",
+      "why": "Attach to the live Pi pane."
+    }
+  ]
+}

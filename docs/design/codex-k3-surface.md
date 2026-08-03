@@ -60,7 +60,8 @@ the outcome: it supplies `render-task`, `render-bead`, `render-skill-prefix`,
 and `view --raw` to the Core launcher, and Core owns launch, worktree, tmux
 transport, readiness, and the structured outcome. Specialists does not parse
 Core prose. Outcome consumption (readiness/failure surfacing, result
-retrieval) belongs to K4/K5.
+retrieval) belongs to K4/K5. K4 delivered the consumer seam:
+[`docs/design/codex-k4-invocation-result.md`](codex-k4-invocation-result.md).
 
 ## 5. Out of scope at K3
 

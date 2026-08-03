@@ -203,6 +203,40 @@ async function run() {
     return handler();
   }
 
+  if (sub === 'launch-outcome') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists launch-outcome <file>',
+        '',
+        'Read-only consumer of the Core K2 launcher outcome contract',
+        `xtrm.command-outcome.v1 (read-only: creates no job, worktree, session,`,
+        'bead, note, or status row). Validates a detached launcher outcome JSON',
+        'and emits the whitelist projection: readiness, runtime, thread/session',
+        'and worktree identity for result retrieval, and exact follow-up actions',
+        'as argv data. Supports pi, claude and codex launcher outcomes; the codex',
+        'surface stays experimental until K5 promotion. Core owns the contract',
+        'field names and reason codes; unknown fields are tolerated but never',
+        'echoed. This verb never parses prose and is not a second result',
+        "authority — specialist job results stay on `sp result`.",
+        '',
+        'Output: { ok: true, schema_version, status, reason_code, summary,',
+        '          runtime, identity, worktree, readiness, safety_profile,',
+        '          persistence, authoritative_mutation, side_effects, next_actions }',
+        'Errors: JSON { ok: false, error: { code, message } } with exit 1.',
+        '  Stable codes: usage, file_not_read, invalid_json, unsupported_schema,',
+        '  invalid_outcome.',
+        '',
+        'Examples:',
+        '  specialists launch-outcome /tmp/xt-codex-outcome.json',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/launch-outcome.js');
+    return handler();
+  }
+
   if (sub === 'view') {
     if (wantsHelp()) {
       console.log([

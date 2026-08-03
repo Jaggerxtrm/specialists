@@ -1,0 +1,70 @@
+{
+  "schema_version": "xtrm.command-outcome.v1",
+  "status": "ok",
+  "reason_code": "session_created",
+  "summary": "Codex role session created in a detached tmux pane.",
+  "runtime": {
+    "name": "codex",
+    "version": "0.30.0"
+  },
+  "identity": {
+    "thread_id": "thr-codex-0001",
+    "session_name": "xt-codex-probe",
+    "tmux_session_id": "$7",
+    "pane_id": "%42"
+  },
+  "worktree": {
+    "path": "/tmp/xtrm/worktrees/codex-probe",
+    "branch": "codex/codex-probe",
+    "owner": "core"
+  },
+  "readiness": {
+    "status": "ready",
+    "source": "agent.ready"
+  },
+  "safety_profile": {
+    "name": "yolo",
+    "sandbox": "off",
+    "approvals": "none",
+    "hook_trust": "preserved"
+  },
+  "persistence": {
+    "completed": true,
+    "kind": "worktree.session-metadata"
+  },
+  "authoritative_mutation": {
+    "completed": true,
+    "kind": "tmux.session"
+  },
+  "side_effects": [
+    {
+      "kind": "worktree.created",
+      "status": "ok",
+      "id": "/tmp/xtrm/worktrees/codex-probe"
+    }
+  ],
+  "next_actions": [
+    {
+      "kind": "attach",
+      "required": false,
+      "argv": ["xt", "attach", "codex/codex-probe"],
+      "display": "xt attach codex/codex-probe",
+      "why": "Attach to the live Codex pane."
+    },
+    {
+      "kind": "resume",
+      "required": false,
+      "argv": ["xt", "attach", "codex/codex-probe"],
+      "display": "xt attach codex/codex-probe",
+      "why": "Resume through the persisted branch after the tmux session ends."
+    },
+    {
+      "kind": "end",
+      "required": false,
+      "argv": ["xt", "end"],
+      "display": "xt end",
+      "cwd": "/tmp/xtrm/worktrees/codex-probe",
+      "why": "Close the owned worktree session."
+    }
+  ]
+}
