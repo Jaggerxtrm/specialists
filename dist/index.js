@@ -29953,18 +29953,24 @@ function validateLaunchOutcome(value) {
   if (value.runtime !== undefined) {
     if (!isObject2(value.runtime))
       fail3("invalid_outcome", "runtime must be an object");
+    if (!("version" in value.runtime))
+      fail3("invalid_outcome", "runtime.version is required when runtime is present");
     outcome.runtime = {
       name: enumValue(value.runtime.name, "runtime.name", RUNTIMES),
-      version: value.runtime.version === null || value.runtime.version === undefined ? null : boundedString(value.runtime.version, "runtime.version", 128)
+      version: value.runtime.version === null ? null : boundedString(value.runtime.version, "runtime.version", 128)
     };
   }
   if (value.identity !== undefined) {
     if (!isObject2(value.identity))
       fail3("invalid_outcome", "identity must be an object");
     const identity2 = value.identity;
+    for (const key of ["thread_id", "session_name", "tmux_session_id", "pane_id"]) {
+      if (!(key in identity2))
+        fail3("invalid_outcome", `identity.${key} is required when identity is present`);
+    }
     const nullableId = (field) => {
       const v = identity2[field];
-      if (v === null || v === undefined)
+      if (v === null)
         return null;
       return boundedString(v, `identity.${field}`, 256);
     };
