@@ -19,3 +19,25 @@ export type {
 
 export { SpecialistLoader } from './specialist/loader.js';
 export type { Specialist } from './specialist/schema.js';
+
+// K4 (unitAI-e67up.4): Core K2 launcher-outcome consumer contract surface.
+export {
+  LAUNCH_OUTCOME_SCHEMA_VERSION,
+  LaunchOutcomeError,
+  parseLaunchOutcome,
+  validateLaunchOutcome,
+  projectLaunchOutcome,
+} from './specialist/launch-outcome.js';
+export type {
+  LaunchOutcome,
+  LaunchOutcomeProjection,
+  LaunchOutcomeErrorCode,
+  LaunchOutcomeAction,
+  LaunchOutcomeIdentity,
+  LaunchOutcomeReadiness,
+  LaunchOutcomeWorktree,
+  LaunchOutcomeRuntime,
+  LaunchOutcomeSafetyProfile,
+  LaunchOutcomeSideEffect,
+  LaunchOutcomeMutationRecord,
+} from './specialist/launch-outcome.js';

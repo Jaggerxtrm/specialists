@@ -194,4 +194,20 @@ describe('command-specific --help', () => {
     expect(out).toContain('/skill:<name>');
     expect(out).toContain('$<name>');
   });
+
+  // K4 (unitAI-e67up.4): the launch-outcome verb is the Specialists-side
+  // consumer of the Core K2 contract. It must document the contract version,
+  // its read-only nature, and the stable error codes.
+  it('launch-outcome --help documents the read-only Core K2 contract consumer', () => {
+    const out = captureIndexHelp(['launch-outcome', '--help']);
+    expect(out).toContain('Usage: specialists launch-outcome <file>');
+    expect(out).toContain('xtrm.command-outcome.v1');
+    expect(out).toContain('read-only');
+    expect(out).toContain('invalid_json');
+    expect(out).toContain('unsupported_schema');
+    expect(out).toContain('invalid_outcome');
+    expect(out.toLowerCase()).toContain('codex');
+    expect(out).not.toContain('until GATE-IFACE');
+    expect(out).toContain('K5 promotion');
+  });
 });

@@ -1,0 +1,12 @@
+{
+  "schema_version": "xtrm.command-outcome.v2",
+  "status": "ok",
+  "reason_code": "session_created",
+  "summary": "Same shape, newer schema version; consumers must refuse it.",
+  "authoritative_mutation": {
+    "completed": true,
+    "kind": "tmux.session"
+  },
+  "side_effects": [],
+  "next_actions": []
+}

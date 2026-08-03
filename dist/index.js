@@ -29876,10 +29876,274 @@ var init_render_skill_prefix = __esm(() => {
   init_task_prompt();
 });
 
+// src/specialist/launch-outcome.ts
+function fail3(code, message) {
+  throw new LaunchOutcomeError(code, message);
+}
+function isObject2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function boundedString(value, field, maxLength, allowEmpty = false) {
+  if (typeof value !== "string")
+    fail3("invalid_outcome", `${field} must be a string`);
+  if (value.length === 0 && !allowEmpty)
+    fail3("invalid_outcome", `${field} must be non-empty`);
+  if (value.length > maxLength)
+    fail3("invalid_outcome", `${field} exceeds ${maxLength} characters`);
+  if (CONTROL_CHARS.test(value))
+    fail3("invalid_outcome", `${field} contains control characters`);
+  return value;
+}
+function enumValue(value, field, allowed) {
+  if (typeof value !== "string" || !allowed.includes(value)) {
+    fail3("invalid_outcome", `${field} must be one of: ${allowed.join(", ")}`);
+  }
+  return value;
+}
+function mutationRecord(value, field) {
+  if (!isObject2(value))
+    fail3("invalid_outcome", `${field} must be an object`);
+  if (typeof value.completed !== "boolean")
+    fail3("invalid_outcome", `${field}.completed must be a boolean`);
+  return { completed: value.completed, kind: boundedString(value.kind, `${field}.kind`, 96) };
+}
+function parseLaunchOutcome(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch (error2) {
+    fail3("invalid_json", `outcome is not valid JSON: ${error2?.message ?? String(error2)}`);
+  }
+}
+function validateLaunchOutcome(value) {
+  if (!isObject2(value))
+    fail3("invalid_outcome", "outcome must be a JSON object");
+  const schemaVersion = value.schema_version;
+  if (typeof schemaVersion !== "string" || schemaVersion.length === 0) {
+    fail3("unsupported_schema", "outcome is missing schema_version");
+  }
+  if (schemaVersion !== LAUNCH_OUTCOME_SCHEMA_VERSION) {
+    fail3("unsupported_schema", `unsupported schema_version '${schemaVersion}' (this consumer accepts '${LAUNCH_OUTCOME_SCHEMA_VERSION}')`);
+  }
+  const outcome = {
+    schema_version: schemaVersion,
+    status: enumValue(value.status, "status", STATUSES),
+    reason_code: boundedString(value.reason_code, "reason_code", 64),
+    summary: boundedString(value.summary, "summary", 240),
+    runtime: null,
+    identity: null,
+    worktree: null,
+    readiness: null,
+    safety_profile: null,
+    persistence: null,
+    authoritative_mutation: mutationRecord(value.authoritative_mutation, "authoritative_mutation"),
+    side_effects: [],
+    next_actions: []
+  };
+  if (value.runtime !== undefined) {
+    if (!isObject2(value.runtime))
+      fail3("invalid_outcome", "runtime must be an object");
+    outcome.runtime = {
+      name: enumValue(value.runtime.name, "runtime.name", RUNTIMES),
+      version: value.runtime.version === null || value.runtime.version === undefined ? null : boundedString(value.runtime.version, "runtime.version", 128, true)
+    };
+  }
+  if (value.identity !== undefined) {
+    if (!isObject2(value.identity))
+      fail3("invalid_outcome", "identity must be an object");
+    const identity2 = value.identity;
+    const nullableId = (field) => {
+      const v = identity2[field];
+      if (v === null || v === undefined)
+        return null;
+      return boundedString(v, `identity.${field}`, 256);
+    };
+    outcome.identity = {
+      thread_id: nullableId("thread_id"),
+      session_name: nullableId("session_name"),
+      tmux_session_id: nullableId("tmux_session_id"),
+      pane_id: nullableId("pane_id")
+    };
+  }
+  if (value.worktree !== undefined) {
+    if (!isObject2(value.worktree))
+      fail3("invalid_outcome", "worktree must be an object");
+    if (value.worktree.owner !== "core")
+      fail3("invalid_outcome", "worktree.owner must be 'core' (Core owns launcher worktrees)");
+    outcome.worktree = {
+      path: boundedString(value.worktree.path, "worktree.path", 4096),
+      branch: boundedString(value.worktree.branch, "worktree.branch", 4096),
+      owner: "core"
+    };
+  }
+  if (value.readiness !== undefined) {
+    if (!isObject2(value.readiness))
+      fail3("invalid_outcome", "readiness must be an object");
+    outcome.readiness = {
+      status: enumValue(value.readiness.status, "readiness.status", READINESS_STATUSES),
+      source: enumValue(value.readiness.source, "readiness.source", READINESS_SOURCES)
+    };
+  }
+  if (value.safety_profile !== undefined) {
+    if (!isObject2(value.safety_profile))
+      fail3("invalid_outcome", "safety_profile must be an object");
+    if (value.safety_profile.hook_trust !== "preserved") {
+      fail3("invalid_outcome", "safety_profile.hook_trust must be 'preserved'");
+    }
+    outcome.safety_profile = {
+      name: boundedString(value.safety_profile.name, "safety_profile.name", 64),
+      sandbox: boundedString(value.safety_profile.sandbox, "safety_profile.sandbox", 64),
+      approvals: boundedString(value.safety_profile.approvals, "safety_profile.approvals", 64),
+      hook_trust: "preserved"
+    };
+  }
+  if (value.persistence !== undefined) {
+    outcome.persistence = mutationRecord(value.persistence, "persistence");
+  }
+  if (!Array.isArray(value.side_effects))
+    fail3("invalid_outcome", "side_effects must be an array");
+  if (value.side_effects.length > 32)
+    fail3("invalid_outcome", "side_effects exceeds 32 entries");
+  for (const [index, effect] of value.side_effects.entries()) {
+    if (!isObject2(effect))
+      fail3("invalid_outcome", `side_effects[${index}] must be an object`);
+    const entry = {
+      kind: boundedString(effect.kind, `side_effects[${index}].kind`, 96),
+      status: enumValue(effect.status, `side_effects[${index}].status`, SIDE_EFFECT_STATUSES)
+    };
+    if (effect.id !== undefined)
+      entry.id = effect.id === null ? null : boundedString(effect.id, `side_effects[${index}].id`, 256);
+    outcome.side_effects.push(entry);
+  }
+  if (!Array.isArray(value.next_actions))
+    fail3("invalid_outcome", "next_actions must be an array");
+  if (value.next_actions.length > 16)
+    fail3("invalid_outcome", "next_actions exceeds 16 entries");
+  for (const [index, action] of value.next_actions.entries()) {
+    if (!isObject2(action))
+      fail3("invalid_outcome", `next_actions[${index}] must be an object`);
+    if (!Array.isArray(action.argv) || action.argv.length === 0) {
+      fail3("invalid_outcome", `next_actions[${index}].argv must be a non-empty array`);
+    }
+    if (action.argv.length > 32)
+      fail3("invalid_outcome", `next_actions[${index}].argv exceeds 32 entries`);
+    if (typeof action.required !== "boolean")
+      fail3("invalid_outcome", `next_actions[${index}].required must be a boolean`);
+    const entry = {
+      kind: enumValue(action.kind, `next_actions[${index}].kind`, ACTION_KINDS),
+      required: action.required,
+      argv: action.argv.map((arg, argIndex) => boundedString(arg, `next_actions[${index}].argv[${argIndex}]`, 4096, true)),
+      display: boundedString(action.display, `next_actions[${index}].display`, 8192),
+      why: boundedString(action.why, `next_actions[${index}].why`, 240)
+    };
+    if (action.cwd !== undefined)
+      entry.cwd = boundedString(action.cwd, `next_actions[${index}].cwd`, 4096);
+    outcome.next_actions.push(entry);
+  }
+  return outcome;
+}
+function projectLaunchOutcome(outcome) {
+  return {
+    schema_version: outcome.schema_version,
+    status: outcome.status,
+    reason_code: outcome.reason_code,
+    summary: outcome.summary,
+    runtime: outcome.runtime ? { name: outcome.runtime.name, version: outcome.runtime.version } : null,
+    identity: outcome.identity ? {
+      thread_id: outcome.identity.thread_id,
+      session_name: outcome.identity.session_name,
+      tmux_session_id: outcome.identity.tmux_session_id,
+      pane_id: outcome.identity.pane_id
+    } : null,
+    worktree: outcome.worktree ? { path: outcome.worktree.path, branch: outcome.worktree.branch, owner: outcome.worktree.owner } : null,
+    readiness: outcome.readiness ? { status: outcome.readiness.status, source: outcome.readiness.source } : null,
+    safety_profile: outcome.safety_profile ? {
+      name: outcome.safety_profile.name,
+      sandbox: outcome.safety_profile.sandbox,
+      approvals: outcome.safety_profile.approvals,
+      hook_trust: outcome.safety_profile.hook_trust
+    } : null,
+    persistence: outcome.persistence ? { completed: outcome.persistence.completed, kind: outcome.persistence.kind } : null,
+    authoritative_mutation: {
+      completed: outcome.authoritative_mutation.completed,
+      kind: outcome.authoritative_mutation.kind
+    },
+    side_effects: outcome.side_effects.map((effect) => ({
+      kind: effect.kind,
+      status: effect.status,
+      ...effect.id !== undefined ? { id: effect.id } : {}
+    })),
+    next_actions: outcome.next_actions.map((action) => ({
+      kind: action.kind,
+      required: action.required,
+      argv: [...action.argv],
+      display: action.display,
+      why: action.why,
+      ...action.cwd !== undefined ? { cwd: action.cwd } : {}
+    }))
+  };
+}
+var LAUNCH_OUTCOME_SCHEMA_VERSION = "xtrm.command-outcome.v1", LaunchOutcomeError, CONTROL_CHARS, STATUSES, RUNTIMES, READINESS_STATUSES, READINESS_SOURCES, ACTION_KINDS, SIDE_EFFECT_STATUSES;
+var init_launch_outcome = __esm(() => {
+  LaunchOutcomeError = class LaunchOutcomeError extends Error {
+    code;
+    constructor(code, message) {
+      super(message);
+      this.code = code;
+      this.name = "LaunchOutcomeError";
+    }
+  };
+  CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
+  STATUSES = ["ok", "degraded", "noop", "rejected", "failed"];
+  RUNTIMES = ["pi", "claude", "codex"];
+  READINESS_STATUSES = ["ready", "unverified", "not_ready"];
+  READINESS_SOURCES = ["agent.ready", "tmux-pane", "none"];
+  ACTION_KINDS = ["attach", "resume", "repair", "end", "wait", "inspect"];
+  SIDE_EFFECT_STATUSES = ["ok", "degraded", "failed", "skipped"];
+});
+
+// src/cli/launch-outcome.ts
+var exports_launch_outcome = {};
+__export(exports_launch_outcome, {
+  run: () => run8,
+  LAUNCH_OUTCOME_SCHEMA_VERSION: () => LAUNCH_OUTCOME_SCHEMA_VERSION
+});
+import { readFileSync as readFileSync13 } from "fs";
+function fail4(code, message) {
+  process.stdout.write(`${JSON.stringify({ ok: false, error: { code, message } }, null, 2)}
+`);
+  process.exit(1);
+}
+async function run8() {
+  const args = process.argv.slice(3).filter((arg) => arg !== "--json");
+  const file = args.find((arg) => !arg.startsWith("-")) ?? "";
+  if (!file)
+    fail4("usage", USAGE3);
+  let raw;
+  try {
+    raw = readFileSync13(file, "utf-8");
+  } catch (error2) {
+    fail4("file_not_read", `cannot read outcome file '${file}': ${error2?.message ?? String(error2)}`);
+  }
+  let projection;
+  try {
+    projection = projectLaunchOutcome(validateLaunchOutcome(parseLaunchOutcome(raw)));
+  } catch (error2) {
+    if (error2 instanceof LaunchOutcomeError)
+      fail4(error2.code, error2.message);
+    throw error2;
+  }
+  process.stdout.write(`${JSON.stringify({ ok: true, ...projection }, null, 2)}
+`);
+}
+var USAGE3 = "Usage: specialists launch-outcome <file>";
+var init_launch_outcome2 = __esm(() => {
+  init_launch_outcome();
+});
+
 // src/cli/view.ts
 var exports_view = {};
 __export(exports_view, {
-  run: () => run8,
+  run: () => run9,
   resolveSurfaceModel: () => resolveSurfaceModel,
   parseArgs: () => parseArgs3
 });
@@ -30081,7 +30345,7 @@ async function printRaw(summary, loader, surface) {
   }
   console.log(JSON.stringify(withSurfaceModel(spec, surface), null, 2));
 }
-async function run8() {
+async function run9() {
   let args;
   try {
     args = parseArgs3(process.argv.slice(3));
@@ -30155,7 +30419,7 @@ var init_view = __esm(() => {
 // src/cli/models.ts
 var exports_models = {};
 __export(exports_models, {
-  run: () => run9
+  run: () => run10
 });
 import { spawnSync as spawnSync11 } from "child_process";
 function parsePiModels() {
@@ -30193,7 +30457,7 @@ function parseArgs4(argv) {
   }
   return out;
 }
-async function run9() {
+async function run10() {
   const args = parseArgs4(process.argv.slice(3));
   const loader = new SpecialistLoader;
   const specialists = await loader.list();
@@ -30261,9 +30525,9 @@ var init_models = __esm(() => {
 var exports_init = {};
 __export(exports_init, {
   runGlobal: () => runGlobal,
-  run: () => run10
+  run: () => run11
 });
-import { copyFileSync, cpSync, existsSync as existsSync15, lstatSync, mkdirSync as mkdirSync8, readdirSync as readdirSync4, readFileSync as readFileSync13, readlinkSync, renameSync as renameSync3, rmSync as rmSync3, symlinkSync, unlinkSync, writeFileSync as writeFileSync7 } from "fs";
+import { copyFileSync, cpSync, existsSync as existsSync15, lstatSync, mkdirSync as mkdirSync8, readdirSync as readdirSync4, readFileSync as readFileSync14, readlinkSync, renameSync as renameSync3, rmSync as rmSync3, symlinkSync, unlinkSync, writeFileSync as writeFileSync7 } from "fs";
 import { spawnSync as spawnSync12 } from "child_process";
 import { basename as basename5, dirname as dirname9, join as join15, relative, resolve as resolve6 } from "path";
 function ok(msg) {
@@ -30316,7 +30580,7 @@ function loadJson(path, fallback) {
   if (!existsSync15(path))
     return structuredClone(fallback);
   try {
-    return JSON.parse(readFileSync13(path, "utf-8"));
+    return JSON.parse(readFileSync14(path, "utf-8"));
   } catch {
     return structuredClone(fallback);
   }
@@ -30730,7 +30994,7 @@ function ensureProjectMcp(cwd) {
 }
 function ensureGitignore(cwd) {
   const gitignorePath = join15(cwd, ".gitignore");
-  const existing = existsSync15(gitignorePath) ? readFileSync13(gitignorePath, "utf-8") : "";
+  const existing = existsSync15(gitignorePath) ? readFileSync14(gitignorePath, "utf-8") : "";
   let added = 0;
   const lines = existing.split(`
 `);
@@ -30791,7 +31055,7 @@ function ensureAgentsMd(cwd) {
     ok("created AGENTS.md with Specialists section");
     return;
   }
-  const existing = readFileSync13(agentsPath, "utf-8");
+  const existing = readFileSync14(agentsPath, "utf-8");
   const span = extractSpecialistsBlockSpan(existing);
   if (span) {
     const next = existing.slice(0, span.start) + AGENTS_BLOCK + existing.slice(span.end);
@@ -30824,7 +31088,7 @@ function readJsonObject(path) {
   if (!existsSync15(path))
     return {};
   try {
-    return JSON.parse(readFileSync13(path, "utf-8"));
+    return JSON.parse(readFileSync14(path, "utf-8"));
   } catch {
     return {};
   }
@@ -30979,7 +31243,7 @@ ${bold5("Done!")}
   console.log(`  ${dim5("\u2022 for preset refs, set model/fallback entries to")} ${yellow5("@preset/cheap")} ${dim5("(or medium, power)")}
 `);
 }
-async function run10(opts = {}) {
+async function run11(opts = {}) {
   if (opts.global) {
     return runGlobal();
   }
@@ -31111,7 +31375,7 @@ Add custom specialists to \`.specialists/user/\` to extend defaults.
 // src/cli/memory.ts
 var exports_memory = {};
 __export(exports_memory, {
-  run: () => run11
+  run: () => run12
 });
 function printUsage2() {
   console.log([
@@ -31125,7 +31389,7 @@ function printUsage2() {
   ].join(`
 `));
 }
-async function run11(args = []) {
+async function run12(args = []) {
   const command = args[0] ?? "sync";
   const force = args.includes("--force");
   const asJson = args.includes("--json");
@@ -31155,9 +31419,9 @@ var init_memory = __esm(() => {
 // src/cli/db.ts
 var exports_db = {};
 __export(exports_db, {
-  run: () => run12
+  run: () => run13
 });
-import { existsSync as existsSync16, mkdirSync as mkdirSync9, readdirSync as readdirSync5, readFileSync as readFileSync14, writeFileSync as writeFileSync8 } from "fs";
+import { existsSync as existsSync16, mkdirSync as mkdirSync9, readdirSync as readdirSync5, readFileSync as readFileSync15, writeFileSync as writeFileSync8 } from "fs";
 import { dirname as dirname10, join as join16, resolve as resolve7 } from "path";
 function formatBytes(bytes) {
   if (bytes < 1024)
@@ -31422,7 +31686,7 @@ function parseStatsOptions(argv) {
 }
 function parseStatusFile(jobDirectoryPath, fallbackJobId) {
   const statusPath = join16(jobDirectoryPath, "status.json");
-  const statusRaw = readFileSync14(statusPath, "utf-8");
+  const statusRaw = readFileSync15(statusPath, "utf-8");
   const parsed = JSON.parse(statusRaw);
   const jobId = typeof parsed.id === "string" && parsed.id.length > 0 ? parsed.id : fallbackJobId;
   const specialist = typeof parsed.specialist === "string" && parsed.specialist.length > 0 ? parsed.specialist : "unknown";
@@ -31439,7 +31703,7 @@ function parseStatusFile(jobDirectoryPath, fallbackJobId) {
 function replayEvents(eventsPath, sqliteClient, status) {
   if (!existsSync16(eventsPath))
     return 0;
-  const rawContent = readFileSync14(eventsPath, "utf-8");
+  const rawContent = readFileSync15(eventsPath, "utf-8");
   const lines = rawContent.split(`
 `).map((line) => line.trim()).filter((line) => line.length > 0);
   let importedEvents = 0;
@@ -31848,7 +32112,7 @@ function runSetup() {
   const gitignoreResult = ensureGitignoreHasObservabilityDbEntries(location.gitRoot);
   printSetupResult(setupResult.created, gitignoreResult.changed, location);
 }
-async function run12(argv = process.argv.slice(3)) {
+async function run13(argv = process.argv.slice(3)) {
   const subcommand = argv[0];
   if (!subcommand || subcommand === "--help" || subcommand === "-h" || argv.slice(1).some((arg) => arg === "--help" || arg === "-h")) {
     printDbHelp();
@@ -31937,7 +32201,7 @@ __export(exports_integration, {
   parseIntegrationListArgs: () => parseIntegrationListArgs
 });
 import { resolve as resolve8 } from "path";
-function fail3(code, message, json) {
+function fail5(code, message, json) {
   if (json) {
     process.stdout.write(`${JSON.stringify({ ok: false, error: { code, message } }, null, 2)}
 `);
@@ -31959,20 +32223,20 @@ function parseArgs5(argv) {
   const required2 = (name) => {
     const value = values.get(name)?.trim();
     if (value?.startsWith("--"))
-      fail3("usage", `--${name} is required
-${USAGE3}`, json);
+      fail5("usage", `--${name} is required
+${USAGE4}`, json);
     if (!value)
-      fail3("usage", `--${name} is required
-${USAGE3}`, json);
+      fail5("usage", `--${name} is required
+${USAGE4}`, json);
     return value;
   };
   const commit = required2("commit");
   if (!COMMIT_PATTERN.test(commit)) {
-    fail3("usage", `--commit must be a 7-40 char hex sha (got '${commit}')`, json);
+    fail5("usage", `--commit must be a 7-40 char hex sha (got '${commit}')`, json);
   }
   const status = values.get("status")?.trim();
   if (status && status !== "merged") {
-    fail3("usage", `--status must be 'merged' (got '${status}')`, json);
+    fail5("usage", `--status must be 'merged' (got '${status}')`, json);
   }
   return {
     sourceJobId: values.get("source-job-id")?.trim() || MANUAL_JOB_ID,
@@ -31990,7 +32254,7 @@ function runRecord() {
   const args = parseArgs5(process.argv.slice(4));
   const client = createObservabilitySqliteClient(args.cwd);
   if (!client) {
-    fail3("observability_db_missing", `no observability db at ${resolveObservabilityDbLocation(args.cwd).dbPath} (run a specialist first)`, args.json);
+    fail5("observability_db_missing", `no observability db at ${resolveObservabilityDbLocation(args.cwd).dbPath} (run a specialist first)`, args.json);
   }
   const event = createBranchIntegrationEvent({
     source: { job_id: args.sourceJobId, branch: args.sourceBranch, worktree: args.sourceWorktree },
@@ -32001,7 +32265,7 @@ function runRecord() {
   try {
     client.recordBranchIntegration(event);
   } catch (error2) {
-    fail3("record_failed", error2?.message ?? String(error2), args.json);
+    fail5("record_failed", error2?.message ?? String(error2), args.json);
   } finally {
     client.close();
   }
@@ -32075,18 +32339,18 @@ async function runList() {
     client.close();
   }
 }
-var MANUAL_JOB_ID = "manual", COMMIT_PATTERN, USAGE3, DEFAULT_LIMIT = 100;
+var MANUAL_JOB_ID = "manual", COMMIT_PATTERN, USAGE4, DEFAULT_LIMIT = 100;
 var init_integration = __esm(() => {
   init_observability_sqlite();
   init_observability_db();
   COMMIT_PATTERN = /^[0-9a-f]{7,40}$/i;
-  USAGE3 = "Usage: specialists integration record --source-branch <b> --source-worktree <p> " + "--target-branch <b> --target-worktree <p> --commit <sha> " + "[--source-job-id <id>] [--target-role <role>] [--status merged] [--cwd <path>] [--json]";
+  USAGE4 = "Usage: specialists integration record --source-branch <b> --source-worktree <p> " + "--target-branch <b> --target-worktree <p> --commit <sha> " + "[--source-job-id <id>] [--target-role <role>] [--status merged] [--cwd <path>] [--json]";
 });
 
 // src/specialist/script-runner.ts
 import { spawn as spawn3 } from "child_process";
 import { createHash as createHash3, randomUUID as randomUUID3 } from "crypto";
-import { existsSync as existsSync17, readFileSync as readFileSync15 } from "fs";
+import { existsSync as existsSync17, readFileSync as readFileSync16 } from "fs";
 import { homedir as homedir4 } from "os";
 import { isAbsolute as isAbsolute2, join as join17, relative as relative2, resolve as resolve9 } from "path";
 function normalizePath(path, baseDir) {
@@ -32160,7 +32424,7 @@ function computeSkillSources(spec, baseDir) {
   const sources = [];
   for (const { path, source } of entries) {
     try {
-      const content = readFileSync15(path);
+      const content = readFileSync16(path);
       const sha256 = createHash3("sha256").update(content).digest("hex");
       sources.push({ path, sha256, source });
     } catch {
@@ -33107,7 +33371,7 @@ var init_script_runner = __esm(() => {
 // src/cli/validate.ts
 var exports_validate = {};
 __export(exports_validate, {
-  run: () => run13,
+  run: () => run14,
   parseArgs: () => parseArgs6,
   ArgParseError: () => ArgParseError3
 });
@@ -33149,7 +33413,7 @@ function formatCompatGuardError(message) {
     return "compatGuard: scripts";
   return `compatGuard: ${message}`;
 }
-async function run13() {
+async function run14() {
   let args;
   try {
     args = parseArgs6(process.argv.slice(3));
@@ -33252,9 +33516,9 @@ var init_validate = __esm(() => {
 // src/cli/edit.ts
 var exports_edit = {};
 __export(exports_edit, {
-  run: () => run14
+  run: () => run15
 });
-import { existsSync as existsSync19, mkdirSync as mkdirSync10, readFileSync as readFileSync16, writeFileSync as writeFileSync9 } from "fs";
+import { existsSync as existsSync19, mkdirSync as mkdirSync10, readFileSync as readFileSync17, writeFileSync as writeFileSync9 } from "fs";
 import { spawnSync as spawnSync13 } from "child_process";
 import { join as join18 } from "path";
 function usage() {
@@ -33289,7 +33553,7 @@ function usage() {
   ].join(`
 `);
 }
-function fail4(message) {
+function fail6(message) {
   console.error(message);
   process.exit(1);
 }
@@ -33326,7 +33590,7 @@ function parseArgs7(argv) {
     }
     if (token === "--global") {
       if (scope !== undefined) {
-        fail4(`Error: --global cannot be combined with --scope
+        fail6(`Error: --global cannot be combined with --scope
 
 ${usage()}`);
       }
@@ -33335,13 +33599,13 @@ ${usage()}`);
     }
     if (token === "--scope") {
       if (global) {
-        fail4(`Error: --scope cannot be combined with --global
+        fail6(`Error: --scope cannot be combined with --global
 
 ${usage()}`);
       }
       const rawScope = argv[++i];
       if (rawScope !== "default" && rawScope !== "user") {
-        fail4(`Error: --scope must be "default" or "user", got: "${rawScope ?? ""}"`);
+        fail6(`Error: --scope must be "default" or "user", got: "${rawScope ?? ""}"`);
       }
       scope = rawScope;
       continue;
@@ -33357,7 +33621,7 @@ ${usage()}`);
     if (token === "--name") {
       const rawName = argv[++i];
       if (!rawName || rawName.startsWith("--")) {
-        fail4(`Error: --name requires a specialist name
+        fail6(`Error: --name requires a specialist name
 
 ${usage()}`);
       }
@@ -33367,7 +33631,7 @@ ${usage()}`);
     if (token === "--preset") {
       const presetName = argv[++i];
       if (!presetName || presetName.startsWith("--")) {
-        fail4(`Error: --preset requires a preset name
+        fail6(`Error: --preset requires a preset name
 
 ${usage()}`);
       }
@@ -33378,7 +33642,7 @@ ${usage()}`);
     if (token === "--fork-from") {
       const rawForkFrom = argv[++i];
       if (!rawForkFrom || rawForkFrom.startsWith("--")) {
-        fail4(`Error: --fork-from requires a specialist name
+        fail6(`Error: --fork-from requires a specialist name
 
 ${usage()}`);
       }
@@ -33388,7 +33652,7 @@ ${usage()}`);
     if (token === "--file") {
       const rawFilePath = argv[++i];
       if (!rawFilePath || rawFilePath.startsWith("--")) {
-        fail4(`Error: --file requires a path
+        fail6(`Error: --file requires a path
 
 ${usage()}`);
       }
@@ -33399,7 +33663,7 @@ ${usage()}`);
       action = "get";
       const rawPath = argv[++i];
       if (!rawPath || rawPath.startsWith("--")) {
-        fail4(`Error: --get requires a dot-path
+        fail6(`Error: --get requires a dot-path
 
 ${usage()}`);
       }
@@ -33411,7 +33675,7 @@ ${usage()}`);
       const rawPath = argv[++i];
       const rawValue = argv[++i];
       if (!rawPath || rawPath.startsWith("--") || rawValue === undefined || rawValue.startsWith("--")) {
-        fail4(`Error: --set requires <dot.path> and <value>
+        fail6(`Error: --set requires <dot.path> and <value>
 
 ${usage()}`);
       }
@@ -33426,11 +33690,11 @@ ${usage()}`);
       path = aliasPath;
       value = argv[++i];
       if (value === undefined || value === "") {
-        fail4(`Error: --${legacyField} requires a value`);
+        fail6(`Error: --${legacyField} requires a value`);
       }
       continue;
     }
-    fail4(`Error: unknown option: ${token}
+    fail6(`Error: unknown option: ${token}
 
 ${usage()}`);
   }
@@ -33449,21 +33713,21 @@ ${usage()}`);
     action = pendingArrayOp;
   }
   if (action === "get" && value !== undefined) {
-    fail4(`Error: --get does not accept a value
+    fail6(`Error: --get does not accept a value
 
 ${usage()}`);
   }
   if (global) {
     if (all)
-      fail4("Error: --global cannot be combined with --all");
+      fail6("Error: --global cannot be combined with --all");
     if (preset)
-      fail4("Error: --global cannot be combined with --preset");
+      fail6("Error: --global cannot be combined with --preset");
     if (forkFrom)
-      fail4("Error: --global cannot be combined with --fork-from");
+      fail6("Error: --global cannot be combined with --fork-from");
     if (filePath)
-      fail4("Error: --global cannot be combined with --file");
+      fail6("Error: --global cannot be combined with --file");
     if (pendingArrayOp)
-      fail4("Error: --global does not support --append/--remove");
+      fail6("Error: --global does not support --append/--remove");
     if (!path) {
       return { all: false, dryRun, action: "set", global };
     }
@@ -33471,14 +33735,14 @@ ${usage()}`);
       return { all: false, dryRun, action, path, value, global };
     }
     if (value === undefined || value === "") {
-      fail4(`Error: missing value
+      fail6(`Error: missing value
 
 ${usage()}`);
     }
     return { all: false, dryRun, action, path, value, global };
   }
   if (!all && !name) {
-    fail4(`Error: missing specialist name. Use <name> or --all
+    fail6(`Error: missing specialist name. Use <name> or --all
 
 ${usage()}`);
   }
@@ -33486,20 +33750,20 @@ ${usage()}`);
     return { name, all, scope, dryRun, action, path, value, filePath, preset, forkFrom, global };
   }
   if (!path) {
-    fail4(`Error: missing dot-path
+    fail6(`Error: missing dot-path
 
 ${usage()}`);
   }
   if (action !== "get" && !filePath && (value === undefined || value === "")) {
-    fail4(`Error: missing value
+    fail6(`Error: missing value
 
 ${usage()}`);
   }
   if (action === "get" && (pendingArrayOp || filePath)) {
-    fail4("Error: --get cannot be combined with --append/--remove/--file");
+    fail6("Error: --get cannot be combined with --append/--remove/--file");
   }
   if (filePath && !existsSync19(filePath)) {
-    fail4(`Error: file not found: ${filePath}`);
+    fail6(`Error: file not found: ${filePath}`);
   }
   return { name, all, scope, dryRun, action, path, value, filePath, preset, forkFrom, global };
 }
@@ -33522,18 +33786,18 @@ function resolvePath2(path) {
   const normalizedPath = path.startsWith("specialist.") ? path : `specialist.${path}`;
   const segments = normalizedPath.split(".").map((part) => part.trim()).filter(Boolean);
   if (segments.length === 0) {
-    fail4(`Error: invalid path: ${path}`);
+    fail6(`Error: invalid path: ${path}`);
   }
   let schema = SpecialistSchema;
   for (const segment of segments) {
     const unwrapped = unwrapSchema(schema);
     if (!(unwrapped instanceof ZodObject)) {
-      fail4(`Error: invalid path "${path}" ("${segment}" is not nested object field)`);
+      fail6(`Error: invalid path "${path}" ("${segment}" is not nested object field)`);
     }
     const shape = unwrapped.shape;
     if (!(segment in shape)) {
       const available = Object.keys(shape).sort().join(", ");
-      fail4(`Error: invalid path "${path}". Unknown segment "${segment}". Available: ${available}`);
+      fail6(`Error: invalid path "${path}". Unknown segment "${segment}". Available: ${available}`);
     }
     schema = shape[segment];
   }
@@ -33548,7 +33812,7 @@ function parseJsonValue(rawValue) {
     return JSON.parse(rawValue);
   } catch (error2) {
     const message = error2 instanceof Error ? error2.message : String(error2);
-    fail4(`Error: value must be valid JSON: ${message}`);
+    fail6(`Error: value must be valid JSON: ${message}`);
   }
 }
 function parseBoolean(rawValue) {
@@ -33557,13 +33821,13 @@ function parseBoolean(rawValue) {
     return true;
   if (lowered === "false")
     return false;
-  fail4("Error: value must be a boolean (true/false)");
+  fail6("Error: value must be a boolean (true/false)");
 }
 function parseArray(rawValue, elementSchema) {
   if (rawValue.trim().startsWith("[")) {
     const parsed = parseJsonValue(rawValue);
     if (!Array.isArray(parsed)) {
-      fail4("Error: expected JSON array for array field");
+      fail6("Error: expected JSON array for array field");
     }
     return parsed.map((item) => coerceValue(elementSchema, typeof item === "string" ? item : JSON.stringify(item)));
   }
@@ -33575,14 +33839,14 @@ function coerceUnion(schema, rawValue) {
       return coerceValue(option, rawValue);
     } catch {}
   }
-  fail4(`Error: value "${rawValue}" does not match any supported type for this field`);
+  fail6(`Error: value "${rawValue}" does not match any supported type for this field`);
 }
 function coerceValue(schema, rawValue) {
   const unwrapped = unwrapSchema(schema);
   if (unwrapped instanceof ZodNumber) {
     const parsed = Number(rawValue);
     if (!Number.isFinite(parsed)) {
-      fail4(`Error: value must be a number, got: ${rawValue}`);
+      fail6(`Error: value must be a number, got: ${rawValue}`);
     }
     return parsed;
   }
@@ -33592,7 +33856,7 @@ function coerceValue(schema, rawValue) {
   if (unwrapped instanceof ZodEnum) {
     const values = unwrapped.options;
     if (!values.includes(rawValue)) {
-      fail4(`Error: invalid enum value "${rawValue}". Allowed: ${values.join(", ")}`);
+      fail6(`Error: invalid enum value "${rawValue}". Allowed: ${values.join(", ")}`);
     }
     return rawValue;
   }
@@ -33605,7 +33869,7 @@ function coerceValue(schema, rawValue) {
   if (unwrapped instanceof ZodRecord || unwrapped instanceof ZodObject) {
     const parsed = parseJsonValue(rawValue);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      fail4("Error: value must be a JSON object");
+      fail6("Error: value must be a JSON object");
     }
     return parsed;
   }
@@ -33617,7 +33881,7 @@ function coerceValue(schema, rawValue) {
 function normalizeArrayValues(schema, rawValue) {
   const unwrapped = unwrapSchema(schema);
   if (!(unwrapped instanceof ZodArray)) {
-    fail4("Error: --append/--remove can only be used with array fields");
+    fail6("Error: --append/--remove can only be used with array fields");
   }
   return parseArray(rawValue, unwrapped.element);
 }
@@ -33636,9 +33900,9 @@ function getRawValue(args, resolvedPath) {
     return args.value;
   }
   if (!MULTILINE_FILE_PATHS.has(resolvedPath.normalizedPath)) {
-    fail4(`Error: --file is only supported for: ${Array.from(MULTILINE_FILE_PATHS).join(", ")}`);
+    fail6(`Error: --file is only supported for: ${Array.from(MULTILINE_FILE_PATHS).join(", ")}`);
   }
-  return readFileSync16(args.filePath, "utf-8");
+  return readFileSync17(args.filePath, "utf-8");
 }
 function getAtPath(root, segments) {
   let current = root;
@@ -33678,7 +33942,7 @@ function applyMutation(jsonDoc, args, resolvedPath) {
   if (ENUM_PATHS.has(resolvedPath.normalizedPath)) {
     const enumSchema = unwrapSchema(resolvedPath.schema);
     if (enumSchema instanceof ZodEnum && !enumSchema.options.includes(String(typedValue))) {
-      fail4(`Error: invalid enum value "${typedValue}". Allowed: ${enumSchema.options.join(", ")}`);
+      fail6(`Error: invalid enum value "${typedValue}". Allowed: ${enumSchema.options.join(", ")}`);
     }
   }
   setAtPath(jsonDoc, resolvedPath.segments, typedValue);
@@ -33706,14 +33970,14 @@ ${bold9(`[dry-run] ${filePath}`)}
 }
 function readJsonFile2(filePath) {
   try {
-    const parsed = JSON.parse(readFileSync16(filePath, "utf-8"));
+    const parsed = JSON.parse(readFileSync17(filePath, "utf-8"));
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      fail4(`Error: specialist file must contain a JSON object (${filePath})`);
+      fail6(`Error: specialist file must contain a JSON object (${filePath})`);
     }
     return parsed;
   } catch (error2) {
     const message = error2 instanceof Error ? error2.message : String(error2);
-    fail4(`Error: failed to parse JSON in ${filePath}: ${message}`);
+    fail6(`Error: failed to parse JSON in ${filePath}: ${message}`);
   }
 }
 function createUserFork(source, targetName) {
@@ -33741,7 +34005,7 @@ async function resolveTargets(args) {
   if (!match) {
     const packageMatch = args.scope === undefined ? listedSpecialists.find((specialist) => specialist.name === args.name && specialist.scope === "package") : undefined;
     if (packageMatch) {
-      fail4(`Error: specialist "${args.name}" lives in [package] tier and cannot be edited directly.
+      fail6(`Error: specialist "${args.name}" lives in [package] tier and cannot be edited directly.
 ` + `  Fork to user tier first:
 
 ` + `    ${yellow8(`specialists edit ${args.name} --fork-from ${args.name}`)}
@@ -33749,7 +34013,7 @@ async function resolveTargets(args) {
 ` + `  Then re-run your edit command.`);
     }
     const hint = args.scope ? ` (scope: ${args.scope})` : "";
-    fail4(`Error: specialist "${args.name}" not found${hint}
+    fail6(`Error: specialist "${args.name}" not found${hint}
   Run ${yellow8("specialists list")} to see available specialists`);
   }
   return [match];
@@ -33757,18 +34021,18 @@ async function resolveTargets(args) {
 function resolveGlobalPath(rawPath) {
   const segments = rawPath.split(".").map((part) => part.trim()).filter(Boolean);
   if (segments.length < 2) {
-    fail4(`Error: global path must be <specialist>.<field.path>, got: "${rawPath}"`);
+    fail6(`Error: global path must be <specialist>.<field.path>, got: "${rawPath}"`);
   }
   const [specialistName, ...fieldSegments] = segments;
   let schema = GlobalSpecialistOverrideSchema;
   for (const segment of fieldSegments) {
     const unwrapped = unwrapSchema(schema);
     if (!(unwrapped instanceof ZodObject)) {
-      fail4(`Error: invalid global path "${rawPath}" ("${segment}" is not a nested object field)`);
+      fail6(`Error: invalid global path "${rawPath}" ("${segment}" is not a nested object field)`);
     }
     const shape = unwrapped.shape;
     if (!(segment in shape)) {
-      fail4(`Error: invalid global path "${rawPath}". Unknown segment "${segment}". Available: ${Object.keys(shape).sort().join(", ")}`);
+      fail6(`Error: invalid global path "${rawPath}". Unknown segment "${segment}". Available: ${Object.keys(shape).sort().join(", ")}`);
     }
     schema = shape[segment];
   }
@@ -33785,7 +34049,7 @@ function coerceGlobalValue(schema, rawValue) {
   if (unwrapped instanceof ZodNumber) {
     const parsed = Number(rawValue);
     if (!Number.isFinite(parsed)) {
-      fail4(`Error: value must be a number, got: ${rawValue}`);
+      fail6(`Error: value must be a number, got: ${rawValue}`);
     }
     return parsed;
   }
@@ -33794,7 +34058,7 @@ function coerceGlobalValue(schema, rawValue) {
   }
   if (unwrapped instanceof ZodEnum) {
     if (!unwrapped.options.includes(rawValue)) {
-      fail4(`Error: invalid enum value "${rawValue}". Allowed: ${unwrapped.options.join(", ")}`);
+      fail6(`Error: invalid enum value "${rawValue}". Allowed: ${unwrapped.options.join(", ")}`);
     }
     return rawValue;
   }
@@ -33809,31 +34073,31 @@ function coerceGlobalValue(schema, rawValue) {
 function openInEditor(filePath) {
   if (!process.stdin.isTTY) {
     const setCommand = yellow8("specialists edit --global --set <name>.<field.path> <value>");
-    fail4(`Error: --global without a path requires an interactive terminal.
+    fail6(`Error: --global without a path requires an interactive terminal.
 Run ${setCommand} in scripts.`);
   }
   const editor = process.env.EDITOR?.trim() || process.env.VISUAL?.trim() || "vi";
   const result = spawnSync13(editor, [filePath], { stdio: "inherit" });
   if (result.error) {
-    fail4(`Error: failed to launch $EDITOR (${editor}): ${result.error.message}`);
+    fail6(`Error: failed to launch $EDITOR (${editor}): ${result.error.message}`);
   }
   if (result.status !== 0) {
-    fail4(`Error: $EDITOR (${editor}) exited with status ${result.status}`);
+    fail6(`Error: $EDITOR (${editor}) exited with status ${result.status}`);
   }
 }
 async function runGlobalEdit(args) {
   const location = getGlobalUserConfigPath();
   if (!args.path) {
     if (!location.exists) {
-      fail4(`Error: global config not found at ${location.path}. Run ${yellow8("specialists init --global")} first.`);
+      fail6(`Error: global config not found at ${location.path}. Run ${yellow8("specialists init --global")} first.`);
     }
     openInEditor(location.path);
-    const content = readFileSync16(location.path, "utf-8");
+    const content = readFileSync17(location.path, "utf-8");
     const validation2 = validateGlobalUserConfig(content);
     if (!validation2.valid) {
       const errorList = validation2.errors.map((e) => `  \u2022 ${e.path}: ${e.message}`).join(`
 `);
-      fail4(`Error: global config failed validation after $EDITOR exit:
+      fail6(`Error: global config failed validation after $EDITOR exit:
 ${errorList}
   Fix the file and re-run.`);
     }
@@ -33843,12 +34107,12 @@ ${errorList}
   const resolvedPath = resolveGlobalPath(args.path);
   const existing = readGlobalUserConfig(location);
   if (existing === null) {
-    fail4(`Error: global config not found at ${location.path}. Run ${yellow8("specialists init --global")} first.`);
+    fail6(`Error: global config not found at ${location.path}. Run ${yellow8("specialists init --global")} first.`);
   }
   const specialistOverride = existing[resolvedPath.specialistName];
   if (specialistOverride === undefined) {
     const available = Object.keys(existing).sort().join(", ");
-    fail4(`Error: specialist "${resolvedPath.specialistName}" not in global config. Available: ${available || "none"}`);
+    fail6(`Error: specialist "${resolvedPath.specialistName}" not in global config. Available: ${available || "none"}`);
   }
   if (args.action === "get") {
     const value = getAtPath(specialistOverride, resolvedPath.fieldSegments);
@@ -33863,7 +34127,7 @@ ${errorList}
   if (!validation.valid) {
     const errorList = validation.errors.map((e) => `  \u2022 ${e.path}: ${e.message}`).join(`
 `);
-    fail4(`Error: change would make the global config invalid:
+    fail6(`Error: change would make the global config invalid:
 ${errorList}`);
   }
   if (args.dryRun) {
@@ -33874,7 +34138,7 @@ ${errorList}`);
   writeFileSync9(location.path, updatedJson, "utf-8");
   console.log(`${green7("\u2713")} ${bold9(resolvedPath.specialistName)}.${yellow8(resolvedPath.fieldSegments.join("."))} = ${formatOutputValue(nextValue)}` + dim7(` (${location.path})`));
 }
-async function run14() {
+async function run15() {
   const args = parseArgs7(process.argv.slice(3));
   if (args.global) {
     return runGlobalEdit(args);
@@ -33899,11 +34163,11 @@ async function run14() {
     const preset = presets[args.preset];
     if (!preset) {
       const available = Object.keys(presets).join(", ");
-      fail4(`Error: preset "${args.preset}" not found. Available: ${available || "none"}`);
+      fail6(`Error: preset "${args.preset}" not found. Available: ${available || "none"}`);
     }
     const targets2 = await resolveTargets(args);
     for (const target of targets2) {
-      const raw = readFileSync16(target.filePath, "utf-8");
+      const raw = readFileSync17(target.filePath, "utf-8");
       const doc2 = JSON.parse(raw);
       for (const [fieldPath, fieldValue] of Object.entries(preset.fields)) {
         const resolved = resolvePath2(fieldPath);
@@ -33929,26 +34193,26 @@ async function run14() {
     const sourceLoader = new SpecialistLoader;
     const source = (await sourceLoader.list()).find((specialist) => specialist.name === args.forkFrom);
     if (!source)
-      fail4(`Error: fork source not found: ${args.forkFrom}`);
+      fail6(`Error: fork source not found: ${args.forkFrom}`);
     targets = [createUserFork(source, args.name)];
   } else if (targets.length === 1 && targets[0].scope !== "user") {
     targets = [createUserFork(targets[0], args.name)];
   }
   if (targets.length === 0) {
-    fail4("Error: no specialists found");
+    fail6("Error: no specialists found");
   }
   for (const target of targets) {
-    const raw = readFileSync16(target.filePath, "utf-8");
+    const raw = readFileSync17(target.filePath, "utf-8");
     let doc2;
     try {
       const parsed = JSON.parse(raw);
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-        fail4(`Error: specialist file must contain a JSON object (${target.filePath})`);
+        fail6(`Error: specialist file must contain a JSON object (${target.filePath})`);
       }
       doc2 = parsed;
     } catch (error2) {
       const message = error2 instanceof Error ? error2.message : String(error2);
-      fail4(`Error: failed to parse JSON in ${target.filePath}: ${message}`);
+      fail6(`Error: failed to parse JSON in ${target.filePath}: ${message}`);
     }
     if (args.action === "get") {
       const value = getAtPath(doc2, resolvedPath.segments);
@@ -34161,9 +34425,9 @@ var init_resolution_diagnostics = __esm(() => {
 // src/cli/config.ts
 var exports_config = {};
 __export(exports_config, {
-  run: () => run15
+  run: () => run16
 });
-import { readFileSync as readFileSync17 } from "fs";
+import { readFileSync as readFileSync18 } from "fs";
 import { spawnSync as spawnSync14 } from "child_process";
 import { dirname as dirname11, join as join20 } from "path";
 import { fileURLToPath as fileURLToPath3 } from "url";
@@ -34182,13 +34446,13 @@ function usage2() {
   ].join(`
 `);
 }
-function fail5(message) {
+function fail7(message) {
   console.error(message);
   process.exit(1);
 }
 function readPackageVersion(packageJsonPath) {
   try {
-    const pkg = JSON.parse(readFileSync17(packageJsonPath, "utf-8"));
+    const pkg = JSON.parse(readFileSync18(packageJsonPath, "utf-8"));
     return typeof pkg.version === "string" ? pkg.version : undefined;
   } catch {
     return;
@@ -34228,16 +34492,16 @@ function shouldWarnAboutSourceMode(projectDir) {
 }
 function showSourceRuntimeUnavailableError(reason) {
   const detail = reason === "bunx-missing" ? "bunx missing" : "tsx missing or failed";
-  fail5(`Unable to run source mode (${detail}). Need bunx + tsx in PATH. Try: bunx tsx src/index.ts config show <specialist> --resolved --from-source`);
+  fail7(`Unable to run source mode (${detail}). Need bunx + tsx in PATH. Try: bunx tsx src/index.ts config show <specialist> --resolved --from-source`);
 }
 function buildEditArgv(argv) {
   const command = argv[0];
   if (command !== "get" && command !== "set") {
-    fail5(usage2());
+    fail7(usage2());
   }
   const key = argv[1];
   if (!key || key.startsWith("--")) {
-    fail5(`Missing key
+    fail7(`Missing key
 
 ${usage2()}`);
   }
@@ -34246,7 +34510,7 @@ ${usage2()}`);
   if (command === "set") {
     const value = argv[2];
     if (value === undefined || value.startsWith("--")) {
-      fail5(`Missing value for set
+      fail7(`Missing value for set
 
 ${usage2()}`);
     }
@@ -34267,13 +34531,13 @@ ${usage2()}`);
     if (token === "--name") {
       const name = argv[++i];
       if (!name || name.startsWith("--")) {
-        fail5("--name requires a specialist name");
+        fail7("--name requires a specialist name");
       }
       translated.unshift(name);
       hasName = true;
       continue;
     }
-    fail5(`Unknown option: ${token}
+    fail7(`Unknown option: ${token}
 
 ${usage2()}`);
   }
@@ -34285,20 +34549,20 @@ ${usage2()}`);
 async function showResolvedConfig(argv) {
   const specialistName = argv[0];
   if (!specialistName || specialistName.startsWith("--")) {
-    fail5(`Missing specialist name
+    fail7(`Missing specialist name
 
 ${usage2()}`);
   }
   const flags = new Set(argv.slice(1));
   for (const flag of flags) {
     if (flag !== "--resolved" && flag !== "--from-source") {
-      fail5(`Unknown option: ${flag}
+      fail7(`Unknown option: ${flag}
 
 ${usage2()}`);
     }
   }
   if (!flags.has("--resolved")) {
-    fail5(`Unknown option: ${argv.slice(1).join(" ")}
+    fail7(`Unknown option: ${argv.slice(1).join(" ")}
 
 ${usage2()}`);
   }
@@ -34331,7 +34595,7 @@ ${usage2()}`);
   const report = await loadResolvedConfigReport({ specialistName, projectDir, catalogsPath });
   console.log(formatResolvedConfigReport(report));
 }
-async function run15() {
+async function run16() {
   const originalArgs = process.argv.slice(3);
   const command = originalArgs[0];
   if (command === "show") {
@@ -34341,7 +34605,7 @@ async function run15() {
   const editArgs = buildEditArgv(originalArgs);
   console.error(`${yellow9("\u26A0 DEPRECATED")} specialists config is deprecated. Use ${yellow9("specialists edit")} instead.`);
   process.argv = [process.argv[0] ?? "node", process.argv[1] ?? "specialists", "edit", ...editArgs];
-  await run14();
+  await run15();
 }
 var yellow9 = (s) => `\x1B[33m${s}\x1B[0m`;
 var init_config = __esm(() => {
@@ -44298,7 +44562,7 @@ var init_feed = __esm(() => {
 });
 
 // src/specialist/status-load.ts
-import { appendFileSync as appendFileSync4, existsSync as existsSync20, mkdirSync as mkdirSync12, readdirSync as readdirSync7, readFileSync as readFileSync18, renameSync as renameSync4, writeFileSync as writeFileSync12 } from "fs";
+import { appendFileSync as appendFileSync4, existsSync as existsSync20, mkdirSync as mkdirSync12, readdirSync as readdirSync7, readFileSync as readFileSync19, renameSync as renameSync4, writeFileSync as writeFileSync12 } from "fs";
 import { join as join24 } from "path";
 function hasStatusId(status) {
   return typeof status.id === "string" && status.id.trim().length > 0;
@@ -44312,7 +44576,7 @@ function readStatusesFromFiles(jobsDir) {
     if (!existsSync20(statusPath))
       continue;
     try {
-      const status = JSON.parse(readFileSync18(statusPath, "utf-8"));
+      const status = JSON.parse(readFileSync19(statusPath, "utf-8"));
       if (hasStatusId(status))
         statuses.push(status);
     } catch {}
@@ -44324,7 +44588,7 @@ function readLastToolEventFromFile(jobsDir, jobId) {
   if (!existsSync20(eventsPath))
     return;
   try {
-    const lines = readFileSync18(eventsPath, "utf-8").split(`
+    const lines = readFileSync19(eventsPath, "utf-8").split(`
 `);
     for (let index = lines.length - 1;index >= 0; index -= 1) {
       const line = lines[index]?.trim();
@@ -45374,13 +45638,13 @@ var exports_chat = {};
 __export(exports_chat, {
   startChatEventTailer: () => startChatEventTailer,
   silenceStderrDuringTui: () => silenceStderrDuringTui,
-  run: () => run16,
+  run: () => run17,
   handleSubmittedInput: () => handleSubmittedInput,
   formatChatShow: () => formatChatShow,
   createCleanup: () => createCleanup
 });
 import { spawnSync as spawnSync15 } from "child_process";
-import { appendFileSync as appendFileSync5, readFileSync as readFileSync19, writeFileSync as writeFileSync13 } from "fs";
+import { appendFileSync as appendFileSync5, readFileSync as readFileSync20, writeFileSync as writeFileSync13 } from "fs";
 function dbg(msg, extra) {
   if (!DEBUG_LOG_PATH)
     return;
@@ -45390,7 +45654,7 @@ function dbg(msg, extra) {
     appendFileSync5(DEBUG_LOG_PATH, line);
   } catch {}
 }
-async function run16() {
+async function run17() {
   dbg("run() start", { argv: process.argv.slice(3), stdoutTTY: process.stdout.isTTY === true, stdinTTY: process.stdin.isTTY === true });
   const args = parseArgs8(process.argv.slice(3));
   dbg("parsed args", { name: args.name, beadId: args.beadId, hasPrompt: !!args.prompt });
@@ -45633,7 +45897,7 @@ function startChatEventTailer(options2) {
   const readFileEvents = () => {
     let content = "";
     try {
-      content = readFileSync19(eventsPath, "utf8");
+      content = readFileSync20(eventsPath, "utf8");
     } catch {
       return [];
     }
@@ -45824,7 +46088,7 @@ function formatChatStartupContextLine(event) {
 }
 function readChatJobStatus(jobsDir, jobId) {
   try {
-    const status = JSON.parse(readFileSync19(`${jobsDir}/${jobId}/status.json`, "utf8"));
+    const status = JSON.parse(readFileSync20(`${jobsDir}/${jobId}/status.json`, "utf8"));
     return { model: status.model, contextPct: status.metrics?.context_pct };
   } catch {
     return {};
@@ -46103,7 +46367,7 @@ function consoleHelpText() {
 }
 
 // src/specialist/process-health.ts
-import { existsSync as existsSync21, readdirSync as readdirSync8, readFileSync as readFileSync20, readlinkSync as readlinkSync2 } from "fs";
+import { existsSync as existsSync21, readdirSync as readdirSync8, readFileSync as readFileSync21, readlinkSync as readlinkSync2 } from "fs";
 import { join as join25 } from "path";
 function parseThreshold(raw, fallback) {
   if (!raw)
@@ -46120,7 +46384,7 @@ function getProcessHealthThresholds(env = process.env) {
 }
 function readMemAvailableBytes(meminfoPath) {
   try {
-    const content = readFileSync20(meminfoPath, "utf-8");
+    const content = readFileSync21(meminfoPath, "utf-8");
     const match = /^MemAvailable:\s+(\d+)\s+kB$/m.exec(content);
     if (!match)
       return 0;
@@ -46131,7 +46395,7 @@ function readMemAvailableBytes(meminfoPath) {
 }
 function readProcStringOrNull(path3) {
   try {
-    return readFileSync20(path3, "utf-8");
+    return readFileSync21(path3, "utf-8");
   } catch {
     return null;
   }
@@ -46158,7 +46422,7 @@ function parseStat(stat2) {
 }
 function readProcUptimeSecondsOrNull(procRoot) {
   try {
-    const match = /^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)$/.exec(readFileSync20(join25(procRoot, "uptime"), "utf-8").trim());
+    const match = /^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)$/.exec(readFileSync21(join25(procRoot, "uptime"), "utf-8").trim());
     if (!match)
       return null;
     return Number(match[1]);
@@ -47278,7 +47542,7 @@ var init_log = __esm(() => {
 import {
   existsSync as existsSync22,
   mkdirSync as mkdirSync13,
-  readFileSync as readFileSync21,
+  readFileSync as readFileSync22,
   renameSync as renameSync5,
   rmSync as rmSync4,
   statSync as statSync6,
@@ -47308,7 +47572,7 @@ function readConsoleConfig() {
   if (!location.exists)
     return null;
   try {
-    const raw = readFileSync21(location.path, "utf-8");
+    const raw = readFileSync22(location.path, "utf-8");
     const parsed = JSON.parse(raw);
     return normalizeConfig(parsed);
   } catch (error2) {
@@ -47485,7 +47749,7 @@ __export(exports_config_source, {
 });
 import { homedir as homedir9 } from "os";
 import { join as join28 } from "path";
-import { existsSync as existsSync24, readFileSync as readFileSync22, statSync as statSync8 } from "fs";
+import { existsSync as existsSync24, readFileSync as readFileSync23, statSync as statSync8 } from "fs";
 function readGlobalConfigSnapshot(loader) {
   const location = getGlobalUserConfigPath();
   const exists = existsSync24(location.path);
@@ -47503,7 +47767,7 @@ function readGlobalConfigSnapshot(loader) {
   }
   let raw;
   try {
-    raw = readFileSync22(location.path, "utf-8");
+    raw = readFileSync23(location.path, "utf-8");
   } catch (error2) {
     logConfigError("read", error2);
     return {
@@ -47550,7 +47814,7 @@ function readPackageSpec(name) {
     const specPath = join28(dir, `${name}.specialist.json`);
     if (!existsSync24(specPath))
       return;
-    return JSON.parse(readFileSync22(specPath, "utf-8"));
+    return JSON.parse(readFileSync23(specPath, "utf-8"));
   } catch {
     return;
   }
@@ -47901,7 +48165,7 @@ var init_config_source = __esm(() => {
 
 // src/cli/console/runtime.ts
 import { spawnSync as spawnSync16 } from "child_process";
-import { existsSync as existsSync25, readdirSync as readdirSync10, readFileSync as readFileSync23, statSync as statSync9 } from "fs";
+import { existsSync as existsSync25, readdirSync as readdirSync10, readFileSync as readFileSync24, statSync as statSync9 } from "fs";
 import { basename as basename8, dirname as dirname16, join as join29 } from "path";
 function createRuntimeClient(cwd = process.cwd()) {
   return new LocalRuntimeClient(cwd);
@@ -48206,7 +48470,7 @@ class LocalRuntimeClient {
     if (!existsSync25(location.path))
       return { raw: {}, exists: false };
     try {
-      const raw = JSON.parse(readFileSync23(location.path, "utf-8"));
+      const raw = JSON.parse(readFileSync24(location.path, "utf-8"));
       const { statSync: statSync10 } = await import("fs");
       const mtimeMs = statSync10(location.path).mtimeMs;
       return { raw, exists: true, mtimeMs };
@@ -48694,7 +48958,7 @@ function readFileStatuses(jobsDir) {
     if (!existsSync25(path3))
       return [];
     try {
-      return [JSON.parse(readFileSync23(path3, "utf-8"))];
+      return [JSON.parse(readFileSync24(path3, "utf-8"))];
     } catch {
       return [];
     }
@@ -48712,7 +48976,7 @@ function readEvents(repo, jobId) {
   const eventsPath = join29(resolveJobsDir(repo.path), jobId, "events.jsonl");
   if (!existsSync25(eventsPath))
     return [];
-  return readFileSync23(eventsPath, "utf-8").split(`
+  return readFileSync24(eventsPath, "utf-8").split(`
 `).map((line) => line.trim()).filter(Boolean).map((line) => parseTimelineEvent(line)).filter((event) => event !== null).sort(compareTimelineEvents);
 }
 function readResultOutput(repo, jobId, events) {
@@ -48726,7 +48990,7 @@ function readResultOutput(repo, jobId, events) {
   }
   const resultPath = join29(resolveJobsDir(repo.path), jobId, "result.txt");
   if (existsSync25(resultPath))
-    return readFileSync23(resultPath, "utf-8");
+    return readFileSync24(resultPath, "utf-8");
   for (let i = events.length - 1;i >= 0; i -= 1) {
     const event = events[i];
     if (event?.type === "run_complete" && typeof event.output === "string" && event.output.length > 0)
@@ -49559,28 +49823,28 @@ class SourceQueue {
   constructor(onError) {
     this.onError = onError;
   }
-  enqueue(sourceKey, run17) {
+  enqueue(sourceKey, run18) {
     this.queued = true;
     if (this.running || this.timer)
       return;
     this.timer = setTimeout(() => {
       this.timer = null;
-      this.drain(sourceKey, run17);
+      this.drain(sourceKey, run18);
     }, COALESCE_MS);
   }
-  async drain(sourceKey, run17) {
+  async drain(sourceKey, run18) {
     if (!this.queued || this.running)
       return;
     this.running = true;
     this.queued = false;
     try {
-      await run17();
+      await run18();
     } catch (error2) {
       this.onError?.(sourceKey, error2);
     } finally {
       this.running = false;
       if (this.queued)
-        this.enqueue(sourceKey, run17);
+        this.enqueue(sourceKey, run18);
     }
   }
   cancel() {
@@ -50759,9 +51023,9 @@ var init_components = __esm(() => {
 // src/cli/console.ts
 var exports_console = {};
 __export(exports_console, {
-  run: () => run17
+  run: () => run18
 });
-async function run17() {
+async function run18() {
   const terminal = new ProcessTerminal;
   const tui = new TUI(terminal);
   const root = new Container;
@@ -50972,7 +51236,7 @@ var init_worktree = __esm(() => {
 });
 
 // src/specialist/epic-reconciler.ts
-import { mkdirSync as mkdirSync15, openSync as openSync2, readFileSync as readFileSync24, rmSync as rmSync6, writeFileSync as writeFileSync15 } from "fs";
+import { mkdirSync as mkdirSync15, openSync as openSync2, readFileSync as readFileSync25, rmSync as rmSync6, writeFileSync as writeFileSync15 } from "fs";
 import { join as join31 } from "path";
 function buildEpicLockPath(epicId) {
   const location = resolveObservabilityDbLocation();
@@ -50989,7 +51253,7 @@ function withEpicAdvisoryLock(epicId, action) {
   } catch {
     let holder = "unknown";
     try {
-      holder = readFileSync24(lockPath, "utf-8");
+      holder = readFileSync25(lockPath, "utf-8");
     } catch {
       holder = "unknown";
     }
@@ -51190,7 +51454,7 @@ __export(exports_merge, {
   runTypecheckGate: () => runTypecheckGate,
   runRebuild: () => runRebuild,
   runMergePlan: () => runMergePlan,
-  run: () => run18,
+  run: () => run19,
   resolveMergeTargetsForBeadIds: () => resolveMergeTargetsForBeadIds,
   resolveMergeTargets: () => resolveMergeTargets,
   resolveChainEpicMembership: () => resolveChainEpicMembership,
@@ -51207,7 +51471,7 @@ __export(exports_merge, {
   assertMainRepoCleanForMerge: () => assertMainRepoCleanForMerge
 });
 import { spawnSync as spawnSync18 } from "child_process";
-import { existsSync as existsSync27, readFileSync as readFileSync25, readdirSync as readdirSync11 } from "fs";
+import { existsSync as existsSync27, readFileSync as readFileSync26, readdirSync as readdirSync11 } from "fs";
 import { join as join32 } from "path";
 function parseOptions(argv) {
   let target = "";
@@ -51456,7 +51720,7 @@ function readAllJobStatuses() {
     if (!existsSync27(statusFile))
       continue;
     try {
-      const raw = JSON.parse(readFileSync25(statusFile, "utf-8"));
+      const raw = JSON.parse(readFileSync26(statusFile, "utf-8"));
       if (raw.id) {
         statuses.push(raw);
       }
@@ -51840,7 +52104,7 @@ function hasNodeBuildScript(cwd) {
   if (!existsSync27(packageJsonPath))
     return false;
   try {
-    const pkg = JSON.parse(readFileSync25(packageJsonPath, "utf8"));
+    const pkg = JSON.parse(readFileSync26(packageJsonPath, "utf8"));
     return typeof pkg.scripts?.build === "string" && pkg.scripts.build.length > 0;
   } catch {
     return false;
@@ -52025,7 +52289,7 @@ function executePublicationPlan(targets, options2) {
     throw error2;
   }
 }
-async function run18() {
+async function run19() {
   let options2;
   try {
     options2 = parseOptions(process.argv.slice(3));
@@ -52248,7 +52512,7 @@ function createPiJsonProjector(context) {
 var exports_run = {};
 __export(exports_run, {
   startEventTailer: () => startEventTailer,
-  run: () => run19,
+  run: () => run20,
   resolveBasePin: () => resolveBasePin,
   formatBackgroundLaunchLine: () => formatBackgroundLaunchLine,
   buildTmuxLiveFeedCommand: () => buildTmuxLiveFeedCommand,
@@ -52257,7 +52521,7 @@ __export(exports_run, {
   BACKGROUND_LAUNCH_SCHEMA: () => BACKGROUND_LAUNCH_SCHEMA
 });
 import { join as join33 } from "path";
-import { existsSync as existsSync28, readFileSync as readFileSync26, readdirSync as readdirSync12, statSync as statSync10 } from "fs";
+import { existsSync as existsSync28, readFileSync as readFileSync27, readdirSync as readdirSync12, statSync as statSync10 } from "fs";
 import { randomBytes } from "crypto";
 import { spawn as cpSpawn, execSync as execSync5 } from "child_process";
 function formatBackgroundLaunchLine(opts) {
@@ -52660,7 +52924,7 @@ function startEventTailer(jobId, jobsDir, mode, _specialist, _beadId) {
   const readFileEvents = () => {
     let content;
     try {
-      content = readFileSync26(eventsPath, "utf-8");
+      content = readFileSync27(eventsPath, "utf-8");
     } catch {
       return [];
     }
@@ -52964,7 +53228,7 @@ function buildInjectedWriterDiffVariables(cwd, maxFiles = 20) {
 `)
   };
 }
-async function run19() {
+async function run20() {
   const args = await parseArgs9(process.argv.slice(3));
   ensureObservabilityDb2(process.cwd());
   const loader = new SpecialistLoader;
@@ -53011,7 +53275,7 @@ async function run19() {
     const latestPath = join33(jobsDir2, "latest");
     const oldLatest = (() => {
       try {
-        return readFileSync26(latestPath, "utf-8").trim();
+        return readFileSync27(latestPath, "utf-8").trim();
       } catch {
         return "";
       }
@@ -53071,7 +53335,7 @@ async function run19() {
         childExitPromise
       ]);
       try {
-        const current = readFileSync26(latestPath, "utf-8").trim();
+        const current = readFileSync27(latestPath, "utf-8").trim();
         if (current && current !== oldLatest) {
           jobId = current;
           break;
@@ -53079,7 +53343,7 @@ async function run19() {
       } catch {}
       if (!jobId && handoffPath) {
         try {
-          const handoff = readFileSync26(handoffPath, "utf-8").trim();
+          const handoff = readFileSync27(handoffPath, "utf-8").trim();
           if (/^[a-f0-9]{6}$/.test(handoff)) {
             jobId = handoff;
             break;
@@ -53278,7 +53542,7 @@ var init_node_resolve = __esm(() => {
 });
 
 // src/specialist/job-control.ts
-import { existsSync as existsSync29, readFileSync as readFileSync27, writeFileSync as writeFileSync17 } from "fs";
+import { existsSync as existsSync29, readFileSync as readFileSync28, writeFileSync as writeFileSync17 } from "fs";
 import { join as join34 } from "path";
 
 class JobControl {
@@ -53361,7 +53625,7 @@ class JobControl {
     if (!existsSync29(resultPath))
       return null;
     try {
-      return readFileSync27(resultPath, "utf-8");
+      return readFileSync28(resultPath, "utf-8");
     } catch {
       return null;
     }
@@ -55482,7 +55746,7 @@ var exports_node = {};
 __export(exports_node, {
   handleNodeCommand: () => handleNodeCommand
 });
-import { existsSync as existsSync30, readFileSync as readFileSync28, readdirSync as readdirSync13 } from "fs";
+import { existsSync as existsSync30, readFileSync as readFileSync29, readdirSync as readdirSync13 } from "fs";
 import { randomUUID as randomUUID4 } from "crypto";
 import { basename as basename9, join as join35, resolve as resolve11 } from "path";
 function parseNodeArgs(argv) {
@@ -55796,7 +56060,7 @@ async function handleNodeRun(args) {
       rawConfig = args.inlineJson;
     } else {
       const nodeConfigPath = resolveNodeConfigPath(process.cwd(), args.nodeConfigInput);
-      rawConfig = readFileSync28(nodeConfigPath.path, "utf-8");
+      rawConfig = readFileSync29(nodeConfigPath.path, "utf-8");
     }
     const config2 = parseNodeConfig(rawConfig);
     const loader = new SpecialistLoader;
@@ -56537,15 +56801,15 @@ function evaluateReadiness(epicId, state, chainRecords, sqlite) {
 }
 function gatherEpicList(sqlite, unresolvedOnly) {
   const epicRuns = sqlite.listEpicRuns();
-  return epicRuns.filter((run20) => !unresolvedOnly || isEpicUnresolvedState(run20.status)).map((run20) => {
-    const chainRecords = sqlite.listEpicChains(run20.epic_id);
-    const readiness = evaluateReadiness(run20.epic_id, run20.status, chainRecords, sqlite);
+  return epicRuns.filter((run21) => !unresolvedOnly || isEpicUnresolvedState(run21.status)).map((run21) => {
+    const chainRecords = sqlite.listEpicChains(run21.epic_id);
+    const readiness = evaluateReadiness(run21.epic_id, run21.status, chainRecords, sqlite);
     return {
-      epic_id: run20.epic_id,
-      state: run20.status,
+      epic_id: run21.epic_id,
+      state: run21.status,
       chain_count: chainRecords.length,
       readiness,
-      updated_at_ms: run20.updated_at_ms
+      updated_at_ms: run21.updated_at_ms
     };
   });
 }
@@ -57071,11 +57335,11 @@ var init_epic = __esm(() => {
 // src/cli/status.ts
 var exports_status = {};
 __export(exports_status, {
-  run: () => run20,
+  run: () => run21,
   detectJobOutputMode: () => detectJobOutputMode
 });
 import { spawnSync as spawnSync21 } from "child_process";
-import { existsSync as existsSync31, readFileSync as readFileSync29 } from "fs";
+import { existsSync as existsSync31, readFileSync as readFileSync30 } from "fs";
 import { join as join36 } from "path";
 function ok2(msg) {
   console.log(`  ${green9("\u2713")} ${msg}`);
@@ -57083,7 +57347,7 @@ function ok2(msg) {
 function warn2(msg) {
   console.log(`  ${yellow10("\u25CB")} ${msg}`);
 }
-function fail6(msg) {
+function fail8(msg) {
   console.log(`  ${red2("\u2717")} ${msg}`);
 }
 function info(msg) {
@@ -57176,7 +57440,7 @@ function countJobEvents(sqliteClient, jobsDir, jobId) {
   const eventsFile = join36(jobsDir, jobId, "events.jsonl");
   if (!existsSync31(eventsFile))
     return 0;
-  const raw = readFileSync29(eventsFile, "utf-8").trim();
+  const raw = readFileSync30(eventsFile, "utf-8").trim();
   if (!raw)
     return 0;
   return raw.split(`
@@ -57213,7 +57477,7 @@ function getLatestContextSnapshot(sqliteClient, jobsDir, jobId) {
   const eventsFile = join36(jobsDir, jobId, "events.jsonl");
   if (!existsSync31(eventsFile))
     return null;
-  const lines = readFileSync29(eventsFile, "utf-8").split(`
+  const lines = readFileSync30(eventsFile, "utf-8").split(`
 `);
   for (let index = lines.length - 1;index >= 0; index -= 1) {
     const line = lines[index].trim();
@@ -57289,7 +57553,7 @@ ${bold11("specialists status")}
     console.log(`  error        ${red2(job.error)}`);
   console.log();
 }
-async function run20() {
+async function run21() {
   const argv = process.argv.slice(3);
   let parsedArgs;
   try {
@@ -57331,7 +57595,7 @@ async function run20() {
         if (jsonMode) {
           console.log(JSON.stringify({ error: `Job not found: ${jobId}` }, null, 2));
         } else {
-          fail6(`job not found: ${jobId}`);
+          fail8(`job not found: ${jobId}`);
         }
         process.exit(1);
       }
@@ -57424,7 +57688,7 @@ ${bold11("specialists status")}
     }
     section("pi  (coding agent runtime)");
     if (!piInstalled) {
-      fail6(`pi not installed \u2014 install ${yellow10("pi")} first`);
+      fail8(`pi not installed \u2014 install ${yellow10("pi")} first`);
     } else {
       const vStr = piVersion?.ok ? `v${piVersion.stdout}` : "unknown version";
       const pStr = piProviders.size > 0 ? `${piProviders.size} provider${piProviders.size > 1 ? "s" : ""} active  ${dim9(`(${[...piProviders].join(", ")})`)} ` : yellow10("no providers configured \u2014 run pi config");
@@ -57432,7 +57696,7 @@ ${bold11("specialists status")}
     }
     section("beads  (issue tracker)");
     if (!bdInstalled) {
-      fail6(`bd not installed \u2014 install ${yellow10("bd")} first`);
+      fail8(`bd not installed \u2014 install ${yellow10("bd")} first`);
     } else {
       ok2(`bd installed${bdVersion?.ok ? `  ${dim9(bdVersion.stdout)}` : ""}`);
       if (beadsPresent) {
@@ -57443,7 +57707,7 @@ ${bold11("specialists status")}
     }
     section("MCP");
     if (!specialistsBin.ok) {
-      fail6(`specialists not installed globally \u2014 run ${yellow10("npm install -g @jaggerxtrm/specialists")}`);
+      fail8(`specialists not installed globally \u2014 run ${yellow10("npm install -g @jaggerxtrm/specialists")}`);
     } else {
       ok2(`specialists binary installed  ${dim9(specialistsBin.stdout)}`);
       info(`verify registration: claude mcp get specialists`);
@@ -57487,7 +57751,7 @@ var init_status2 = __esm(() => {
 // src/cli/ps.ts
 var exports_ps = {};
 __export(exports_ps, {
-  run: () => run21,
+  run: () => run22,
   formatSpawnedByLine: () => formatSpawnedByLine
 });
 import { spawnSync as spawnSync22 } from "child_process";
@@ -58521,7 +58785,7 @@ async function follow(args) {
     interval = setInterval(drawFrame, 1000);
   });
 }
-async function run21() {
+async function run22() {
   const args = parseArgs10(process.argv.slice(3));
   const sqliteClient = createObservabilitySqliteClient();
   try {
@@ -58569,9 +58833,9 @@ var init_ps = __esm(() => {
 // src/cli/result.ts
 var exports_result = {};
 __export(exports_result, {
-  run: () => run22
+  run: () => run23
 });
-import { existsSync as existsSync32, readFileSync as readFileSync30 } from "fs";
+import { existsSync as existsSync32, readFileSync as readFileSync31 } from "fs";
 import { join as join37 } from "path";
 function parseArgs11(argv) {
   let jobId;
@@ -58665,7 +58929,7 @@ function readTimelineEventsForResult(sqliteClient, jobsDir, jobId) {
   const eventsPath = join37(jobsDir, jobId, "events.jsonl");
   if (!existsSync32(eventsPath))
     return [];
-  return readFileSync30(eventsPath, "utf-8").split(`
+  return readFileSync31(eventsPath, "utf-8").split(`
 `).map((line) => line.trim()).filter(Boolean).map((line) => parseTimelineEvent(line)).filter((event) => event !== null);
 }
 function deriveStartupSnapshot(status, events) {
@@ -58788,7 +59052,7 @@ function formatStartupSnapshot(snapshot) {
 `)}
 `;
 }
-async function run22() {
+async function run23() {
   const args = parseArgs11(process.argv.slice(3));
   const emitJson = (status, output2, error2, startupContext = null) => {
     console.log(JSON.stringify({
@@ -58850,7 +59114,7 @@ async function run22() {
         console.warn(`SQLite result read failed for job ${jobId}; falling back to result.txt`, error2);
       }
       if (existsSync32(resultPath)) {
-        return readFileSync30(resultPath, "utf-8");
+        return readFileSync31(resultPath, "utf-8");
       }
       try {
         const events2 = readTimelineEventsForResult(sqliteClient, jobsDir, jobId);
@@ -59068,7 +59332,7 @@ var init_result = __esm(() => {
 });
 
 // src/specialist/timeline-query.ts
-import { existsSync as existsSync33, readdirSync as readdirSync14, readFileSync as readFileSync31 } from "fs";
+import { existsSync as existsSync33, readdirSync as readdirSync14, readFileSync as readFileSync32 } from "fs";
 import { basename as basename10, join as join38 } from "path";
 function readJobEvents(jobDir) {
   const jobId = basename10(jobDir);
@@ -59084,7 +59348,7 @@ function readJobEvents(jobDir) {
   const eventsPath = join38(jobDir, "events.jsonl");
   if (!existsSync33(eventsPath))
     return [];
-  const content = readFileSync31(eventsPath, "utf-8");
+  const content = readFileSync32(eventsPath, "utf-8");
   const lines = content.split(`
 `).filter(Boolean);
   const events = [];
@@ -59147,7 +59411,7 @@ function readAllJobEvents(jobsDir, jobId) {
     let beadId;
     if (existsSync33(statusPath)) {
       try {
-        const status = JSON.parse(readFileSync31(statusPath, "utf-8"));
+        const status = JSON.parse(readFileSync32(statusPath, "utf-8"));
         specialist = status.specialist ?? "unknown";
         beadId = status.bead_id;
       } catch {}
@@ -59212,13 +59476,13 @@ var init_timeline_query = __esm(() => {
 // src/cli/feed.ts
 var exports_feed = {};
 __export(exports_feed, {
-  run: () => run23
+  run: () => run24
 });
 import {
   closeSync as closeSync2,
   existsSync as existsSync34,
   openSync as openSync3,
-  readFileSync as readFileSync32,
+  readFileSync as readFileSync33,
   readdirSync as readdirSync15,
   statSync as statSync11
 } from "fs";
@@ -59410,7 +59674,7 @@ function readFileFresh(filePath) {
   let fd = null;
   try {
     fd = openSync3(filePath, "r");
-    return readFileSync32(fd, "utf-8");
+    return readFileSync33(fd, "utf-8");
   } catch {
     return null;
   } finally {
@@ -59900,7 +60164,7 @@ async function followMerged(sqliteClient, jobsDir, options2) {
     }, 750);
   });
 }
-async function run23() {
+async function run24() {
   const options2 = parseArgs12(process.argv.slice(3));
   const sqliteClient = createObservabilitySqliteClient();
   try {
@@ -59953,7 +60217,7 @@ var init_feed2 = __esm(() => {
 // src/cli/forensic.ts
 var exports_forensic = {};
 __export(exports_forensic, {
-  run: () => run24
+  run: () => run25
 });
 function parseArgs13(argv) {
   const options2 = { json: true, limit: 1000 };
@@ -60021,7 +60285,7 @@ function parseSince2(value) {
   const ms = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
   return Date.now() - n * ms[unit];
 }
-async function run24() {
+async function run25() {
   const options2 = parseArgs13(process.argv.slice(3));
   const client = createObservabilitySqliteClient();
   if (!client)
@@ -60787,7 +61051,7 @@ var init_prometheus_projection = __esm(() => {
 // src/cli/metrics.ts
 var exports_metrics = {};
 __export(exports_metrics, {
-  run: () => run25
+  run: () => run26
 });
 function parseArgs14(argv) {
   let format = "prometheus";
@@ -60825,7 +61089,7 @@ function parseSince3(value) {
   const ms = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
   return Date.now() - n * ms[unit];
 }
-async function run25() {
+async function run26() {
   const options2 = parseArgs14(process.argv.slice(3));
   if (options2.format !== "prometheus")
     throw new Error(`Unsupported metrics format: ${options2.format}`);
@@ -60838,7 +61102,7 @@ var init_metrics = __esm(() => {
 // src/cli/log.ts
 var exports_log = {};
 __export(exports_log, {
-  run: () => run26
+  run: () => run27
 });
 import { existsSync as existsSync35, readdirSync as readdirSync16, statSync as statSync12 } from "fs";
 import { basename as basename12, join as join40 } from "path";
@@ -61255,7 +61519,7 @@ function printRow(row, json) {
   ].filter(Boolean).join(" ");
   console.log(`${head} ${eventDetail(row.event)}`.trim());
 }
-async function run26(argv = process.argv.slice(3)) {
+async function run27(argv = process.argv.slice(3)) {
   let options2;
   try {
     options2 = parseArgs15(argv);
@@ -61448,10 +61712,10 @@ var init_log2 = __esm(() => {
 // src/cli/steer.ts
 var exports_steer = {};
 __export(exports_steer, {
-  run: () => run27
+  run: () => run28
 });
 import { writeFileSync as writeFileSync18 } from "fs";
-async function run27() {
+async function run28() {
   const jobId = process.argv[3];
   const message = process.argv[4];
   if (!jobId || !message) {
@@ -61508,10 +61772,10 @@ var init_steer = __esm(() => {
 // src/cli/resume.ts
 var exports_resume = {};
 __export(exports_resume, {
-  run: () => run28
+  run: () => run29
 });
 import { writeFileSync as writeFileSync19 } from "fs";
-async function run28() {
+async function run29() {
   const jobId = process.argv[3];
   const task = process.argv[4];
   if (!jobId || !task) {
@@ -61576,16 +61840,16 @@ var init_resume = __esm(() => {
 // src/cli/follow-up.ts
 var exports_follow_up = {};
 __export(exports_follow_up, {
-  run: () => run29
+  run: () => run30
 });
-async function run29() {
+async function run30() {
   process.stderr.write("\x1B[33m\u26A0 DEPRECATED:\x1B[0m `specialists follow-up` is deprecated. Use `specialists resume` instead.\n\n");
   const { run: resumeRun } = await Promise.resolve().then(() => (init_resume(), exports_resume));
   return resumeRun();
 }
 
 // src/specialist/worktree-gc.ts
-import { existsSync as existsSync36, readdirSync as readdirSync17, readFileSync as readFileSync33 } from "fs";
+import { existsSync as existsSync36, readdirSync as readdirSync17, readFileSync as readFileSync34 } from "fs";
 import { join as join41 } from "path";
 import { spawnSync as spawnSync23 } from "child_process";
 function readJobStatus2(jobDir) {
@@ -61593,7 +61857,7 @@ function readJobStatus2(jobDir) {
   if (!existsSync36(statusPath))
     return null;
   try {
-    return JSON.parse(readFileSync33(statusPath, "utf-8"));
+    return JSON.parse(readFileSync34(statusPath, "utf-8"));
   } catch {
     return null;
   }
@@ -61687,9 +61951,9 @@ var init_worktree_gc = __esm(() => {
 // src/cli/clean.ts
 var exports_clean = {};
 __export(exports_clean, {
-  run: () => run30
+  run: () => run31
 });
-import { existsSync as existsSync37, readFileSync as readFileSync34, readdirSync as readdirSync18, rmSync as rmSync7, statSync as statSync13 } from "fs";
+import { existsSync as existsSync37, readFileSync as readFileSync35, readdirSync as readdirSync18, rmSync as rmSync7, statSync as statSync13 } from "fs";
 import { join as join42 } from "path";
 function parseDuration2(raw) {
   const match = /^(\d+)(ms|s|m|h|d)$/i.exec(raw.trim());
@@ -61882,7 +62146,7 @@ function readCompletedJobDirectory(baseDirectory, entry) {
     return null;
   let statusData;
   try {
-    statusData = JSON.parse(readFileSync34(statusFilePath, "utf-8"));
+    statusData = JSON.parse(readFileSync35(statusFilePath, "utf-8"));
   } catch {
     return null;
   }
@@ -62199,7 +62463,7 @@ function removeStaleProcesses(statuses, dryRun) {
   }
   return updatedCount;
 }
-async function run30() {
+async function run31() {
   let options2;
   try {
     options2 = parseOptions2(process.argv.slice(3));
@@ -62304,7 +62568,7 @@ var init_clean = __esm(() => {
 // src/cli/end.ts
 var exports_end = {};
 __export(exports_end, {
-  run: () => run31
+  run: () => run32
 });
 import { spawnSync as spawnSync24 } from "child_process";
 function parseOptions3(argv) {
@@ -62388,7 +62652,7 @@ async function publishChain(beadId, options2) {
     console.log("Publication mode: direct merge");
   }
 }
-async function run31() {
+async function run32() {
   let options2;
   try {
     options2 = parseOptions3(process.argv.slice(3));
@@ -62429,7 +62693,7 @@ var init_end = __esm(() => {
 // src/cli/stop.ts
 var exports_stop = {};
 __export(exports_stop, {
-  run: () => run32
+  run: () => run33
 });
 function parseStopArgs(argv) {
   let jobId;
@@ -62452,7 +62716,7 @@ function parseStopArgs(argv) {
   }
   return { jobId, force, closeBeadAnyway };
 }
-async function run32() {
+async function run33() {
   let parsed;
   try {
     parsed = parseStopArgs(process.argv.slice(3));
@@ -62480,13 +62744,13 @@ var init_stop = __esm(() => {
 // src/cli/finalize.ts
 var exports_finalize = {};
 __export(exports_finalize, {
-  run: () => run33
+  run: () => run34
 });
 function parseFinalizeArgs(argv) {
   const jobId = argv.find((token) => !token.startsWith("-"));
   return { jobId };
 }
-async function run33() {
+async function run34() {
   const parsed = parseFinalizeArgs(process.argv.slice(3));
   const jobId = parsed.jobId;
   if (!jobId) {
@@ -62508,9 +62772,9 @@ var init_finalize = __esm(() => {
 // src/cli/attach-tui.ts
 var exports_attach_tui = {};
 __export(exports_attach_tui, {
-  run: () => run34
+  run: () => run35
 });
-async function run34(target, deps = {}) {
+async function run35(target, deps = {}) {
   const piTui = await Promise.resolve().then(() => (init_dist2(), exports_dist));
   const { TUI: TUI2, ProcessTerminal: ProcessTerminal2, Container: Container2, Input: Input2, matchesKey: matchesKey2, Key: Key2 } = piTui;
   const terminal = new ProcessTerminal2;
@@ -62630,7 +62894,7 @@ var init_attach_tui = __esm(() => {
 // src/cli/attach.ts
 var exports_attach = {};
 __export(exports_attach, {
-  run: () => run35
+  run: () => run36
 });
 import readline3 from "readline";
 function exitWithError(message) {
@@ -62747,7 +63011,7 @@ function pickTarget(targets) {
     render2();
   });
 }
-async function run35(deps = {}) {
+async function run36(deps = {}) {
   const [jobId] = process.argv.slice(3);
   if (!jobId) {
     if (!process.stdout.isTTY || !process.stdin.isTTY)
@@ -62763,8 +63027,8 @@ async function run35(deps = {}) {
 }
 async function attachTarget(target, deps) {
   const runTui = deps.runTui ?? (async (resolvedTarget) => {
-    const { run: run36 } = await Promise.resolve().then(() => (init_attach_tui(), exports_attach_tui));
-    return run36(resolvedTarget, deps);
+    const { run: run37 } = await Promise.resolve().then(() => (init_attach_tui(), exports_attach_tui));
+    return run37(resolvedTarget, deps);
   });
   return runTui(target);
 }
@@ -62773,7 +63037,7 @@ var init_attach = __esm(() => {
 });
 
 // src/specialist/drift-detector.ts
-import { existsSync as existsSync38, readFileSync as readFileSync35, readdirSync as readdirSync19, rmSync as rmSync8 } from "fs";
+import { existsSync as existsSync38, readFileSync as readFileSync36, readdirSync as readdirSync19, rmSync as rmSync8 } from "fs";
 import { join as join43, resolve as resolve12, relative as relative3 } from "path";
 function listFiles(root) {
   if (!existsSync38(root))
@@ -62823,7 +63087,7 @@ function detectDriftForRepo(repoRoot) {
         const canonicalPath = join43(asset.canonicalDir, rel);
         if (!existsSync38(canonicalPath))
           continue;
-        const bytesEqual = readFileSync35(file).equals(readFileSync35(canonicalPath));
+        const bytesEqual = readFileSync36(file).equals(readFileSync36(canonicalPath));
         findings.push(makeFinding(repoRoot, asset.kind, scope, file, canonicalPath, bytesEqual));
       }
     }
@@ -62887,7 +63151,7 @@ var init_drift_detector = __esm(() => {
 // src/cli/prune-stale-defaults.ts
 var exports_prune_stale_defaults = {};
 __export(exports_prune_stale_defaults, {
-  run: () => run36
+  run: () => run37
 });
 import { resolve as resolve13 } from "path";
 function parseArgs16(argv) {
@@ -62927,7 +63191,7 @@ function printHelp() {
   console.log("  --keep-diverged   Preserve diverged .specialists/default entries");
   console.log("  --root            Repo root to scan");
 }
-async function run36(argv = process.argv.slice(3)) {
+async function run37(argv = process.argv.slice(3)) {
   const { dryRun, root, help, keepDiverged } = parseArgs16(argv);
   if (help) {
     printHelp();
@@ -62959,7 +63223,7 @@ var init_prune_stale_defaults = __esm(() => {
 // src/cli/quickstart.ts
 var exports_quickstart = {};
 __export(exports_quickstart, {
-  run: () => run37
+  run: () => run38
 });
 function section2(title) {
   const bar = "\u2500".repeat(60);
@@ -62973,7 +63237,7 @@ function cmd2(s) {
 function flag(s) {
   return green13(s);
 }
-async function run37() {
+async function run38() {
   const lines = [
     "",
     bold12("specialists  \xB7  Quick Start Guide"),
@@ -63352,7 +63616,7 @@ var init_dead_job_audit = __esm(() => {
 var exports_doctor = {};
 __export(exports_doctor, {
   setStatusError: () => setStatusError,
-  run: () => run38,
+  run: () => run39,
   resolvePackageAssetDir: () => resolvePackageAssetDir,
   renderProcessSummary: () => renderProcessSummary,
   parseVersionTuple: () => parseVersionTuple,
@@ -63361,7 +63625,7 @@ __export(exports_doctor, {
 });
 import { createHash as createHash7 } from "crypto";
 import { spawnSync as spawnSync25 } from "child_process";
-import { existsSync as existsSync39, mkdirSync as mkdirSync16, readdirSync as readdirSync20, readFileSync as readFileSync36, writeFileSync as writeFileSync20 } from "fs";
+import { existsSync as existsSync39, mkdirSync as mkdirSync16, readdirSync as readdirSync20, readFileSync as readFileSync37, writeFileSync as writeFileSync20 } from "fs";
 import { homedir as homedir10 } from "os";
 import { join as join44, relative as relative4, resolve as resolve14 } from "path";
 function ok3(msg) {
@@ -63370,7 +63634,7 @@ function ok3(msg) {
 function warn3(msg) {
   console.log(`  ${yellow12("\u25CB")} ${msg}`);
 }
-function fail7(msg) {
+function fail9(msg) {
   console.log(`  ${red7("\u2717")} ${msg}`);
 }
 function fix(msg) {
@@ -63395,7 +63659,7 @@ function loadJson2(path3) {
   if (!existsSync39(path3))
     return null;
   try {
-    return JSON.parse(readFileSync36(path3, "utf8"));
+    return JSON.parse(readFileSync37(path3, "utf8"));
   } catch {
     return null;
   }
@@ -63403,7 +63667,7 @@ function loadJson2(path3) {
 function checkPi() {
   section3("pi  (coding agent runtime)");
   if (!isInstalled3("pi")) {
-    fail7("pi not installed");
+    fail9("pi not installed");
     fix("install pi first");
     return false;
   }
@@ -63426,14 +63690,14 @@ function checkSpAlias() {
     ok3("sp alias installed");
     return true;
   }
-  fail7("sp alias not found in PATH");
+  fail9("sp alias not found in PATH");
   fix("npm install -g @jaggerxtrm/specialists@latest   (reinstall to create symlink)");
   return false;
 }
 function checkBd() {
   section3("beads  (issue tracker)");
   if (!isInstalled3("bd")) {
-    fail7("bd not installed");
+    fail9("bd not installed");
     fix("install beads (bd) first");
     return false;
   }
@@ -63447,7 +63711,7 @@ function checkBd() {
 function checkXt() {
   section3("xtrm-tools");
   if (!isInstalled3("xt")) {
-    fail7("xt not installed");
+    fail9("xt not installed");
     fix("install xtrm-tools first");
     return false;
   }
@@ -63460,7 +63724,7 @@ function checkHooks() {
   for (const name of HOOK_NAMES) {
     const hookPath = join44(GLOBAL_HOOKS_DIR, name);
     if (!existsSync39(hookPath)) {
-      fail7(`${hookPath} ${red7("missing")}`);
+      fail9(`${hookPath} ${red7("missing")}`);
       fix("reinstall xtrm-tools (hooks are vendored globally)");
       allPresent = false;
     } else {
@@ -63491,7 +63755,7 @@ function checkVersion() {
 }
 function hashFile(path3) {
   const hash = createHash7("sha256");
-  hash.update(readFileSync36(path3));
+  hash.update(readFileSync37(path3));
   return hash.digest("hex");
 }
 function collectFileHashes(rootDir) {
@@ -63520,12 +63784,12 @@ function checkSkillDrift() {
   section3(`Skills \u2014 global default pool  (~/${relative4(homedir10(), GLOBAL_DEFAULT_SKILLS_DIR)})`);
   const canonicalSkillsDir = resolvePackageAssetDir("skills");
   if (!canonicalSkillsDir) {
-    fail7("package canonical skills source missing");
+    fail9("package canonical skills source missing");
     fix("restore config/skills/ or install package assets");
     return false;
   }
   if (!existsSync39(GLOBAL_DEFAULT_SKILLS_DIR)) {
-    fail7(`${GLOBAL_DEFAULT_SKILLS_DIR} missing`);
+    fail9(`${GLOBAL_DEFAULT_SKILLS_DIR} missing`);
     fix("reinstall xtrm-tools (skills are vendored globally)");
     return false;
   }
@@ -63547,11 +63811,11 @@ function checkSkillDrift() {
     return true;
   }
   if (drifted.length > 0) {
-    fail7(`${drifted.length} drifted file${drifted.length === 1 ? "" : "s"} between package and global default pool`);
+    fail9(`${drifted.length} drifted file${drifted.length === 1 ? "" : "s"} between package and global default pool`);
     hint(`example: ${drifted.slice(0, 3).join(", ")}${drifted.length > 3 ? ", ..." : ""}`);
   }
   if (missing.length > 0) {
-    fail7(`${missing.length} file${missing.length === 1 ? "" : "s"} missing from global default pool`);
+    fail9(`${missing.length} file${missing.length === 1 ? "" : "s"} missing from global default pool`);
     hint(`example: ${missing.slice(0, 3).join(", ")}${missing.length > 3 ? ", ..." : ""}`);
   }
   fix("reinstall xtrm-tools (skills are vendored globally)");
@@ -63734,7 +63998,7 @@ async function checkSpecialistOverrides() {
     loader = new SpecialistLoader;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    fail7(`could not construct SpecialistLoader: ${msg}`);
+    fail9(`could not construct SpecialistLoader: ${msg}`);
     return false;
   }
   const globalLayer = loader.getGlobalLayerPath();
@@ -63754,7 +64018,7 @@ async function checkSpecialistOverrides() {
     summaries = await loader.list();
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    fail7(`SpecialistLoader.list() threw: ${msg}`);
+    fail9(`SpecialistLoader.list() threw: ${msg}`);
     return false;
   }
   const dispatchable = summaries.filter((s) => s.category !== "template");
@@ -63771,7 +64035,7 @@ async function checkSpecialistOverrides() {
     warn3(`${present}/${total} specialists have a model configured  ${dim14("(global override file not created yet)")}`);
     fix("sp init --global  \u2192  sp edit --global  (set the model for each specialist you use)");
   } else {
-    fail7(`${present}/${total} specialists have a model configured`);
+    fail9(`${present}/${total} specialists have a model configured`);
     hint(`missing: ${missing.join(", ")}`);
     fix(`sp edit --global <name>.execution.model <model-id>   (run once per missing specialist)`);
   }
@@ -63782,7 +64046,7 @@ async function checkSpecialistOverrides() {
     const stripCount = warnings.filter((w) => w.severity === "strip").length;
     const warnCount = warnings.filter((w) => w.severity === "warn").length;
     if (stripCount > 0) {
-      fail7(`${stripCount} blocked-field overrides STRIPPED from the global layer`);
+      fail9(`${stripCount} blocked-field overrides STRIPPED from the global layer`);
       for (const w of warnings.filter((w2) => w2.severity === "strip")) {
         hint(`${w.specialist}: ${w.field} = ${JSON.stringify(w.value)}  ${dim14("(source: global, stripped)")}`);
       }
@@ -63846,7 +64110,7 @@ function compareVersions2(left, right) {
 }
 function setStatusError(statusPath) {
   try {
-    const raw = readFileSync36(statusPath, "utf8");
+    const raw = readFileSync37(statusPath, "utf8");
     const status = JSON.parse(raw);
     status.status = "error";
     writeFileSync20(statusPath, `${JSON.stringify(status, null, 2)}
@@ -63915,7 +64179,7 @@ function cleanupProcesses(jobsDir, dryRun) {
     if (!existsSync39(statusPath))
       continue;
     try {
-      const status = JSON.parse(readFileSync36(statusPath, "utf8"));
+      const status = JSON.parse(readFileSync37(statusPath, "utf8"));
       result.total += 1;
       if (status.status !== "running" && status.status !== "starting")
         continue;
@@ -63952,7 +64216,7 @@ function runDoctorOrphans() {
     console.log(`
 ${bold13("specialists doctor orphans")}
 `);
-    fail7("observability SQLite not available");
+    fail9("observability SQLite not available");
     fix("specialists db setup");
     console.log("");
     process.exit(1);
@@ -64141,7 +64405,7 @@ ${bold13("specialists doctor --reap-dead-jobs")}
     client.close();
   }
 }
-async function run38(argv = process.argv.slice(3)) {
+async function run39(argv = process.argv.slice(3)) {
   const subcommand = argv[0];
   if (subcommand === "orphans") {
     runDoctorOrphans();
@@ -64218,7 +64482,7 @@ var init_doctor = __esm(() => {
 
 // src/specialist/benchmarks.ts
 import { randomUUID as randomUUID5 } from "crypto";
-import { closeSync as closeSync3, existsSync as existsSync40, fsyncSync as fsyncSync2, mkdirSync as mkdirSync17, openSync as openSync4, readFileSync as readFileSync37, renameSync as renameSync6, writeFileSync as writeFileSync21 } from "fs";
+import { closeSync as closeSync3, existsSync as existsSync40, fsyncSync as fsyncSync2, mkdirSync as mkdirSync17, openSync as openSync4, readFileSync as readFileSync38, renameSync as renameSync6, writeFileSync as writeFileSync21 } from "fs";
 import { homedir as homedir11 } from "os";
 import { dirname as dirname17, join as join45 } from "path";
 async function loadBenchmarkSnapshot(options2 = {}) {
@@ -64256,7 +64520,7 @@ function readCache2(path3, options2, warn4) {
   if (!existsSync40(path3))
     return null;
   try {
-    const parsed = JSON.parse(readFileSync37(path3, "utf8"));
+    const parsed = JSON.parse(readFileSync38(path3, "utf8"));
     assertSnapshotFresh(parsed, options2);
     return parsed;
   } catch (error2) {
@@ -64374,7 +64638,7 @@ var init_benchmarks = __esm(() => {
 
 // src/specialist/model-probes.ts
 import { createHash as createHash8, randomUUID as randomUUID6 } from "crypto";
-import { mkdirSync as mkdirSync18, readdirSync as readdirSync21, readFileSync as readFileSync38, writeFileSync as writeFileSync22 } from "fs";
+import { mkdirSync as mkdirSync18, readdirSync as readdirSync21, readFileSync as readFileSync39, writeFileSync as writeFileSync22 } from "fs";
 import { homedir as homedir12 } from "os";
 import { dirname as dirname18, join as join46, resolve as resolve15 } from "path";
 async function runAgenticFollowthroughProbe(model, specName, opts = {}) {
@@ -64382,8 +64646,8 @@ async function runAgenticFollowthroughProbe(model, specName, opts = {}) {
   mkdirSync18(probeDir, { recursive: true, mode: 448 });
   writeFileSync22(join46(probeDir, "probe-notes.md"), `# Probe notes
 `, { mode: 384 });
-  const run39 = opts.runSpecialist ?? runScriptSpecialist;
-  const result = await withTimeout(run39({
+  const run40 = opts.runSpecialist ?? runScriptSpecialist;
+  const result = await withTimeout(run40({
     specialist: specName,
     model_override: model,
     template: PROBE_TEMPLATE,
@@ -64428,7 +64692,7 @@ function classifyProbe(metrics) {
 }
 function readJsonl(path3) {
   try {
-    return readFileSync38(path3, "utf8").split(`
+    return readFileSync39(path3, "utf8").split(`
 `).filter((line) => line.trim().length > 0).flatMap((line) => {
       try {
         return [JSON.parse(line)];
@@ -64514,10 +64778,10 @@ __export(exports_setup, {
   runFetchBenchmarks: () => runFetchBenchmarks,
   runDiscovery: () => runDiscovery,
   runApply: () => runApply,
-  run: () => run39
+  run: () => run40
 });
 import { spawnSync as spawnSync26 } from "child_process";
-import { readFileSync as readFileSync39 } from "fs";
+import { readFileSync as readFileSync40 } from "fs";
 function usage4() {
   return [
     "Usage: specialists setup <mode> [options]",
@@ -64601,7 +64865,7 @@ function pickMode(current, next) {
     throw new Error("Choose exactly one setup mode");
   return next;
 }
-async function run39(argv = process.argv.slice(3)) {
+async function run40(argv = process.argv.slice(3)) {
   const args = parseArgs17(argv);
   switch (args.mode) {
     case "discovery":
@@ -64776,7 +65040,7 @@ async function buildPlan(preset) {
 function readSetupInput() {
   if (process.stdin.isTTY)
     return {};
-  const raw = readFileSync39(0, "utf8").trim();
+  const raw = readFileSync40(0, "utf8").trim();
   if (raw.length === 0)
     return {};
   return SetupInputSchema.parse(JSON.parse(raw));
@@ -64802,7 +65066,7 @@ function scoreRow(row, preferredProviders) {
   return providerBonus + (row.quality_score ?? row.elo ?? 0);
 }
 function applyPlan(planPath, dryRun) {
-  const plan = SetupPlanSchema.parse(JSON.parse(readFileSync39(planPath, "utf8")));
+  const plan = SetupPlanSchema.parse(JSON.parse(readFileSync40(planPath, "utf8")));
   const path3 = getGlobalUserConfigPath().path;
   const changes = collectPlannedChanges(plan.writes);
   if (dryRun) {
@@ -65118,7 +65382,7 @@ var init_serve_hot_reload = () => {};
 var exports_serve = {};
 __export(exports_serve, {
   startServe: () => startServe,
-  run: () => run40,
+  run: () => run41,
   recordAuditFailure: () => recordAuditFailure,
   evaluateReadiness: () => evaluateReadiness2,
   createReadinessState: () => createReadinessState,
@@ -65524,7 +65788,7 @@ async function startServe(argv = process.argv.slice(3)) {
   console.log(`sp serve listening on ${args.port}`);
   return { server, args, db, readinessState };
 }
-async function run40(argv = process.argv.slice(3)) {
+async function run41(argv = process.argv.slice(3)) {
   await startServe(argv);
 }
 var AUDIT_WINDOW_MS = 60000, DEFAULT_REQUIRED_PI_FLAGS;
@@ -65543,7 +65807,7 @@ var init_serve = __esm(() => {
 var exports_script = {};
 __export(exports_script, {
   scriptCli: () => scriptCli,
-  run: () => run41,
+  run: () => run42,
   parseArgs: () => parseArgs19,
   mapExitCode: () => mapExitCode
 });
@@ -65687,7 +65951,7 @@ function runUnderLock(lockPath, argv) {
     return 75;
   return flock.status ?? 1;
 }
-async function run41(argv = process.argv.slice(3)) {
+async function run42(argv = process.argv.slice(3)) {
   const args = parseArgs19(argv);
   if (args.singleInstance && !process.env.SP_SCRIPT_NO_LOCK) {
     process.exit(runUnderLock(args.singleInstance, argv));
@@ -65719,13 +65983,13 @@ var init_script = __esm(() => {
 // src/cli/help.ts
 var exports_help2 = {};
 __export(exports_help2, {
-  run: () => run42
+  run: () => run43
 });
 function formatCommands(entries) {
   const width = Math.max(...entries.map(([cmd3]) => cmd3.length));
   return entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(width)}   ${desc}`);
 }
-async function run42() {
+async function run43() {
   const lines = [
     "",
     "Specialists lets you run project-scoped specialist agents with a bead-first workflow.",
@@ -73461,7 +73725,7 @@ var next = process.argv[3];
 function wantsHelp() {
   return next === "--help" || next === "-h";
 }
-async function run43() {
+async function run44() {
   if (sub === "install") {
     if (wantsHelp()) {
       console.log([
@@ -73623,6 +73887,40 @@ async function run43() {
       return;
     }
     const { run: handler } = await Promise.resolve().then(() => (init_render_skill_prefix(), exports_render_skill_prefix));
+    return handler();
+  }
+  if (sub === "launch-outcome") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists launch-outcome <file>",
+        "",
+        "Read-only consumer of the Core K2 launcher outcome contract",
+        `xtrm.command-outcome.v1 (read-only: creates no job, worktree, session,`,
+        "bead, note, or status row). Validates a detached launcher outcome JSON",
+        "and emits the whitelist projection: readiness, runtime, thread/session",
+        "and worktree identity for result retrieval, and exact follow-up actions",
+        "as argv data. Supports pi, claude and codex launcher outcomes; the codex",
+        "surface stays experimental until K5 promotion. Core owns the contract",
+        "field names and reason codes; unknown fields are tolerated but never",
+        "echoed. This verb never parses prose and is not a second result",
+        "authority \u2014 specialist job results stay on `sp result`.",
+        "",
+        "Output: { ok: true, schema_version, status, reason_code, summary,",
+        "          runtime, identity, worktree, readiness, safety_profile,",
+        "          persistence, authoritative_mutation, side_effects, next_actions }",
+        "Errors: JSON { ok: false, error: { code, message } } with exit 1.",
+        "  Stable codes: usage, file_not_read, invalid_json, unsupported_schema,",
+        "  invalid_outcome.",
+        "",
+        "Examples:",
+        "  specialists launch-outcome /tmp/xt-codex-outcome.json",
+        ""
+      ].join(`
+`));
+      return;
+    }
+    const { run: handler } = await Promise.resolve().then(() => (init_launch_outcome2(), exports_launch_outcome));
     return handler();
   }
   if (sub === "view") {
@@ -74815,7 +75113,7 @@ Run 'specialists help' to see available commands.`);
   const server = new SpecialistsServer;
   await server.start();
 }
-run43().then(() => {
+run44().then(() => {
   if (sub && sub !== "serve")
     process.exit(process.exitCode ?? 0);
 }).catch((error2) => {
