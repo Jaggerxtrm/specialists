@@ -38,11 +38,10 @@ export class StallTimeoutError extends Error {
 //   error                   — message-level error
 //
 import { createHash } from 'node:crypto';
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, resolve, sep, join, dirname } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { mapSpecialistBackend, getProviderArgs } from './backendMap.js';
 import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
 import { resolveManifestTools, type ManifestPolicy, type ManifestPolicyTier } from '../specialist/manifest-resolver.js';
@@ -208,7 +207,6 @@ export function resolvePermissionTools(options: {
     specialistOverride,
     extensionState: {
       gitnexus: { enabled: true, health: probeExtensionHealth('pi-gitnexus') },
-      serena: { enabled: true, health: probeExtensionHealth('pi-serena-tools') },
     },
   }).tools || undefined;
 }
@@ -559,28 +557,6 @@ export default function(pi) {
 }
 
 
-export function ensureSerenaForRootInSubprocess(serenaPoolPath: string, projectRoot: string, env: NodeJS.ProcessEnv): number | null {
-  const helperScript = [
-    'const [moduleUrl, cwd] = process.argv.slice(1);',
-    'const mod = await import(moduleUrl);',
-    'const ensure = mod?.ensureSerenaForRoot;',
-    'const port = typeof ensure === "function" ? await ensure(cwd) : null;',
-    'if (port != null) process.stdout.write(String(port));',
-  ].join(' ');
-  const helperArgs = process.versions.bun
-    ? ['-e', helperScript, pathToFileURL(serenaPoolPath).href, projectRoot]
-    : ['--input-type=module', '-e', helperScript, pathToFileURL(serenaPoolPath).href, projectRoot];
-  const output = execFileSync(process.execPath, helperArgs, {
-    encoding: 'utf8',
-    env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }).trim();
-  if (!output) return null;
-  const port = Number(output);
-  if (!Number.isFinite(port)) throw new Error(`serena-pool helper returned invalid port: ${output}`);
-  return port;
-}
-
 export class PiAgentSession {
   private proc?: ChildProcess;
   private _lastOutput = '';
@@ -685,8 +661,11 @@ export class PiAgentSession {
     const nvidiaNimPath = join(homedir(), '.pi', 'agent', 'git', 'github.com', 'xRyul', 'pi-nvidia-nim');
     if (existsSync(nvidiaNimPath)) args.push('-e', nvidiaNimPath);
 
-    // npm package extensions (gitnexus, serena) - resolve from global node_modules
-    // These are installed via npm, not as directory extensions in ~/.pi/agent/extensions/
+    // npm package extensions (gitnexus) - resolve from global node_modules.
+    // These are installed via npm, not as directory extensions in ~/.pi/agent/extensions/.
+    // Serena extension injection was retired with the K4 Serena retirement
+    // (unitAI-e67up.8): legacy `excludeExtensions: ['pi-serena-tools']` entries
+    // remain accepted and simply have nothing to exclude.
     const npmGlobalDir = resolveGlobalNodeModulesDir();
     const excludedExtensions = new Set(this.options.excludeExtensions ?? []);
     if (npmGlobalDir) {
@@ -694,12 +673,6 @@ export class PiAgentSession {
       if (!excludedExtensions.has(gitnexusPackageName)) {
         const gitnexusPath = join(npmGlobalDir, gitnexusPackageName);
         if (existsSync(gitnexusPath)) args.push('-e', gitnexusPath);
-      }
-
-      const serenaPackageName = 'pi-serena-tools';
-      if (!excludedExtensions.has(serenaPackageName)) {
-        const serenaPath = join(npmGlobalDir, serenaPackageName);
-        if (existsSync(serenaPath)) args.push('-e', serenaPath);
       }
     }
 
@@ -716,42 +689,23 @@ export class PiAgentSession {
       }
     }
 
-    const sessionCwd = resolve(this.options.cwd ?? process.cwd());
-
     const hookEnv = {
       ...process.env,
       ...(this.options.env ?? {}),
       CAVEMAN_LEVEL: 'full',
     };
 
-    // serena-pool pre-spawn hook: ensure a shared Serena daemon is running for
-    // this repo root and set SERENA_MCP_PORT so pi-serena-tools (which reads
-    // the env at construction time) reuses it instead of spawning its own.
-    let serenaPoolPort: number | null = null;
-    if (npmGlobalDir && !excludedExtensions.has('pi-serena-tools')) {
-      const serenaPoolPath = join(npmGlobalDir, '@jaggerxtrm', 'pi-extensions', 'extensions', 'serena-pool', 'index.ts');
-      if (existsSync(serenaPoolPath)) {
-        try {
-          serenaPoolPort = ensureSerenaForRootInSubprocess(serenaPoolPath, sessionCwd, hookEnv);
-        } catch (err) {
-          console.warn('[serena-pool] pre-spawn ensure failed:', err);
-        }
-      }
-    }
+    const sessionCwd = resolve(this.options.cwd ?? process.cwd());
 
-    const baseEnv = {
-      ...hookEnv,
-      ...(serenaPoolPort != null ? { SERENA_MCP_PORT: String(serenaPoolPort) } : {}),
-    };
     // `detached: true` puts pi in its own process group so we can later
-    // group-SIGKILL the whole subtree (pi + gitnexus mcp + serena mcp + …)
+    // group-SIGKILL the whole subtree (pi + gitnexus mcp + …)
     // as a backstop when graceful shutdown does not reap MCP children.
     this.proc = spawn('pi', args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: sessionCwd,
       env: worktreeBoundary
-        ? { ...baseEnv, [WORKTREE_BOUNDARY_ENV_KEY]: worktreeBoundary }
-        : baseEnv,
+        ? { ...hookEnv, [WORKTREE_BOUNDARY_ENV_KEY]: worktreeBoundary }
+        : hookEnv,
       detached: true,
     });
 
@@ -1265,7 +1219,7 @@ export class PiAgentSession {
         // does stdin.end → SIGTERM(2s) → SIGKILL(2s)). A redundant SIGTERM here
         // races pi's shutdown handler — pi sees `shuttingDown=true` and calls
         // process.exit() synchronously, aborting in-flight MCP cleanup and
-        // orphaning gitnexus/serena children. Wait long enough for graceful
+        // orphaning MCP children. Wait long enough for graceful
         // close, then group-SIGKILL the whole subtree as a backstop.
         setTimeout(() => {
           if (proc.exitCode === null && proc.pid != null) {
@@ -1297,7 +1251,7 @@ export class PiAgentSession {
     this._pendingRequests.clear();
     // Send graceful SIGTERM first so pi can dispose MCP servers cleanly.
     // Backstop: group-SIGKILL after 8s to reap any orphaned MCP children
-    // (gitnexus mcp, serena mcp) if pi hangs or aborts dispose mid-flight.
+    // (e.g. the gitnexus mcp) if pi hangs or aborts dispose mid-flight.
     const proc = this.proc;
     this.proc = undefined;
     proc?.kill();

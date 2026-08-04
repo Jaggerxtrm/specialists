@@ -30,7 +30,6 @@
     "mandatory_rules": {
       "template_sets": [
         "sync-docs-scope-discipline",
-        "serena-cheatsheet",
         "per-turn-handoff-schema",
         "bead-id-verbatim"
       ]

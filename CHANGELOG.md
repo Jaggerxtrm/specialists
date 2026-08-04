@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Retired the active Serena runtime integration (unitAI-e67up.8): Specialists no longer probes for `pi-serena-tools`, injects it into Pi argv, pre-spawns the `serena-pool` daemon, or sets `SERENA_MCP_PORT`. The Serena tool catalog and the `serena-cheatsheet` mandatory rule are removed; specialist definitions, skills, and docs route through native tools plus GitNexus. `execution.extensions.serena` remains parseable but is deprecated and ignored; passive `sp ps` process-health detection of foreign Serena processes is unchanged.
+
 ## [v3.21.2] — 2026-07-28
 
 ### Added

@@ -25,7 +25,7 @@ function parseEffectiveManifest(stdout: string): Record<string, unknown> {
 }
 
 const CATALOG_INDEX = {
-  precedence_order: ['native', 'gitnexus', 'serena'],
+  precedence_order: ['native', 'gitnexus'],
   catalogs: [
     {
       catalog: 'native',
@@ -40,13 +40,6 @@ const CATALOG_INDEX = {
       version: '0.6.1',
       precedence: 1,
       source_tiers: { READ_ONLY: ['gitnexus_list_repos'], LOW: ['gitnexus_list_repos'], MEDIUM: ['gitnexus_list_repos'], HIGH: ['gitnexus_list_repos'] },
-    },
-    {
-      catalog: 'serena',
-      package: 'pi-serena-tools',
-      version: '0.1.0',
-      precedence: 2,
-      source_tiers: { READ_ONLY: ['serena_list_tools'], LOW: ['serena_list_tools'], MEDIUM: ['serena_list_tools'], HIGH: ['serena_list_tools'] },
     },
   ],
 };

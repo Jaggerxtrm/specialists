@@ -150,10 +150,6 @@ bv --robot-insights | jq '.Cycles'    # Circular deps — must fix
 
 ## Code Intelligence (mandatory before edits)
 
-Use **Serena** (`using-serena-lsp` skill) for all code reads and edits:
-- `find_symbol` → `get_symbols_overview` → `replace_symbol_body`
-- Never grep-read-sed when symbolic tools are available
-
 Use **GitNexus** MCP tools before touching any symbol:
 - `gitnexus_impact({target: "symbolName", direction: "upstream"})` — blast radius
 - `gitnexus_context({name: "symbolName"})` — callers, callees, execution flows
@@ -223,7 +219,7 @@ Before modifying any function/class/method:
 - `gitnexus_context({name: "X"})` — callers/callees/flows
 - `gitnexus_detect_changes()` before commit
 
-Use Serena symbolic tools (`find_symbol` → `replace_symbol_body`) instead of grep-read-sed when available. Stop and warn if impact returns HIGH/CRITICAL.
+Use GitNexus for graph-aware navigation and impact analysis. Use the runtime's native read and edit tools for file operations. Stop and warn if impact returns HIGH/CRITICAL.
 
 ## Quality gates (automatic on edit)
 

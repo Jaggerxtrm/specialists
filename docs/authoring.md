@@ -85,12 +85,12 @@ This guide is the user-facing reference for authoring `.specialist.json` files. 
 | `thinking_level` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"` | unset | forwarded to thinking-capable models |
 | `requires_worktree` | boolean | `true` | set `false` for workflow/script-class specialists that should not be sandboxed in a worktree |
 | `auto_commit` | `"never" \| "checkpoint_on_waiting" \| "checkpoint_on_terminal"` | `"never"` | when to auto-commit specialist edits to the worktree |
-| `extensions.serena` | boolean | `true` | `false` disables Serena extension injection for this specialist |
+| `extensions.serena` | boolean | — | DEPRECATED, ignored (Serena retired, unitAI-e67up.8); legacy specs keep validating |
 | `extensions.gitnexus` | boolean | `true` | `false` disables GitNexus extension injection for this specialist |
 
 ### Permission tiers
 
-The tier coarse-grains the native pi tools your specialist gets. The full resolved tool list also includes GitNexus and Serena tools per the catalog at `.specialists/catalog/index.json` — see [manifest.md](manifest.md) for the complete picture.
+The tier coarse-grains the native pi tools your specialist gets. The full resolved tool list also includes GitNexus tools per the catalog at `.specialists/catalog/index.json` — see [manifest.md](manifest.md) for the complete picture.
 
 | Level | Native tools added (cumulative) |
 |---|---|
@@ -99,7 +99,7 @@ The tier coarse-grains the native pi tools your specialist gets. The full resolv
 | `"MEDIUM"` | `+ edit` |
 | `"HIGH"` | `+ write` |
 
-Each tier also brings tier-appropriate GitNexus and Serena tools from the catalog. Catalog `default_overrides` may also remove native tools at runtime when extensions are healthy. To see exactly what your specialist will receive:
+Each tier also brings tier-appropriate GitNexus tools from the catalog. Catalog `default_overrides` may also remove native tools at runtime when extensions are healthy. To see exactly what your specialist will receive:
 
 ```bash
 sp config show <name> --resolved
@@ -127,10 +127,10 @@ For most specialists the tier defaults are correct and you should not declare an
 
 | Field | Type | Default | Effect |
 |-------|------|---------|--------|
-| `denied_natives_when_extension` | `string[]` | `[]` | Native tools to deny only when a replacement extension (gitnexus/serena) is healthy. |
+| `denied_natives_when_extension` | `string[]` | `[]` | Native tools to deny only when the replacement extension (gitnexus) is healthy. |
 | `denied_natives_mode` | `"soft"` \| `"hard"` | `"soft"` | `soft` keeps the tool but emits a preference hint; `hard` removes it (with health-gated restore). |
 
-The example above is explorer's actual block: when `pi-serena-tools` and `pi-gitnexus` are loaded, native `grep`/`find`/`ls` are stripped to force the model toward `search_for_pattern`, `find_file`, `gitnexus_query`. If either extension degrades, the natives are restored automatically.
+The example above is explorer's actual block: when `pi-gitnexus` is loaded, native `grep`/`find`/`ls` are stripped to force the model toward `gitnexus_query` and the other GitNexus graph tools. If the extension degrades, the natives are restored automatically.
 
 See [manifest.md](manifest.md) for full semantics, the canonical example, and when to *not* add an override.
 
@@ -145,7 +145,7 @@ Custom specialists can reference package-canonical rules and skills by name inst
 {
   "specialist": {
     "mandatory_rules": {
-      "template_sets": ["serena-cheatsheet"]
+      "template_sets": ["git-workflow-safe"]
     },
     "skills": {
       "paths": ["releasing"]

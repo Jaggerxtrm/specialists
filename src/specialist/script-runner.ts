@@ -965,19 +965,16 @@ function appendExtensionArgs(args: string[], spec: Specialist): void {
   if (existsSync(cavemanPath)) args.push('-e', cavemanPath);
 
   const npmGlobalDir = resolveGlobalNodeModulesDir();
+  // Serena extension injection retired (unitAI-e67up.8): `extensions.serena`
+  // config remains parseable but is ignored; only gitnexus opt-out is active.
   const excludedExtensions = new Set([
     spec.specialist.execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
-    spec.specialist.execution.extensions?.serena === false ? 'pi-serena-tools' : undefined,
   ].filter((value): value is string => Boolean(value)));
   if (!npmGlobalDir) return;
 
   if (!excludedExtensions.has('pi-gitnexus')) {
     const gitnexusPath = join(npmGlobalDir, 'pi-gitnexus');
     if (existsSync(gitnexusPath)) args.push('-e', gitnexusPath);
-  }
-  if (!excludedExtensions.has('pi-serena-tools')) {
-    const serenaPath = join(npmGlobalDir, 'pi-serena-tools');
-    if (existsSync(serenaPath)) args.push('-e', serenaPath);
   }
 }
 
@@ -995,7 +992,6 @@ async function runSingleAttempt(prompt: string, model: string, thinkingLevel: st
       stallTimeoutMs: spec.specialist.execution.stall_timeout_ms ?? timeoutMs,
       excludeExtensions: [
         spec.specialist.execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
-        spec.specialist.execution.extensions?.serena === false ? 'pi-serena-tools' : undefined,
       ].filter((value): value is string => Boolean(value)),
       onToken: (delta) => {
         recordAssistantDelta(delta);

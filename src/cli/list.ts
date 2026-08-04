@@ -45,7 +45,6 @@ const INLINE_RULE_GLOBAL_SET_IDS = new Set([
   'git-workflow-safe',
   'bun-native-tooling',
   'gitnexus-required',
-  'serena-cheatsheet',
 ]);
 
 interface SpecialistRuntimeStats {

@@ -65,7 +65,7 @@ const PRIMITIVE_HINT: Record<string, string> = {
   'execution.max_retries': 'count · transient-error retries; e.g. 3',
   'execution.prompt_limit_bytes': 'bytes · prompt cap; e.g. 4194304 (4 MiB)',
   'execution.stdout_limit_bytes': 'bytes · stdout cap; e.g. 33554432 (32 MiB)',
-  'execution.extensions.serena': 'true|false · false disables Serena MCP (~80-150 MB)',
+  'execution.extensions.serena': 'deprecated · accepted but ignored (Serena retired)',
   'execution.extensions.gitnexus': 'true|false · false disables GitNexus MCP',
   'stall_detection.waiting_auto_close_ms': 'ms · waiting auto-close; e.g. 3600000 (1h)',
   'beads_write_notes': 'true|false · false skips per-turn note append',

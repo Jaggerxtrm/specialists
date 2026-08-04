@@ -83,7 +83,6 @@ jobs:
             config/catalog/index.json \
             config/catalog/native.json \
             config/catalog/gitnexus.json \
-            config/catalog/serena.json \
             dist/asset-contract.json \
             LICENSE; then
             echo 'package-payload: CONTRACT FAILURE — asserted asset missing from successfully-built payload' >&2

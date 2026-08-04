@@ -30,7 +30,7 @@ When a specialist is dispatched, `PiAgentSession.start()` produces a comma-joine
 
 1. The specialist's coarse tier from `execution.permission_required` (`READ_ONLY` | `LOW` | `MEDIUM` | `HIGH`).
 2. The specialist's optional `permissions[<TIER>]` override block.
-3. The catalog index resolved from `.specialists/catalog/index.json` when a local override exists, otherwise package-canonical `config/catalog/index.json`, plus the live health probe of the `pi-gitnexus` and `pi-serena-tools` npm extensions.
+3. The catalog index resolved from `.specialists/catalog/index.json` when a local override exists, otherwise package-canonical `config/catalog/index.json`, plus the live health probe of the `pi-gitnexus` npm extension.
 
 The resolver is the only path. There is no env-flag fallback. There are no hardcoded tool arrays in source.
 
@@ -43,7 +43,7 @@ The resolved catalog `index.json` declares the precedence order and inlines per-
 
 ```json
 {
-  "precedence_order": ["native", "gitnexus", "serena"],
+  "precedence_order": ["native", "gitnexus"],
   "catalogs": [
     {
       "catalog": "native",
@@ -57,24 +57,23 @@ The resolved catalog `index.json` declares the precedence order and inlines per-
         "HIGH":      ["read", "grep", "find", "ls", "bash", "edit", "write"]
       }
     },
-    { "catalog": "gitnexus", "package": "pi-gitnexus", "...": "..." },
-    { "catalog": "serena",   "package": "pi-serena-tools", "...": "..." }
+    { "catalog": "gitnexus", "package": "pi-gitnexus", "...": "..." }
   ]
 }
 ```
 
-Three catalog files (`native.json`, `gitnexus.json`, `serena.json`) sit alongside the index and contain richer per-tool metadata. The index is the canonical input the resolver reads at session start.
+Two catalog files (`native.json` and `gitnexus.json`) sit alongside the index and contain richer per-tool metadata. The index is the canonical input the resolver reads at session start.
 
 The flat tool list emitted to `pi --tools` is the union of each catalog's `source_tiers[<TIER>]` for the active tier, gated by extension health (see below).
 
 ## The four tiers
 
-| Tier | Native | GitNexus | Serena |
-|------|--------|----------|--------|
-| `READ_ONLY` | read, grep, find, ls | read tools (query/context/impact/detect_changes/list_repos) | read tools (find_symbol, search_for_pattern, list_dir, find_file, …) |
-| `LOW` | + bash | (same as READ_ONLY) | + execute_shell_command |
-| `MEDIUM` | + edit | + rename, cypher | + write tools (replace_symbol_body, create_text_file, …) |
-| `HIGH` | + write | (same as MEDIUM) | (same as MEDIUM) |
+| Tier | Native | GitNexus |
+|------|--------|----------|
+| `READ_ONLY` | read, grep, find, ls | read tools (query/context/impact/detect_changes/list_repos) |
+| `LOW` | + bash | same as READ_ONLY |
+| `MEDIUM` | + edit | + rename, cypher |
+| `HIGH` | + write | same as MEDIUM |
 
 Inspect the actual resolved set for any specialist with `sp config show <name> --resolved` (see `docs/cli-reference.md`).
 
@@ -87,9 +86,9 @@ Three states per extension affect resolution:
 | `loaded_healthy` | Catalog tools included normally; hard-deny of natives is allowed. |
 | `loaded_unhealthy` / `not_installed` / `disabled` / `unknown` | Catalog's tools are dropped from the resolved set; if a hard-deny is configured against natives, those natives are *restored* automatically and a downgrade reason is recorded. |
 
-Restoration is the safety net: an explorer that hard-denies `grep`/`find`/`ls` will get them back as a fallback if `pi-serena-tools` becomes unhealthy mid-run. You see this in `sp config show --resolved` as `restored native fallback: ...` in `downgrade reasons`.
+Restoration is the safety net: an explorer that hard-denies `grep`/`find`/`ls` will get them back as a fallback if `pi-gitnexus` becomes unhealthy mid-run. You see this in `sp config show --resolved` as `restored native fallback: ...` in `downgrade reasons`.
 
-Probes inspect `pi-gitnexus` and `pi-serena-tools` in the global npm modules directory.
+The probe inspects `pi-gitnexus` in the global npm modules directory.
 
 ## Per-specialist override block
 
@@ -145,7 +144,7 @@ Soft is the default — bias toward observability before enforcement.
 }
 ```
 
-Why: explorer is meant to discover code through the symbol/process graph — `gitnexus_query` and serena's `search_for_pattern` / `find_symbol` / `find_file` give richer, ranked, structured results than native `grep`/`find`/`ls`. Hard-denying the natives forces explorer to use the better tools when they're available, while the health-gated restore guarantees it still works if the extensions go offline.
+Why: explorer is meant to discover code through the symbol/process graph. GitNexus queries provide ranked execution flows and symbol relationships that native `grep`/`find`/`ls` do not. Hard-denying the natives forces explorer to use the graph when it is available, while the health-gated restore guarantees native fallback if the extension goes offline.
 
 `read` stays soft (not in the deny list) because no extension currently provides large-file or non-code reading equivalents.
 

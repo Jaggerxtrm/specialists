@@ -23,7 +23,6 @@
       "output_type": "synthesis",
       "permission_required": "READ_ONLY",
       "extensions": {
-        "serena": false,
         "gitnexus": false
       }
     },

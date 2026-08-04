@@ -12,7 +12,7 @@ vi.mock('node:child_process', () => ({
 }));
 
 import { execFileSync, spawn } from 'node:child_process';
-import { PiAgentSession, StallTimeoutError, ensureSerenaForRootInSubprocess, validateWriteToolPathAgainstBoundary } from '../../../src/pi/session.js';
+import { PiAgentSession, StallTimeoutError, validateWriteToolPathAgainstBoundary } from '../../../src/pi/session.js';
 
 const mockSpawn = spawn as ReturnType<typeof vi.fn>;
 const mockExecFileSync = execFileSync as ReturnType<typeof vi.fn>;
@@ -96,44 +96,6 @@ function getToolsArg(args: readonly string[]): string | undefined {
   return toolsIdx >= 0 ? args[toolsIdx + 1] : undefined;
 }
 
-
-describe('ensureSerenaForRootInSubprocess', () => {
-  it('passes injected env to helper subprocess without mutating process.env', () => {
-    const previousPath = process.env.PATH;
-    const previousHome = process.env.HOME;
-    delete process.env.SERENA_TEST_ENV;
-    mockExecFileSync.mockReturnValue('41234\n');
-
-    const port = ensureSerenaForRootInSubprocess('/tmp/serena-pool/index.ts', '/tmp/project', {
-      ...process.env,
-      PATH: '/injected/bin:/original/bin',
-      HOME: '/injected/home',
-      SERENA_TEST_ENV: 'visible-to-hook',
-    });
-
-    expect(port).toBe(41234);
-    expect(mockExecFileSync).toHaveBeenCalledWith(
-      process.execPath,
-      expect.arrayContaining(['-e', expect.any(String), expect.stringMatching(/^file:\/\//), '/tmp/project']),
-      expect.objectContaining({
-        encoding: 'utf8',
-        env: expect.objectContaining({
-          PATH: '/injected/bin:/original/bin',
-          HOME: '/injected/home',
-          SERENA_TEST_ENV: 'visible-to-hook',
-        }),
-      }),
-    );
-    expect(process.env.PATH).toBe(previousPath);
-    expect(process.env.HOME).toBe(previousHome);
-    expect(process.env.SERENA_TEST_ENV).toBeUndefined();
-  });
-
-  it('returns null when helper emits no port', () => {
-    mockExecFileSync.mockReturnValue('');
-    expect(ensureSerenaForRootInSubprocess('/tmp/serena-pool/index.ts', '/tmp/project', process.env)).toBeNull();
-  });
-});
 
 // ── RPC protocol parsing tests ────────────────────────────────────────────────
 
@@ -400,10 +362,11 @@ describe('_handleEvent — RPC protocol parsing', () => {
 describe('PiAgentSession', () => {
   let fake: ReturnType<typeof makeFakeProc>;
   // The resolver's hard-deny of native fs tools is gated on probeExtensionHealth(),
-  // which looks for globally installed pi-gitnexus / pi-serena-tools. Without a
-  // stub global dir these tests pass on a developer box and fail on a clean CI
-  // runner. Pin the probe to a fixture so the outcome does not depend on what the
-  // machine happens to have installed.
+  // which looks for globally installed pi-gitnexus. Without a stub global dir
+  // these tests pass on a developer box and fail on a clean CI runner. Pin the
+  // probe to a fixture so the outcome does not depend on what the machine
+  // happens to have installed. pi-serena-tools is also materialized so the
+  // negative assertions below prove it is ignored even when installed.
   let npmGlobalDir: string;
   let prevGlobalDir: string | undefined;
 
@@ -442,57 +405,37 @@ describe('PiAgentSession', () => {
   });
 
 
-  it('passes merged env to isolated serena helper and injects returned port into spawn env', async () => {
+  it('never spawns serena-pool or injects SERENA_MCP_PORT, even when the pool module is installed', async () => {
     const npmGlobalDir = mkdtempSync(join(tmpdir(), 'pi-npm-global-'));
     const serenaPoolPath = join(npmGlobalDir, '@jaggerxtrm', 'pi-extensions', 'extensions', 'serena-pool', 'index.ts');
     const prevGlobalDir = process.env.PI_NPM_GLOBAL_DIR;
-    const prevPath = process.env.PATH;
+    // Isolate from operator environments that already carry a foreign pool port:
+    // env passthrough is by design, the session itself must never set the port.
+    const prevSerenaPort = process.env.SERENA_MCP_PORT;
+    delete process.env.SERENA_MCP_PORT;
     try {
       mkdirSync(join(npmGlobalDir, '@jaggerxtrm', 'pi-extensions', 'extensions', 'serena-pool'), { recursive: true });
       writeFileSync(serenaPoolPath, 'export async function ensureSerenaForRoot() { return 41234; }');
       process.env.PI_NPM_GLOBAL_DIR = npmGlobalDir;
-      process.env.PATH = '/original/bin';
-      mockExecFileSync.mockReturnValue('41234\n');
 
       const session = await PiAgentSession.create({
         model: 'gemini',
         cwd: '/tmp/project',
-        env: {
-          PATH: '/injected/bin:/original/bin',
-          HOME: '/injected/home',
-          SERENA_TEST_ENV: 'visible-to-hook',
-        },
+        env: { SERENA_TEST_ENV: 'visible-to-hook' },
       });
       await session.start();
 
-      expect(mockExecFileSync).toHaveBeenCalledWith(
-        process.execPath,
-        expect.arrayContaining(['-e', expect.any(String), expect.stringMatching(/^file:\/\//), '/tmp/project']),
-        expect.objectContaining({
-          encoding: 'utf8',
-          env: expect.objectContaining({
-            PATH: '/injected/bin:/original/bin',
-            HOME: '/injected/home',
-            SERENA_TEST_ENV: 'visible-to-hook',
-            CAVEMAN_LEVEL: 'full',
-          }),
-        }),
-      );
-
+      // No helper subprocess is spawned for Serena and no port is injected.
+      expect(mockExecFileSync).not.toHaveBeenCalled();
       const spawnOptions = mockSpawn.mock.calls[0][2] as { env?: NodeJS.ProcessEnv };
-      expect(spawnOptions.env).toEqual(expect.objectContaining({
-        PATH: '/injected/bin:/original/bin',
-        HOME: '/injected/home',
-        SERENA_TEST_ENV: 'visible-to-hook',
-        SERENA_MCP_PORT: '41234',
-      }));
-      expect(process.env.PATH).toBe('/original/bin');
-      expect(process.env.SERENA_TEST_ENV).toBeUndefined();
+      expect(spawnOptions.env).not.toHaveProperty('SERENA_MCP_PORT');
+      // Caller-provided env still flows through untouched.
+      expect(spawnOptions.env).toEqual(expect.objectContaining({ SERENA_TEST_ENV: 'visible-to-hook' }));
     } finally {
       if (prevGlobalDir === undefined) delete process.env.PI_NPM_GLOBAL_DIR;
       else process.env.PI_NPM_GLOBAL_DIR = prevGlobalDir;
-      if (prevPath === undefined) delete process.env.PATH;
-      else process.env.PATH = prevPath;
+      if (prevSerenaPort === undefined) delete process.env.SERENA_MCP_PORT;
+      else process.env.SERENA_MCP_PORT = prevSerenaPort;
       rmSync(npmGlobalDir, { recursive: true, force: true });
     }
   });
@@ -710,10 +653,8 @@ describe('PiAgentSession', () => {
     const resolvedTools = getToolsArg(mockSpawn.mock.calls[0][1] as string[]);
     expect(resolvedTools).toBeDefined();
     expect(resolvedTools).toContain('gitnexus_query');
-    expect(resolvedTools).toContain('search_for_pattern');
-    expect(resolvedTools).toContain('find_file');
-    expect(resolvedTools).toContain('read_file');
-    expect(resolvedTools).toContain('list_dir');
+    expect(resolvedTools).toContain('bash');
+    expect(resolvedTools).not.toMatch(/serena/i);
     const resolvedToolNames = resolvedTools.split(',');
     expect(resolvedToolNames).not.toContain('read');
     expect(resolvedToolNames).not.toContain('grep');
@@ -721,7 +662,7 @@ describe('PiAgentSession', () => {
     expect(resolvedToolNames).not.toContain('ls');
   });
 
-  it("resolver LOW path keeps GitNexus/Serena parity with legacy tools", async () => {
+  it('resolver LOW path keeps native + GitNexus parity without Serena tools', async () => {
     const session = await PiAgentSession.create({ model: 'gemini', permissionLevel: 'LOW' });
     await session.start();
 
@@ -735,10 +676,13 @@ describe('PiAgentSession', () => {
     expect(tools).not.toContain('find');
     expect(tools).not.toContain('ls');
     expect(tools).toEqual(expect.arrayContaining(['gitnexus_query', 'gitnexus_context', 'gitnexus_impact']));
-    expect(tools).toEqual(expect.arrayContaining(['read_file', 'search_for_pattern', 'find_symbol', 'list_dir']));
-    expect(tools).toContain('execute_shell_command');
+    for (const tool of tools) {
+      expect(tool).not.toMatch(/serena/i);
+    }
+    expect(tools).not.toContain('find_symbol');
+    expect(tools).not.toContain('read_file');
+    expect(tools).not.toContain('execute_shell_command');
     expect(tools).not.toContain('write');
-    expect(tools).not.toContain('create_text_file');
   });
 
   it("resolver READ_ONLY path honors explorer override and drops native fs/search", async () => {
@@ -760,14 +704,14 @@ describe('PiAgentSession', () => {
     expect(toolsIdx).toBeGreaterThan(-1);
     const tools = args[toolsIdx + 1].split(',');
     expect(tools).toContain('gitnexus_query');
-    expect(tools).toContain('search_for_pattern');
-    expect(tools).toContain('find_file');
     expect(tools).not.toContain('grep');
     expect(tools).not.toContain('find');
     expect(tools).not.toContain('ls');
+    expect(tools).not.toContain('find_file');
+    expect(tools).not.toContain('search_for_pattern');
   });
 
-  it("mapPermissionToTools('HIGH') includes built-in write and Serena/GitNexus mutating tools", async () => {
+  it("mapPermissionToTools('HIGH') includes built-in write and GitNexus mutating tools, no Serena", async () => {
     const session = await PiAgentSession.create({ model: 'gemini', permissionLevel: 'HIGH' });
     await session.start();
 
@@ -781,7 +725,12 @@ describe('PiAgentSession', () => {
     expect(tools).not.toContain('find');
     expect(tools).not.toContain('ls');
     expect(tools).toEqual(expect.arrayContaining(['gitnexus_query', 'gitnexus_rename', 'gitnexus_cypher']));
-    expect(tools).toEqual(expect.arrayContaining(['read_file', 'create_text_file', 'replace_content', 'execute_shell_command']));
+    for (const tool of tools) {
+      expect(tool).not.toMatch(/serena/i);
+    }
+    expect(tools).not.toContain('read_file');
+    expect(tools).not.toContain('create_text_file');
+    expect(tools).not.toContain('execute_shell_command');
   });
 
   it('injects npm extensions by default when installed', async () => {
@@ -797,7 +746,9 @@ describe('PiAgentSession', () => {
 
       const args: string[] = mockSpawn.mock.calls[0][1];
       expect(args).toContain(join(npmGlobalDir, 'pi-gitnexus'));
-      expect(args).toContain(join(npmGlobalDir, 'pi-serena-tools'));
+      // Serena extension is retired: never injected even when installed.
+      expect(args).not.toContain(join(npmGlobalDir, 'pi-serena-tools'));
+      expect(args.join(' ')).not.toMatch(/serena/i);
     } finally {
       if (prevGlobalDir === undefined) delete process.env.PI_NPM_GLOBAL_DIR;
       else process.env.PI_NPM_GLOBAL_DIR = prevGlobalDir;
@@ -815,6 +766,8 @@ describe('PiAgentSession', () => {
 
       const session = await PiAgentSession.create({
         model: 'gemini',
+        // Legacy opt-out names remain accepted in the option; they simply have
+        // no Serena extension to exclude anymore.
         excludeExtensions: ['pi-serena-tools', 'pi-gitnexus'],
       });
       await session.start();
@@ -822,6 +775,7 @@ describe('PiAgentSession', () => {
       const args: string[] = mockSpawn.mock.calls[0][1];
       expect(args).not.toContain(join(npmGlobalDir, 'pi-gitnexus'));
       expect(args).not.toContain(join(npmGlobalDir, 'pi-serena-tools'));
+      expect(args.join(' ')).not.toMatch(/serena/i);
     } finally {
       if (prevGlobalDir === undefined) delete process.env.PI_NPM_GLOBAL_DIR;
       else process.env.PI_NPM_GLOBAL_DIR = prevGlobalDir;

@@ -12,7 +12,7 @@
     },
     {
       "path": "config/skills/setup-specialists/SKILL.md",
-      "sha256": "103538eb80e7684e9fde36d1e87079569c1b792ffc63d89df6851da6834268cd"
+      "sha256": "4a24f7b7d02792a61ca6f8553ae0b137c6ed4cd33197d68edafce727d8a4b19c"
     },
     {
       "path": "config/skills/specialists-creator/scripts/audit-spec-uniformity.mjs",
@@ -28,7 +28,7 @@
     },
     {
       "path": "config/skills/specialists-creator/SKILL.md",
-      "sha256": "f825f500e531e3a04b252c0f9a22b8acaa396f9d093368338d13e21ac43c30d4"
+      "sha256": "636c6d90e55b9d14fed26f93d1e66296a0a48e706d1ce4c067ccebc2638b69bd"
     },
     {
       "path": "config/skills/update-specialists/SKILL.md",
@@ -80,7 +80,7 @@
     },
     {
       "path": "config/skills/using-specialists/SKILL.md",
-      "sha256": "74fb9a29fdcb679c90b34e614c9e43645da5a12ad8cb1d44d10d9a723a2d792d"
+      "sha256": "8ba5c2fc32044ee44f689b565da4dbd275fd5dbcc8d75df127a26c29e040c8d0"
     }
   ],
   "shipped_specialists": [
@@ -219,9 +219,6 @@
       "path": "config/mandatory-rules/security-review-defaults.md"
     },
     {
-      "path": "config/mandatory-rules/serena-cheatsheet.md"
-    },
-    {
       "path": "config/mandatory-rules/service-knowledge-diff-scan-mandatory.md"
     },
     {
@@ -243,9 +240,6 @@
     },
     {
       "path": "config/catalog/native.json"
-    },
-    {
-      "path": "config/catalog/serena.json"
     }
   ],
   "shipped_nodes": [

@@ -1,5 +1,5 @@
 export type ToolTier = 'READ_ONLY' | 'LOW' | 'MEDIUM' | 'HIGH';
-export type ToolCatalogName = 'native' | 'gitnexus' | 'serena';
+export type ToolCatalogName = 'native' | 'gitnexus';
 export type ExtensionHealth = 'not_installed' | 'disabled' | 'loaded_healthy' | 'loaded_unhealthy' | 'unknown';
 export type DeniedNativesMode = 'soft' | 'hard';
 
@@ -129,13 +129,10 @@ export function resolveManifestTools(input: ResolverInput): ResolverResult {
   const gitnexusExtras = input.tier === 'MEDIUM' || input.tier === 'HIGH'
     ? getTierTools(input.catalogs, 'gitnexus', input.tier).filter(tool => !gitnexusBase.includes(tool))
     : [];
-  const serenaTools = getTierTools(input.catalogs, 'serena', input.tier);
 
   const gitnexusState = input.extensionState?.gitnexus;
-  const serenaState = input.extensionState?.serena;
   const healthyGitnexus = canEnforceHardDeny(gitnexusState);
-  const healthySerena = canEnforceHardDeny(serenaState);
-  const hardDenyAllowed = policy.denied_natives_mode === 'hard' && healthyGitnexus && healthySerena;
+  const hardDenyAllowed = policy.denied_natives_mode === 'hard' && healthyGitnexus;
 
   const finalNativeTools = nativeTools.filter(tool => {
     if (!effectiveDenied.has(tool)) return true;
@@ -147,12 +144,10 @@ export function resolveManifestTools(input: ResolverInput): ResolverResult {
   const toolsList = uniqueOrdered([
     ...finalNativeTools,
     ...((input.specialistExclusions?.disabledExtensions?.includes('gitnexus') ? [] : gitnexusBase)),
-    ...((input.specialistExclusions?.disabledExtensions?.includes('serena') ? [] : serenaTools)),
     ...((input.specialistExclusions?.disabledExtensions?.includes('gitnexus') ? [] : gitnexusExtras)),
   ]);
 
   if (!shouldIncludeExtensionTools('gitnexus', input)) warnings.push('gitnexus tools excluded by extension state');
-  if (!shouldIncludeExtensionTools('serena', input)) warnings.push('serena tools excluded by extension state');
   if ((input.specialistExclusions?.disabledExtensions ?? []).length > 0) {
     warnings.push(`specialist exclusions: ${(input.specialistExclusions?.disabledExtensions ?? []).join(', ')}`);
     attribution.push({ layer: 'specialist_exclusion', source: 'specialist.json', tools: [] });
@@ -182,7 +177,7 @@ export function resolveManifestTools(input: ResolverInput): ResolverResult {
   }
   if (!hardDenyAllowed && policy.denied_natives_mode === 'hard' && effectiveDenied.size > 0) {
     const restoredNatives = nativeTools.filter(tool => effectiveDenied.has(tool));
-    const reasonParts = [gitnexusState, serenaState]
+    const reasonParts = [gitnexusState]
       .filter((state): state is ExtensionState => Boolean(state))
       .flatMap(state => {
         if (!HEALTHY.includes(state.health)) return [state.health];
@@ -211,9 +206,11 @@ export function resolveManifestTools(input: ResolverInput): ResolverResult {
   };
 }
 
+// Legacy fallback tool strings: native tools + GitNexus per tier. Serena tool
+// names were retired with the K4 Serena retirement (unitAI-e67up.8).
 export const LEGACY_PERMISSION_TOOL_STRINGS: Record<ToolTier, string> = {
-  READ_ONLY: 'read,grep,find,ls,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes,serena_list_tools,find_symbol,find_referencing_symbols,read_file,get_symbols_overview,jet_brains_get_symbols_overview,jet_brains_find_symbol,jet_brains_find_referencing_symbols,jet_brains_type_hierarchy,search_for_pattern,list_dir,find_file,get_current_config,activate_project,check_onboarding_performed,initial_instructions,think_about_collected_information,think_about_task_adherence,think_about_whether_you_are_done,list_memories,read_memory',
-  LOW: 'read,grep,find,ls,bash,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes,serena_list_tools,find_symbol,find_referencing_symbols,read_file,get_symbols_overview,jet_brains_get_symbols_overview,jet_brains_find_symbol,jet_brains_find_referencing_symbols,jet_brains_type_hierarchy,search_for_pattern,list_dir,find_file,get_current_config,activate_project,check_onboarding_performed,initial_instructions,think_about_collected_information,think_about_task_adherence,think_about_whether_you_are_done,list_memories,read_memory,execute_shell_command',
-  MEDIUM: 'read,grep,find,ls,bash,edit,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes,serena_list_tools,find_symbol,find_referencing_symbols,read_file,get_symbols_overview,jet_brains_get_symbols_overview,jet_brains_find_symbol,jet_brains_find_referencing_symbols,jet_brains_type_hierarchy,search_for_pattern,list_dir,find_file,get_current_config,activate_project,check_onboarding_performed,initial_instructions,think_about_collected_information,think_about_task_adherence,think_about_whether_you_are_done,list_memories,read_memory,execute_shell_command,insert_after_symbol,replace_symbol_body,insert_before_symbol,rename_symbol,restart_language_server,create_text_file,replace_content,delete_lines,replace_lines,insert_at_line,remove_project,switch_modes,open_dashboard,onboarding,prepare_for_new_conversation,summarize_changes,write_memory,delete_memory,rename_memory,edit_memory,serena_mcp_reset,gitnexus_rename,gitnexus_cypher',
-  HIGH: 'read,grep,find,ls,bash,edit,write,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes,serena_list_tools,find_symbol,find_referencing_symbols,read_file,get_symbols_overview,jet_brains_get_symbols_overview,jet_brains_find_symbol,jet_brains_find_referencing_symbols,jet_brains_type_hierarchy,search_for_pattern,list_dir,find_file,get_current_config,activate_project,check_onboarding_performed,initial_instructions,think_about_collected_information,think_about_task_adherence,think_about_whether_you_are_done,list_memories,read_memory,execute_shell_command,insert_after_symbol,replace_symbol_body,insert_before_symbol,rename_symbol,restart_language_server,create_text_file,replace_content,delete_lines,replace_lines,insert_at_line,remove_project,switch_modes,open_dashboard,onboarding,prepare_for_new_conversation,summarize_changes,write_memory,delete_memory,rename_memory,edit_memory,serena_mcp_reset,gitnexus_rename,gitnexus_cypher',
+  READ_ONLY: 'read,grep,find,ls,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes',
+  LOW: 'read,grep,find,ls,bash,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes',
+  MEDIUM: 'read,grep,find,ls,bash,edit,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes,gitnexus_rename,gitnexus_cypher',
+  HIGH: 'read,grep,find,ls,bash,edit,write,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes,gitnexus_rename,gitnexus_cypher',
 };

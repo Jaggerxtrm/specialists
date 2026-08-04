@@ -65,7 +65,6 @@
     "beads_write_notes": true,
     "mandatory_rules": {
       "template_sets": [
-        "serena-cheatsheet",
         "per-turn-handoff-schema"
       ]
     }

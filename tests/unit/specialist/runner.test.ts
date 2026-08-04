@@ -190,7 +190,7 @@ describe('SpecialistRunner', () => {
     const sessionFactory = vi.fn().mockResolvedValue(mockSession);
     const runner = new SpecialistRunner({
       loader: makeLoader({}, 'auto', {}, {
-        mandatory_rules: { template_sets: ['serena-cheatsheet'] },
+        mandatory_rules: { template_sets: ['git-workflow-safe'] },
       }),
       hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
       circuitBreaker: new CircuitBreaker(),
@@ -255,7 +255,7 @@ describe('SpecialistRunner', () => {
     }));
   });
 
-  it('passes execution.extensions opt-out to PiAgentSession', async () => {
+  it('passes execution.extensions opt-out to PiAgentSession, ignoring retired serena flag', async () => {
     const sessionFactory = vi.fn().mockResolvedValue(mockSession);
     const runner = new SpecialistRunner({
       loader: makeLoader({ extensions: { serena: false, gitnexus: false } }),
@@ -266,8 +266,10 @@ describe('SpecialistRunner', () => {
 
     await runner.run({ name: 'test-spec', prompt: 'do thing' });
 
+    // Serena injection is retired: the legacy serena:false flag parses but maps
+    // to nothing; only the gitnexus opt-out produces an exclusion.
     expect(sessionFactory).toHaveBeenCalledWith(expect.objectContaining({
-      excludeExtensions: ['pi-serena-tools', 'pi-gitnexus'],
+      excludeExtensions: ['pi-gitnexus'],
     }));
   });
 
@@ -478,7 +480,7 @@ describe('SpecialistRunner', () => {
           { system: 'Base system prompt.', task_template: 'Do $prompt' },
           {
             mandatory_rules: {
-              template_sets: ['serena-cheatsheet'],
+              template_sets: ['git-workflow-safe'],
               inline_rules: [{ id: 'bare-inline', level: 'error', text: 'Bare rule' }],
             },
           },
@@ -519,7 +521,7 @@ describe('SpecialistRunner', () => {
           { system: 'Base system prompt.', task_template: 'Do $prompt' },
           {
             mandatory_rules: {
-              template_sets: ['serena-cheatsheet'],
+              template_sets: ['git-workflow-safe'],
               inline_rules: [{ id: 'bare-inline', level: 'error', text: 'Bare rule' }],
             },
           },

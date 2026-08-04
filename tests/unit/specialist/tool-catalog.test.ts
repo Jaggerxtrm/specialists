@@ -19,13 +19,6 @@ const EXPECTED_GITNEXUS = {
   HIGH: ['gitnexus_list_repos', 'gitnexus_query', 'gitnexus_context', 'gitnexus_impact', 'gitnexus_detect_changes', 'gitnexus_rename', 'gitnexus_cypher'],
 };
 
-const EXPECTED_SERENA = {
-  READ_ONLY: ['serena_list_tools', 'find_symbol', 'find_referencing_symbols', 'read_file', 'get_symbols_overview', 'jet_brains_get_symbols_overview', 'jet_brains_find_symbol', 'jet_brains_find_referencing_symbols', 'jet_brains_type_hierarchy', 'search_for_pattern', 'list_dir', 'find_file', 'get_current_config', 'activate_project', 'check_onboarding_performed', 'initial_instructions', 'think_about_collected_information', 'think_about_task_adherence', 'think_about_whether_you_are_done', 'list_memories', 'read_memory'],
-  LOW: ['serena_list_tools', 'find_symbol', 'find_referencing_symbols', 'read_file', 'get_symbols_overview', 'jet_brains_get_symbols_overview', 'jet_brains_find_symbol', 'jet_brains_find_referencing_symbols', 'jet_brains_type_hierarchy', 'search_for_pattern', 'list_dir', 'find_file', 'get_current_config', 'activate_project', 'check_onboarding_performed', 'initial_instructions', 'think_about_collected_information', 'think_about_task_adherence', 'think_about_whether_you_are_done', 'list_memories', 'read_memory', 'execute_shell_command'],
-  MEDIUM: ['serena_list_tools', 'find_symbol', 'find_referencing_symbols', 'read_file', 'get_symbols_overview', 'jet_brains_get_symbols_overview', 'jet_brains_find_symbol', 'jet_brains_find_referencing_symbols', 'jet_brains_type_hierarchy', 'search_for_pattern', 'list_dir', 'find_file', 'get_current_config', 'activate_project', 'check_onboarding_performed', 'initial_instructions', 'think_about_collected_information', 'think_about_task_adherence', 'think_about_whether_you_are_done', 'list_memories', 'read_memory', 'execute_shell_command', 'insert_after_symbol', 'replace_symbol_body', 'insert_before_symbol', 'rename_symbol', 'restart_language_server', 'create_text_file', 'replace_content', 'delete_lines', 'replace_lines', 'insert_at_line', 'remove_project', 'switch_modes', 'open_dashboard', 'onboarding', 'prepare_for_new_conversation', 'summarize_changes', 'write_memory', 'delete_memory', 'rename_memory', 'edit_memory', 'serena_mcp_reset'],
-  HIGH: ['serena_list_tools', 'find_symbol', 'find_referencing_symbols', 'read_file', 'get_symbols_overview', 'jet_brains_get_symbols_overview', 'jet_brains_find_symbol', 'jet_brains_find_referencing_symbols', 'jet_brains_type_hierarchy', 'search_for_pattern', 'list_dir', 'find_file', 'get_current_config', 'activate_project', 'check_onboarding_performed', 'initial_instructions', 'think_about_collected_information', 'think_about_task_adherence', 'think_about_whether_you_are_done', 'list_memories', 'read_memory', 'execute_shell_command', 'insert_after_symbol', 'replace_symbol_body', 'insert_before_symbol', 'rename_symbol', 'restart_language_server', 'create_text_file', 'replace_content', 'delete_lines', 'replace_lines', 'insert_at_line', 'remove_project', 'switch_modes', 'open_dashboard', 'onboarding', 'prepare_for_new_conversation', 'summarize_changes', 'write_memory', 'delete_memory', 'rename_memory', 'edit_memory', 'serena_mcp_reset'],
-};
-
 function readCatalog(path: string) {
   return readFile(join(process.cwd(), path), 'utf8').then(loadToolCatalogIndex);
 }
@@ -34,7 +27,8 @@ describe('tool catalog foundation', () => {
   it('encodes precedence order', async () => {
     const index = await readCatalog('config/catalog/index.json');
     expect(index.precedence_order).toEqual(SPECIALIST_TOOL_PRECEDENCE);
-    expect(index.catalogs.map(c => c.catalog)).toEqual(['native', 'gitnexus', 'serena']);
+    // Serena catalog retired (unitAI-e67up.8): only native + gitnexus layers ship.
+    expect(index.catalogs.map(c => c.catalog)).toEqual(['native', 'gitnexus']);
   });
 
   it('documents conflict resolution semantics', async () => {
@@ -56,13 +50,5 @@ describe('tool catalog foundation', () => {
     expect(gitnexus?.package).toBe('pi-gitnexus');
     expect(gitnexus?.version).toBe('0.6.1');
     expect(gitnexus?.source_tiers).toEqual(EXPECTED_GITNEXUS);
-  });
-
-  it('validates serena catalog content', async () => {
-    const index = await readCatalog('config/catalog/index.json');
-    const serena = index.catalogs.find(c => c.catalog === 'serena');
-    expect(serena?.package).toBe('pi-serena-tools');
-    expect(serena?.version).toBe('0.1.0');
-    expect(serena?.source_tiers).toEqual(EXPECTED_SERENA);
   });
 });

@@ -31,7 +31,6 @@ describe('global specialist override config', () => {
         prompt_limit_bytes: null,
         stdout_limit_bytes: null,
         extensions: {
-          serena: null,
           gitnexus: null,
         },
       },
@@ -99,7 +98,6 @@ describe('global specialist override config', () => {
         prompt_limit_bytes: null,
         stdout_limit_bytes: null,
         extensions: {
-          serena: null,
           gitnexus: null,
         },
       },

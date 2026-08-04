@@ -83,28 +83,19 @@ The FTS cache is a SQLite table (`specialist_memories_cache`) populated from `bd
 
 ### Extension opt-out
 
-Specialists can opt out of specific npm extensions via `execution.extensions`:
+Specialists can opt out of the GitNexus npm extension via `execution.extensions`:
 
 ```typescript
 const excludeExtensions = [
-  execution.extensions?.serena === false ? 'pi-serena-tools' : undefined,
   execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
 ].filter(Boolean);
 ```
 
-Excluded extensions are passed to `PiAgentSession` via `excludeExtensions` option and skipped during `-e` assembly.
+Excluded extensions are passed to `PiAgentSession` via `excludeExtensions` option and skipped during `-e` assembly. The legacy `execution.extensions.serena` key remains parseable but is ignored — Serena injection was retired with the K4 Serena retirement (unitAI-e67up.8).
 
-### serena-pool pre-spawn hook
+### Retired: serena-pool pre-spawn hook
 
-Before spawning the `pi` child, `session.ts` dynamically imports `ensureSerenaForRoot` from the globally installed `@jaggerxtrm/pi-extensions/extensions/serena-pool`. The pool:
-
-1. Hashes the absolute `sessionCwd` (git root or fallback) to a deterministic port in 40000–44999.
-2. Reuses an already-listening daemon on that port, or acquires a per-port file lock, reaps orphaned LSP children left by a dead prior daemon (PGID-only, ownership-verified), spawns a fresh `uvx serena start-mcp-server --transport streamable-http --project <root>` in its own process group, and persists `{ pid, pgid, startTime, instanceId, projectRoot, port }` to `/tmp/serena-pool/pool-<port>.json`.
-3. Returns the port, which `session.ts` injects as `SERENA_MCP_PORT` in `baseEnv`.
-
-`pi-serena-tools` reads `SERENA_MCP_PORT` at extension construction time and reuses the shared daemon (its `isServerAvailable()` check sees the port live, so it does not spawn its own). The daemon survives Pi exit (`detached: true`, parent unrefs), and the next session reuses or reaps it.
-
-The hook is skipped when `pi-serena-tools` is excluded (i.e. specialists with `execution.extensions.serena=false`). Requires Bun (the `sp` shebang) for the `.ts` dynamic import.
+Before the K4 Serena retirement (unitAI-e67up.8), `session.ts` pre-spawned a shared Serena daemon via the globally installed `serena-pool` extension and injected `SERENA_MCP_PORT` into the Pi environment. That hook is gone: Specialists never probes for `pi-serena-tools`, never spawns or reuses a Serena daemon, and never sets `SERENA_MCP_PORT`. Passive process-health detection (`sp ps --health`, orphan reaping) still reports or reaps already-running foreign Serena processes, but nothing in the runtime activates Serena.
 
 ### `memory_injection` timeline event
 
@@ -161,7 +152,7 @@ Specialists does **not** redefine protocol semantics. It consumes Pi events and 
 - Emits normalized callbacks for Supervisor/Runner (`onEvent`, `onToolStart`, `onToolEnd`, `onMeta`)
 - Enforces liveness timeout (`stallTimeoutMs`) at session level
 - Pins absolute cwd at spawn time to prevent TMUX path drift in worktrees
-- Resolves npm package extensions (gitnexus, serena) from global node_modules
+- Resolves npm package extensions (gitnexus) from global node_modules
 - Supports per-specialist extension opt-out via `excludeExtensions` option
 - Injects caveman extension for terse agent-to-agent output
 - Sets `CAVEMAN_LEVEL=full` environment variable
@@ -177,9 +168,10 @@ Specialists does **not** redefine protocol semantics. It consumes Pi events and 
 
 ### Extension resolution
 
-npm package extensions (gitnexus, serena) are resolved from global node_modules:
+npm package extensions (gitnexus) are resolved from global node_modules:
 - gitnexus: `~/.nvm/versions/node/<version>/lib/node_modules/pi-gitnexus`
-- serena: `~/.nvm/versions/node/<version>/lib/node_modules/pi-serena-tools`
+
+Serena extension resolution was retired with the K4 Serena retirement (unitAI-e67up.8).
 
 Extension opt-out: `excludeExtensions` string array filters packages before `-e` assembly.
 
@@ -572,7 +564,7 @@ Supervisor's `dispose()` is now async to prevent "Cannot use a closed database" 
 async dispose(): Promise<void> {
   this._disposed = true;
   await this._pendingOpsTracker.flush();  // wait for in-flight SQLite ops
-  await this.closeActiveSession();        // close active pi/Serena session
+  await this.closeActiveSession();        // close active pi session
   this.sqliteClient?.close();
 }
 ```
@@ -584,7 +576,7 @@ Solution: a pending-operations tracker that:
 2. `dispose()` awaits the tracker's flush before closing the active session and SQLite client
 3. CLI entry points (`run`, `status`, `resume`, `steer`, `stop`) await `supervisor.dispose()` before exit
 
-**Active session lifecycle**: Supervisor tracks the active Pi session via `setActiveSession()`. During `dispose()`, `closeActiveSession()` attempts graceful `session.close()` first; on failure, it falls back to `session.kill()` to ensure the pi/Serena MCP server is reaped before process exit.
+**Active session lifecycle**: Supervisor tracks the active Pi session via `setActiveSession()`. During `dispose()`, `closeActiveSession()` attempts graceful `session.close()` first; on failure, it falls back to `session.kill()` to ensure the pi process and its MCP children are reaped before process exit.
 
 ### Job reuse concurrency guard
 

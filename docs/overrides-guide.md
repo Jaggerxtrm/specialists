@@ -6,7 +6,7 @@ This guide is the canonical reference for `~/.config/specialists/user.json`, cre
 
 The global override surface includes:
 
-- KAN-91 allowlisted user-environment fields: `prompt.system_prompt_mode`, `execution.extensions.serena`, `execution.extensions.gitnexus`, `notes_mode`, `output_file`, `execution.prompt_limit_bytes`, and `execution.stdout_limit_bytes`.
+- KAN-91 allowlisted user-environment fields: `prompt.system_prompt_mode`, `execution.extensions.gitnexus`, `notes_mode`, `output_file`, `execution.prompt_limit_bytes`, and `execution.stdout_limit_bytes`. The retired `execution.extensions.serena` field remains accepted only for legacy files and is ignored.
 - Additional runtime-default knobs: `execution.interactive` (default keep-alive behavior) and `stall_detection.waiting_auto_close_ms` (opt-in waiting auto-close threshold).
 - Fallback chains via `execution.fallback_models` while keeping legacy `execution.fallback_model`.
 - Preset references like `@preset/cheap` for model and fallback entries.
@@ -50,9 +50,10 @@ Pitfall: CLI flags still win. Effective precedence is `--no-keep-alive` > `--kee
 
 ### `execution.extensions.serena`
 
-- Type: `boolean | null`
-- Default semantics: `null` inherits the shipped extension setting.
-- Example:
+- Status: deprecated and ignored.
+- Compatibility: existing `boolean | null` values remain valid so upgrades do not reject older `user.json` files.
+- New configuration: omit this key. `sp init --global` no longer emits it.
+- Legacy example:
 
 ```json
 {
@@ -62,7 +63,7 @@ Pitfall: CLI flags still win. Effective precedence is `--no-keep-alive` > `--kee
 }
 ```
 
-Pitfall: extension overrides are per-key overlays. Setting `serena: false` does not change `gitnexus`.
+The value has no runtime effect. Specialists no longer probes, loads, or starts Serena.
 
 ### `execution.extensions.gitnexus`
 
@@ -273,7 +274,6 @@ This is a complete `user.json` shape, not a delta snippet. It keeps every requir
       "prompt_limit_bytes": 8388608,
       "stdout_limit_bytes": null,
       "extensions": {
-        "serena": false,
         "gitnexus": null
       }
     },

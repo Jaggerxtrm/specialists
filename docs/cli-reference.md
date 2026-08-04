@@ -1039,7 +1039,7 @@ Output sections (in order):
 |---------|---------|
 | Resolved JSON | The fully-merged specialist spec with defaults applied |
 | `layer attribution` | Which layer (`catalog`, `specialist_override`, `runtime_health`) contributed which tools |
-| `extension availability` | Live health probe per extension (`pi-gitnexus`, `pi-serena-tools`, native): `loaded_healthy` / `not_installed` / `disabled` / `loaded_unhealthy` / `unknown` |
+| `extension availability` | Live health probe per extension (`pi-gitnexus`, native): `loaded_healthy` / `not_installed` / `disabled` / `loaded_unhealthy` / `unknown` |
 | `catalog compatibility` | `ok` if catalog schema version matches |
 | `denied natives` | Tools removed by the specialist's `permissions[<TIER>]` override block (or `(none)`) |
 | `deny mode` | `soft` (preference hint only) or `hard` (tool removed) |
@@ -1056,17 +1056,16 @@ layer attribution:
 extension availability:
   - native: loaded_healthy [none] built-in
   - gitnexus: loaded_healthy [none] loaded
-  - serena: loaded_healthy [none] loaded
 catalog compatibility:
   - ok
 denied natives: grep,find,ls
 deny mode: hard
 preference signals: (none)
 downgrade reasons: (none)
---tools: read,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes,serena_list_tools,find_symbol,...
+--tools: read,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes,...
 ```
 
-Use this command after editing a specialist's `permission_required` tier, its `permissions[<TIER>]` override block, or after installing/uninstalling `pi-gitnexus` or `pi-serena-tools` — to confirm the runtime tool set before dispatching a real specialist run.
+Use this command after editing a specialist's `permission_required` tier, its `permissions[<TIER>]` override block, or after installing/uninstalling `pi-gitnexus` — to confirm the runtime tool set before dispatching a real specialist run.
 
 See [manifest.md](manifest.md) for the full resolution semantics.
 

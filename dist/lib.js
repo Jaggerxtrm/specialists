@@ -6952,11 +6952,10 @@ import { isAbsolute as isAbsolute2, join as join4, relative, resolve as resolve4
 
 // src/pi/session.ts
 import { createHash } from "node:crypto";
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync as existsSync2, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, resolve, sep, join, dirname } from "node:path";
-import { pathToFileURL } from "node:url";
 
 // src/pi/backendMap.ts
 var BACKEND_MAP = {
@@ -7061,12 +7060,9 @@ function resolveManifestTools(input) {
   const nativeTools = getTierTools(input.catalogs, "native", input.tier);
   const gitnexusBase = getTierTools(input.catalogs, "gitnexus", GITNEXUS_BASE_TIER);
   const gitnexusExtras = input.tier === "MEDIUM" || input.tier === "HIGH" ? getTierTools(input.catalogs, "gitnexus", input.tier).filter((tool) => !gitnexusBase.includes(tool)) : [];
-  const serenaTools = getTierTools(input.catalogs, "serena", input.tier);
   const gitnexusState = input.extensionState?.gitnexus;
-  const serenaState = input.extensionState?.serena;
   const healthyGitnexus = canEnforceHardDeny(gitnexusState);
-  const healthySerena = canEnforceHardDeny(serenaState);
-  const hardDenyAllowed = policy.denied_natives_mode === "hard" && healthyGitnexus && healthySerena;
+  const hardDenyAllowed = policy.denied_natives_mode === "hard" && healthyGitnexus;
   const finalNativeTools = nativeTools.filter((tool) => {
     if (!effectiveDenied.has(tool))
       return true;
@@ -7078,13 +7074,10 @@ function resolveManifestTools(input) {
   const toolsList = uniqueOrdered([
     ...finalNativeTools,
     ...input.specialistExclusions?.disabledExtensions?.includes("gitnexus") ? [] : gitnexusBase,
-    ...input.specialistExclusions?.disabledExtensions?.includes("serena") ? [] : serenaTools,
     ...input.specialistExclusions?.disabledExtensions?.includes("gitnexus") ? [] : gitnexusExtras
   ]);
   if (!shouldIncludeExtensionTools("gitnexus", input))
     warnings.push("gitnexus tools excluded by extension state");
-  if (!shouldIncludeExtensionTools("serena", input))
-    warnings.push("serena tools excluded by extension state");
   if ((input.specialistExclusions?.disabledExtensions ?? []).length > 0) {
     warnings.push(`specialist exclusions: ${(input.specialistExclusions?.disabledExtensions ?? []).join(", ")}`);
     attribution.push({ layer: "specialist_exclusion", source: "specialist.json", tools: [] });
@@ -7113,7 +7106,7 @@ function resolveManifestTools(input) {
   }
   if (!hardDenyAllowed && policy.denied_natives_mode === "hard" && effectiveDenied.size > 0) {
     const restoredNatives = nativeTools.filter((tool) => effectiveDenied.has(tool));
-    const reasonParts = [gitnexusState, serenaState].filter((state) => Boolean(state)).flatMap((state) => {
+    const reasonParts = [gitnexusState].filter((state) => Boolean(state)).flatMap((state) => {
       if (!HEALTHY.includes(state.health))
         return [state.health];
       if (state.catalogCompatible === false)
@@ -10951,7 +10944,7 @@ var pipelineType = ZodPipeline.create;
 
 // src/specialist/tool-catalog.ts
 var TierSchema = enumType(["READ_ONLY", "LOW", "MEDIUM", "HIGH"]);
-var LayerSchema = enumType(["native", "gitnexus", "serena"]);
+var LayerSchema = enumType(["native", "gitnexus"]);
 var ToolTierMapSchema = recordType(TierSchema, arrayType(stringType()));
 var ToolCatalogSchema = objectType({
   catalog: LayerSchema,
@@ -11042,8 +11035,7 @@ function resolvePermissionTools(options) {
     catalogDefaultOverrides: catalogIndex.default_overrides,
     specialistOverride,
     extensionState: {
-      gitnexus: { enabled: true, health: probeExtensionHealth("pi-gitnexus") },
-      serena: { enabled: true, health: probeExtensionHealth("pi-serena-tools") }
+      gitnexus: { enabled: true, health: probeExtensionHealth("pi-gitnexus") }
     }
   }).tools || undefined;
 }
@@ -11339,27 +11331,6 @@ export default function(pi) {
   }
   return extensionPath;
 }
-function ensureSerenaForRootInSubprocess(serenaPoolPath, projectRoot, env) {
-  const helperScript = [
-    "const [moduleUrl, cwd] = process.argv.slice(1);",
-    "const mod = await import(moduleUrl);",
-    "const ensure = mod?.ensureSerenaForRoot;",
-    'const port = typeof ensure === "function" ? await ensure(cwd) : null;',
-    "if (port != null) process.stdout.write(String(port));"
-  ].join(" ");
-  const helperArgs = process.versions.bun ? ["-e", helperScript, pathToFileURL(serenaPoolPath).href, projectRoot] : ["--input-type=module", "-e", helperScript, pathToFileURL(serenaPoolPath).href, projectRoot];
-  const output = execFileSync(process.execPath, helperArgs, {
-    encoding: "utf8",
-    env,
-    stdio: ["ignore", "pipe", "pipe"]
-  }).trim();
-  if (!output)
-    return null;
-  const port = Number(output);
-  if (!Number.isFinite(port))
-    throw new Error(`serena-pool helper returned invalid port: ${output}`);
-  return port;
-}
 
 class PiAgentSession {
   options;
@@ -11456,12 +11427,6 @@ class PiAgentSession {
         if (existsSync2(gitnexusPath))
           args.push("-e", gitnexusPath);
       }
-      const serenaPackageName = "pi-serena-tools";
-      if (!excludedExtensions.has(serenaPackageName)) {
-        const serenaPath = join(npmGlobalDir, serenaPackageName);
-        if (existsSync2(serenaPath))
-          args.push("-e", serenaPath);
-      }
     }
     if (this.options.systemPrompt) {
       const systemPromptFlag = this.options.systemPromptMode === "replace" ? "--system-prompt" : "--append-system-prompt";
@@ -11474,31 +11439,16 @@ class PiAgentSession {
         args.push("-e", boundaryExtPath);
       }
     }
-    const sessionCwd = resolve(this.options.cwd ?? process.cwd());
     const hookEnv = {
       ...process.env,
       ...this.options.env ?? {},
       CAVEMAN_LEVEL: "full"
     };
-    let serenaPoolPort = null;
-    if (npmGlobalDir && !excludedExtensions.has("pi-serena-tools")) {
-      const serenaPoolPath = join(npmGlobalDir, "@jaggerxtrm", "pi-extensions", "extensions", "serena-pool", "index.ts");
-      if (existsSync2(serenaPoolPath)) {
-        try {
-          serenaPoolPort = ensureSerenaForRootInSubprocess(serenaPoolPath, sessionCwd, hookEnv);
-        } catch (err) {
-          console.warn("[serena-pool] pre-spawn ensure failed:", err);
-        }
-      }
-    }
-    const baseEnv = {
-      ...hookEnv,
-      ...serenaPoolPort != null ? { SERENA_MCP_PORT: String(serenaPoolPort) } : {}
-    };
+    const sessionCwd = resolve(this.options.cwd ?? process.cwd());
     this.proc = spawn("pi", args, {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: sessionCwd,
-      env: worktreeBoundary ? { ...baseEnv, [WORKTREE_BOUNDARY_ENV_KEY]: worktreeBoundary } : baseEnv,
+      env: worktreeBoundary ? { ...hookEnv, [WORKTREE_BOUNDARY_ENV_KEY]: worktreeBoundary } : hookEnv,
       detached: true
     });
     const donePromise = new Promise((resolve2, reject) => {
@@ -16673,8 +16623,7 @@ function appendExtensionArgs(args, spec) {
     args.push("-e", cavemanPath);
   const npmGlobalDir = resolveGlobalNodeModulesDir();
   const excludedExtensions = new Set([
-    spec.specialist.execution.extensions?.gitnexus === false ? "pi-gitnexus" : undefined,
-    spec.specialist.execution.extensions?.serena === false ? "pi-serena-tools" : undefined
+    spec.specialist.execution.extensions?.gitnexus === false ? "pi-gitnexus" : undefined
   ].filter((value) => Boolean(value)));
   if (!npmGlobalDir)
     return;
@@ -16682,11 +16631,6 @@ function appendExtensionArgs(args, spec) {
     const gitnexusPath = join4(npmGlobalDir, "pi-gitnexus");
     if (existsSync7(gitnexusPath))
       args.push("-e", gitnexusPath);
-  }
-  if (!excludedExtensions.has("pi-serena-tools")) {
-    const serenaPath = join4(npmGlobalDir, "pi-serena-tools");
-    if (existsSync7(serenaPath))
-      args.push("-e", serenaPath);
   }
 }
 async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assistantTextLimitBytes, options, spec, systemPrompt, systemPromptMode, skillPaths = [], requiredJsonKeys = [], appendTimelineEvent) {
@@ -16702,8 +16646,7 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
       cwd: options.projectDir ?? process.cwd(),
       stallTimeoutMs: spec.specialist.execution.stall_timeout_ms ?? timeoutMs,
       excludeExtensions: [
-        spec.specialist.execution.extensions?.gitnexus === false ? "pi-gitnexus" : undefined,
-        spec.specialist.execution.extensions?.serena === false ? "pi-serena-tools" : undefined
+        spec.specialist.execution.extensions?.gitnexus === false ? "pi-gitnexus" : undefined
       ].filter((value) => Boolean(value)),
       onToken: (delta) => {
         recordAssistantDelta(delta);
@@ -17245,7 +17188,7 @@ function getGlobalUserConfigPath() {
   return { path: configHomePath, exists: false, source: "config-home" };
 }
 var OverrideExtensionsSchema = objectType({
-  serena: booleanType().nullable(),
+  serena: booleanType().nullable().optional(),
   gitnexus: booleanType().nullable()
 }).strict();
 var OverrideExecutionSchema = objectType({

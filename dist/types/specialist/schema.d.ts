@@ -51,7 +51,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -96,7 +98,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -141,7 +145,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -410,7 +416,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -455,7 +463,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -500,7 +510,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -769,7 +781,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -814,7 +828,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -859,7 +875,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -1130,7 +1148,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -1175,7 +1195,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -1220,7 +1242,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -1489,7 +1513,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -1534,7 +1560,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -1579,7 +1607,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -1848,7 +1878,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -1893,7 +1925,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -1938,7 +1972,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -2209,7 +2245,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -2254,7 +2292,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -2299,7 +2339,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -2568,7 +2610,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -2613,7 +2657,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -2658,7 +2704,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -2927,7 +2975,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -2972,7 +3022,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -3017,7 +3069,9 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension. */
+            /** Optional per-session extension toggles. `false` disables injection of extension.
+             *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+             *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
             extensions: z.ZodOptional<z.ZodObject<{
                 serena: z.ZodOptional<z.ZodBoolean>;
                 gitnexus: z.ZodOptional<z.ZodBoolean>;
@@ -3245,7 +3299,9 @@ export type ScriptEntry = {
 };
 /** Flat execution sub-fields an override layer may set. */
 export declare const OVERRIDE_ALLOWED_EXECUTION_FIELDS: readonly ["model", "fallback_model", "fallback_models", "timeout_ms", "stall_timeout_ms", "interactive", "thinking_level", "max_retries", "prompt_limit_bytes", "stdout_limit_bytes"];
-/** Nested execution leaf paths an override layer may set. Relative to `specialist.execution`. */
+/** Nested execution leaf paths an override layer may set. Relative to `specialist.execution`.
+ *  `extensions.serena` stays allowlisted so legacy overrides keep validating; the
+ *  runtime ignores it (Serena retired, unitAI-e67up.8). */
 export declare const OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS: readonly ["extensions.serena", "extensions.gitnexus"];
 /** Nested stall-detection leaf paths an override layer may set. Relative to `specialist.stall_detection`. */
 export declare const OVERRIDE_ALLOWED_STALL_DETECTION_PATHS: readonly ["waiting_auto_close_ms"];

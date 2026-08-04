@@ -4,7 +4,7 @@ kind: mandatory-rule
 ---
 **Phase 2.5 — Diff content scan is mandatory for every drifted service file.**
 
-Between Phase 2(c) (Serena cross-check) and Phase 2(d) (classify), run the actual diff body for each territory file that drifted:
+Between Phase 2(c) (native cross-check) and Phase 2(d) (classify), run the actual diff body for each territory file that drifted:
 
 ```bash
 git diff <last_sync_ref>..HEAD -- <file>

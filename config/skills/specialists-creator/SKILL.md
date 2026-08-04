@@ -22,7 +22,7 @@ Example:
 
 ```json
 {
-  "mandatory_rules": { "template_sets": ["serena-cheatsheet"] },
+  "mandatory_rules": { "template_sets": ["git-workflow-safe"] },
   "skills": { "paths": ["releasing"] }
 }
 ```
@@ -198,7 +198,6 @@ sp edit my-specialist specialist.metadata.version 1.0.0
 sp edit my-specialist specialist.execution.model anthropic/claude-sonnet-4-6
 sp edit my-specialist specialist.execution.fallback_model google-gemini-cli/gemini-3.1-pro-preview
 sp edit my-specialist specialist.execution.permission_required READ_ONLY
-sp edit my-specialist specialist.execution.extensions.serena false
 sp edit my-specialist specialist.execution.extensions.gitnexus false
 
 # 4. Use --file only for multiline prompt fields
@@ -271,7 +270,7 @@ Avoid vague descriptions like "general purpose assistant" or "helps with code". 
 | `output_type` | enum | `custom` | `codegen` \| `analysis` \| `review` \| `synthesis` \| `orchestration` \| `workflow` \| `research` \| `custom` |
 | `permission_required` | enum | `READ_ONLY` | see tier table below |
 | `thinking_level` | enum | — | `off` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` |
-| `extensions.serena` | boolean | `true` | set `false` to opt out of Serena extension injection for this specialist |
+| `extensions.serena` | boolean | — | DEPRECATED, ignored (Serena retired); kept only so legacy specs keep validating |
 | `extensions.gitnexus` | boolean | `true` | set `false` to opt out of GitNexus extension injection for this specialist |
 
 **When to use `execution.interactive`**
@@ -284,7 +283,7 @@ Avoid vague descriptions like "general purpose assistant" or "helps with code". 
 - Effective precedence: explicit disable (`--no-keep-alive` / `no_keep_alive`) → explicit enable (`--keep-alive` / `keep_alive`) → merged `execution.interactive` (package / global user.json / repo) → one-shot default.
 - When the operator wants a cross-repo default, prefer `sp edit --global --set <name>.execution.interactive true|false` over forking per-repo specs.
 
-**Permission tiers** — controls the *native* pi tools the specialist gets. The full resolved tool set also includes catalog-defined GitNexus and Serena tools per tier; see [docs/manifest.md](../../../docs/manifest.md) for the complete picture.
+**Permission tiers** — controls the *native* pi tools the specialist gets. The full resolved tool set also includes catalog-defined GitNexus tools per tier; see [docs/manifest.md](../../../docs/manifest.md) for the complete picture.
 
 | Level | Native tools (cumulative) | Use when |
 |-------|---------------------------|----------|
@@ -339,14 +338,13 @@ See [docs/manifest.md](../../../docs/manifest.md) for full deny-mode semantics, 
 **Per-specialist extension opt-out**
 
 Use `execution.extensions` only when this specialist must suppress default extension injection.
-Both flags default to `true`, so omit this block unless opt-out is required.
+This flag defaults to `true`, so omit this block unless opt-out is required.
 
 ```json
 {
   "specialist": {
     "execution": {
       "extensions": {
-        "serena": false,
         "gitnexus": false
       }
     }
@@ -355,9 +353,10 @@ Both flags default to `true`, so omit this block unless opt-out is required.
 ```
 
 Typical use cases:
-- `serena: false` for specialists that must avoid Serena tool/LSP injection
 - `gitnexus: false` for specialists that should not receive GitNexus graph tooling
-- set both `false` for constrained runs that need clean extension surface
+
+Legacy note: `serena: false` may still appear in older specs; it parses but is
+ignored (Serena extension retired, unitAI-e67up.8).
 
 ### Bare specialists
 
@@ -497,7 +496,7 @@ Runtime layering:
 `disable_default_globals` only removes the inline `STATIC_WORKFLOW_RULES_BLOCK`. It does **not** suppress index-driven sets. True user-rules-only runs need both `disable_default_globals: true` and a user overlay index in `.specialists/user/mandatory-rules/index.json` that clears required/default sets.
 
 Canonical set ids in `config/mandatory-rules/*.md`:
-`bead-id-verbatim`, `changelog-conventions`, `changelog-keeper-scope`, `code-quality-defaults`, `core-session-boundary`, `diagnose-loop`, `executor-delivery`, `explorer-readonly`, `git-workflow-safe`, `gitnexus-required`, `overthinker-4phase`, `per-turn-handoff-schema`, `research-tool-routing`, `researcher-source-discipline`, `reviewer-verdict-format`, `security-review-defaults`, `serena-cheatsheet`, `sync-docs-scope-discipline`, `test-runner-execution-scope`.
+`bead-id-verbatim`, `changelog-conventions`, `changelog-keeper-scope`, `code-quality-defaults`, `core-session-boundary`, `diagnose-loop`, `executor-delivery`, `explorer-readonly`, `git-workflow-safe`, `gitnexus-required`, `overthinker-4phase`, `per-turn-handoff-schema`, `research-tool-routing`, `researcher-source-discipline`, `reviewer-verdict-format`, `security-review-defaults`, `sync-docs-scope-discipline`, `test-runner-execution-scope`.
 
 Minimal user-rules-only spec:
 
@@ -728,8 +727,8 @@ repo). Examples:
 sp edit --global --set sync-docs.notes_mode final-only
 sp edit --global --set sync-docs.output_file ".specialists/sync-docs-result.md"
 
-# Opt out of Serena MCP injection on a read-only specialist (RAM saver)
-sp edit --global --set overthinker.execution.extensions.serena false
+# Opt out of GitNexus MCP injection for a specialist
+sp edit --global --set overthinker.execution.extensions.gitnexus false
 
 # Set the default keep-alive behavior globally for one specialist
 sp edit --global --set reviewer.execution.interactive false
@@ -1055,7 +1054,7 @@ Pi flags:
 
 | Runner | Pi flags |
 |--------|----------|
-| Package-class | `--no-extensions`, then re-enable quality-gates/service-skills/caveman/gitnexus/serena |
+| Package-class | `--no-extensions`, then re-enable quality-gates/service-skills/caveman/gitnexus |
 | Script-class | `--no-extensions --no-tools --offline --no-context-files --no-prompt-templates --no-themes` and `--no-skills` when `skills.paths` is empty |
 
 Settings that silently do nothing on script-class:
