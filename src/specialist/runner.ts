@@ -1018,8 +1018,9 @@ export class SpecialistRunner {
     const effectiveKeepAlive = options.noKeepAlive
       ? false
       : (options.keepAlive ?? execution.interactive ?? false);
+    // Serena extension injection retired (unitAI-e67up.8): legacy
+    // execution.extensions.serena config stays parseable but is ignored.
     const excludeExtensions = [
-      execution.extensions?.serena === false ? 'pi-serena-tools' : undefined,
       execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
     ].filter((value): value is string => Boolean(value));
 

@@ -168,8 +168,8 @@ class AgentPerformanceMonitor {
   private estimateTokenSavings(agentName: string, invocations: number): number {
     // Conservative estimates based on optimization targets
     const savingsPerInvocation: { [key: string]: number } = {
-      'triple-validator': 800, // Parallel validation + Serena
-      'implementation-validator': 600, // Serena integration
+      'triple-validator': 800, // Parallel validation
+      'implementation-validator': 600, // Implementation validation
       'infrastructure-analyzer': 700, // Multi-phase analysis
       'gemini-codebase-analyzer': 650, // Parallel Gemini + Qwen
       'rovodev-task-handler': 300 // Model optimization (Haiku vs Sonnet)
@@ -289,7 +289,7 @@ class AgentPerformanceMonitor {
 
     // Check target achievements
     if (targets.tokenEfficiency.status === 'missed') {
-      recommendations.push('Token efficiency sotto target. Verificare utilizzo di Serena e esecuzione parallela.');
+      recommendations.push('Token efficiency sotto target. Verificare uso degli extension tools e esecuzione parallela.');
     }
 
     if (targets.timeEfficiency.status === 'missed') {

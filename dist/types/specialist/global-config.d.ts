@@ -35,14 +35,14 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         prompt_limit_bytes: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
         stdout_limit_bytes: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
         extensions: z.ZodOptional<z.ZodObject<{
-            serena: z.ZodNullable<z.ZodBoolean>;
+            serena: z.ZodOptional<z.ZodNullable<z.ZodBoolean>>;
             gitnexus: z.ZodNullable<z.ZodBoolean>;
         }, "strict", z.ZodTypeAny, {
-            serena: boolean | null;
             gitnexus: boolean | null;
+            serena?: boolean | null | undefined;
         }, {
-            serena: boolean | null;
             gitnexus: boolean | null;
+            serena?: boolean | null | undefined;
         }>>;
     }, "strict", z.ZodTypeAny, {
         model: string | null;
@@ -56,8 +56,8 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
         extensions?: {
-            serena: boolean | null;
             gitnexus: boolean | null;
+            serena?: boolean | null | undefined;
         } | undefined;
     }, {
         model: string | null;
@@ -71,8 +71,8 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
         extensions?: {
-            serena: boolean | null;
             gitnexus: boolean | null;
+            serena?: boolean | null | undefined;
         } | undefined;
     }>;
     prompt: z.ZodOptional<z.ZodObject<{
@@ -112,8 +112,8 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
         extensions?: {
-            serena: boolean | null;
             gitnexus: boolean | null;
+            serena?: boolean | null | undefined;
         } | undefined;
     };
     skills: {
@@ -141,8 +141,8 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
         extensions?: {
-            serena: boolean | null;
             gitnexus: boolean | null;
+            serena?: boolean | null | undefined;
         } | undefined;
     };
     skills: {
@@ -174,14 +174,14 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         prompt_limit_bytes: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
         stdout_limit_bytes: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
         extensions: z.ZodOptional<z.ZodObject<{
-            serena: z.ZodNullable<z.ZodBoolean>;
+            serena: z.ZodOptional<z.ZodNullable<z.ZodBoolean>>;
             gitnexus: z.ZodNullable<z.ZodBoolean>;
         }, "strict", z.ZodTypeAny, {
-            serena: boolean | null;
             gitnexus: boolean | null;
+            serena?: boolean | null | undefined;
         }, {
-            serena: boolean | null;
             gitnexus: boolean | null;
+            serena?: boolean | null | undefined;
         }>>;
     }, "strict", z.ZodTypeAny, {
         model: string | null;
@@ -195,8 +195,8 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
         extensions?: {
-            serena: boolean | null;
             gitnexus: boolean | null;
+            serena?: boolean | null | undefined;
         } | undefined;
     }, {
         model: string | null;
@@ -210,8 +210,8 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
         extensions?: {
-            serena: boolean | null;
             gitnexus: boolean | null;
+            serena?: boolean | null | undefined;
         } | undefined;
     }>;
     prompt: z.ZodOptional<z.ZodObject<{
@@ -251,8 +251,8 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
         extensions?: {
-            serena: boolean | null;
             gitnexus: boolean | null;
+            serena?: boolean | null | undefined;
         } | undefined;
     };
     skills: {
@@ -280,8 +280,8 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
         extensions?: {
-            serena: boolean | null;
             gitnexus: boolean | null;
+            serena?: boolean | null | undefined;
         } | undefined;
     };
     skills: {
@@ -309,8 +309,8 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
         extensions?: {
-            serena: boolean | null;
             gitnexus: boolean | null;
+            serena?: boolean | null | undefined;
         } | undefined;
     };
     skills: {

@@ -28,7 +28,6 @@
     "mandatory_rules": {
       "template_sets": [
         "test-runner-execution-scope",
-        "serena-cheatsheet",
         "per-turn-handoff-schema",
         "bead-id-verbatim"
       ]

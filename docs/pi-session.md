@@ -19,7 +19,6 @@ domain:
 | [Why `--no-extensions`](#why-no-extensions) | Pi auto-discovers xtrm extensions on startup from `~/ |
 | [Selective re-enable policy](#selective-re-enable-policy) | After disabling all extensions, `src/pi/session |
 | [How it maps from specialist YAML](#how-it-maps-from-specialist-yaml) | The specialist's `execution |
-| [Serena-pool integration](#serena-pool-integration) | Pre-spawn hook that starts/reuses a shared Serena daemon via `ensureSerenaForRootInSubprocess` |
 | [Telemetry bridging](#telemetry-bridging) | AgentOps-style metrics — token usage schema, `reasoning_tokens`, `tool_tokens`, `usage_source` |
 | [Code location](#code-location) | `src/pi/session.ts` — `start()` method, extension resolution section |
 | [Installing the selectively-loaded extensions](#installing-the-selectively-loaded-extensions) | Specialists does not install these — it only loads them if present |
@@ -52,7 +51,6 @@ After disabling all extensions, `src/pi/session.ts` re-enables a small allowlist
 | `service-skills` | ✅ If installed | Always (if installed) | Territory-aware routing is useful in any session |
 | `caveman` | ✅ If installed | Always (if installed) | Terse output for agent-to-agent communication |
 | `pi-gitnexus` (npm) | ✅ If installed, unless opted out | Not in `excludeExtensions` | Code intelligence tools |
-| `pi-serena-tools` (npm) | ✅ If installed, unless opted out | Not in `excludeExtensions` | Serena integration tools |
 | All other extensions | ❌ Never | — | UI/UX only; not relevant headlessly |
 
 ## How it maps from specialist YAML
@@ -71,20 +69,24 @@ execution:
 
 ## Extension opt-out
 
-Specialists can opt out of specific npm extensions via `execution.extensions` in their config:
+Specialists can opt out of the GitNexus npm extension via `execution.extensions` in their config:
 
 ```json
 {
   "execution": {
     "extensions": {
-      "serena": false,
       "gitnexus": false
     }
   }
 }
 ```
 
-When `false`, the extension is excluded from the `-e` args passed to Pi spawn. This is useful for specialists where Serena or GitNexus tools add overhead without value.
+When `false`, the extension is excluded from the `-e` args passed to Pi spawn. This is useful for specialists where GitNexus tools add overhead without value.
+
+> **Deprecated:** `execution.extensions.serena` was retired with the K4 Serena
+> retirement (unitAI-e67up.8). Legacy configs that still carry the key keep
+> parsing, but the value is ignored — Specialists no longer injects
+> `pi-serena-tools` or pre-spawns any Serena daemon.
 
 ## Caveman extension
 
@@ -132,31 +134,18 @@ if (npmGlobalDir) {
     const gitnexusPath = join(npmGlobalDir, 'pi-gitnexus');
     if (existsSync(gitnexusPath)) args.push('-e', gitnexusPath);
   }
-  if (!excludedExtensions.has('pi-serena-tools')) {
-    const serenaPath = join(npmGlobalDir, 'pi-serena-tools');
-    if (existsSync(serenaPath)) args.push('-e', serenaPath);
-  }
 }
 ```
 
-### serena-pool
+### Retired: Serena integration
 
-When `pi-serena-tools` is enabled, `session.ts` runs a **pre-spawn hook** to start or reuse a shared Serena MCP daemon for the same repo root:
-
-1. It locates the globally-installed `serena-pool` extension at `@jaggerxtrm/pi-extensions/extensions/serena-pool/index.ts`.
-2. If found, it calls `ensureSerenaForRootInSubprocess` (a Bun/Node `execFileSync`-wrapped helper that dynamic-imports the pool module and returns a deterministic TCP port).
-3. The resulting port is injected into the Pi process environment as `SERENA_MCP_PORT`.
-
-Because `pi-serena-tools` reads `SERENA_MCP_PORT` at **extension construction time** (not at session-start), the env must be set **before** Pi spawns. This avoids duplicate Serena daemons on random ports.
-
-| Property | Value |
-|---|---|
-| Pool extension path | `<global_node_modules>/@jaggerxtrm/pi-extensions/extensions/serena-pool/index.ts` |
-| Port determinism | Hash-based on `projectRoot` |
-| State file | `~/.local/share/pi-serena-pool/<hash>.json` |
-| Fallback if pool fails | Pi falls back to spawning its own Serena (may incur per-worktree overhead) |
-
-If the pool extension is not installed, or the specialist opts out with `"extensions": { "serena": false }`, Pi spawns its own Serena directly (or skips it entirely for read-only specialists).
+Serena extension injection and the `serena-pool` pre-spawn hook were removed
+with the K4 Serena retirement (unitAI-e67up.8). `session.ts` no longer probes
+for `pi-serena-tools`, never adds it to the Pi argv, and never spawns or
+reuses a Serena daemon (no `SERENA_MCP_PORT` injection). Legacy
+`execution.extensions.serena` config remains parseable and is ignored.
+Specialist capability is carried by native pi tools plus GitNexus when
+installed.
 
 ### agentops telemetry bridge
 

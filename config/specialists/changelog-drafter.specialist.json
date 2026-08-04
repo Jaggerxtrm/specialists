@@ -27,9 +27,6 @@
       "max_retries": 0,
       "mode": "auto",
       "requires_worktree": false,
-      "extensions": {
-        "serena": false
-      },
       "bare": false
     },
     "mandatory_rules": {

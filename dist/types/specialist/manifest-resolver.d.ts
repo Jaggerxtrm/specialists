@@ -1,5 +1,5 @@
 export type ToolTier = 'READ_ONLY' | 'LOW' | 'MEDIUM' | 'HIGH';
-export type ToolCatalogName = 'native' | 'gitnexus' | 'serena';
+export type ToolCatalogName = 'native' | 'gitnexus';
 export type ExtensionHealth = 'not_installed' | 'disabled' | 'loaded_healthy' | 'loaded_unhealthy' | 'unknown';
 export type DeniedNativesMode = 'soft' | 'hard';
 export interface ToolCatalog {

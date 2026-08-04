@@ -41,7 +41,9 @@ const ExecutionSchema = z.object({
   /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
   thinking_level: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']).optional(),
   auto_commit: z.enum(['never', 'checkpoint_on_waiting', 'checkpoint_on_terminal']).default('never'),
-  /** Optional per-session extension toggles. `false` disables injection of extension. */
+  /** Optional per-session extension toggles. `false` disables injection of extension.
+   *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
+   *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
   extensions: z.object({
     serena: z.boolean().optional(),
     gitnexus: z.boolean().optional(),
@@ -160,7 +162,9 @@ export const OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
   'stdout_limit_bytes',
 ] as const;
 
-/** Nested execution leaf paths an override layer may set. Relative to `specialist.execution`. */
+/** Nested execution leaf paths an override layer may set. Relative to `specialist.execution`.
+ *  `extensions.serena` stays allowlisted so legacy overrides keep validating; the
+ *  runtime ignores it (Serena retired, unitAI-e67up.8). */
 export const OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS = [
   'extensions.serena',
   'extensions.gitnexus',

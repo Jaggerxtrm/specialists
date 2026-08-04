@@ -33,7 +33,6 @@
     },
     "mandatory_rules": {
       "template_sets": [
-        "serena-cheatsheet",
         "per-turn-handoff-schema",
         "bead-id-verbatim"
       ],

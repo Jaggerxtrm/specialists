@@ -4,7 +4,7 @@ description: >
   First-run setup workflow for a Specialists install. Use when the user says
   "setup specialists", "configure specialists", "change the specialist models",
   "models shipped do not exist on my machine", "set notes_mode globally", "opt
-  out of Serena for one specialist", "sp init --global", "sp edit --global", or
+  out of GitNexus for one specialist", "sp init --global", "sp edit --global", or
   asks how to apply specialist overrides across all repos at once. Verifies
   local Pi models, explains the 3-layer field merge (package canonical →
   ~/.config/specialists/user.json → .specialists/user), bootstraps the global
@@ -343,7 +343,7 @@ and are pruned by `sp prune-stale-defaults`.
 | Need | Layer |
 |---|---|
 | Your provider's models, set once for everywhere | `--global` |
-| Extension opt-out (e.g. no Serena for transcriber) | `--global` |
+| Extension opt-out (e.g. no GitNexus for transcriber) | `--global` |
 | `notes_mode` / `output_file` for chained pipelines | `--global` |
 | `thinking_level`, byte limits, fallback chains | `--global` |
 | Different model just for this repo | per-repo |
@@ -410,7 +410,7 @@ falls through to `$EDITOR` in some environments (open follow-up). Prefer
 | `<name>.execution.max_retries` | number \| null | Transient-retry budget. |
 | `<name>.execution.prompt_limit_bytes` | number \| null | Script-runner prompt-size guard (~4 MB default). |
 | `<name>.execution.stdout_limit_bytes` | number \| null | Script-runner stdout cap (~32 MB default). |
-| `<name>.execution.extensions.serena` | bool \| null | `false` to skip Serena MCP injection for this spec (RAM saver on non-LSP roles). |
+| `<name>.execution.extensions.serena` | bool \| null | DEPRECATED, ignored (Serena retired); legacy entries keep validating. |
 | `<name>.execution.extensions.gitnexus` | bool \| null | `false` to skip GitNexus MCP injection. |
 | `<name>.prompt.system_prompt_mode` | enum \| null | `append` (default for package specs) or `replace`. |
 | `<name>.stall_detection.waiting_auto_close_ms` | number \| null | Opt-in waiting auto-close threshold. Graceful close first; forced termination only if close hangs. |
@@ -540,7 +540,7 @@ KAN-91 global setup result:
 - Preset refs in use: <list or none>
 - notes_mode set globally for: <list or none>
 - output_file set globally for: <list or none>
-- Extension opt-out (serena/gitnexus): <list per spec>
+- Extension opt-out (gitnexus): <list per spec>
 - Caveats / models that failed pi --list-models check: <list or none>
 - Per-repo overrides still in .specialists/user that shadow global: <list or none>
 ```

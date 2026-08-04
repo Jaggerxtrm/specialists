@@ -26,9 +26,6 @@
       "interactive": true,
       "thinking_level": "low",
       "max_retries": 0,
-      "extensions": {
-        "serena": false
-      },
       "bare": true
     },
     "mandatory_rules": {

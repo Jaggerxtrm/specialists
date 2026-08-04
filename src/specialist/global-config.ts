@@ -80,7 +80,9 @@ export function getGlobalUserConfigPath(): GlobalUserConfigPath {
 // null / [] = "inherit from the layer below".
 
 const OverrideExtensionsSchema = z.object({
-  serena: z.boolean().nullable(),
+  // `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): kept so
+  // existing global override files keep validating; the runtime ignores it.
+  serena: z.boolean().nullable().optional(),
   gitnexus: z.boolean().nullable(),
 }).strict();
 
@@ -171,7 +173,6 @@ export function buildSpecialistOverrideTemplate(): GlobalSpecialistOverride {
       prompt_limit_bytes: null,
       stdout_limit_bytes: null,
       extensions: {
-        serena: null,
         gitnexus: null,
       },
     },

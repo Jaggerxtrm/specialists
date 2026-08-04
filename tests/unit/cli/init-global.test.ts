@@ -87,7 +87,6 @@ describe('override template + schema', () => {
         prompt_limit_bytes: null,
         stdout_limit_bytes: null,
         extensions: {
-          serena: null,
           gitnexus: null,
         },
       },

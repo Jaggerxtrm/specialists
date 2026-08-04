@@ -25,9 +25,6 @@
       "permission_required": "READ_ONLY",
       "interactive": true,
       "max_retries": 0,
-      "extensions": {
-        "serena": false
-      },
       "bare": false
     },
     "mandatory_rules": {

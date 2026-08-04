@@ -140,7 +140,7 @@ OUTPUT: TBD — needs exploration"
 **The promotion gate (rule #15).** No specialist may be dispatched against a `contract:draft` bead. Before dispatch, the orchestrator must:
 
 1. Re-read the bead (`bd show <id>`).
-2. Actually explore — the same Phase 2 evidence-gathering the `planning` skill requires before writing a real contract (`gitnexus_query`/`gitnexus_context`/`gitnexus_impact`, or Serena symbol reads).
+2. Actually explore — the same Phase 2 evidence-gathering the `planning` skill requires before writing a real contract (`gitnexus_query`/`gitnexus_context`/`gitnexus_impact`, or native reads/grep).
 3. Rewrite the bead in place to the full 7-section contract (`bd update <id> --description "..."`), replacing every `TBD` with real content grounded in what was just found.
 4. Flip the state: `bd set-state <id> contract=ready --reason "Explored via <what>; rewrote to full contract"`.
 

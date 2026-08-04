@@ -22,7 +22,6 @@ async function loadSpecialist(name: string): Promise<{ tier: ToolTier; permissio
 function makeHealthyState() {
   return {
     gitnexus: { health: 'loaded_healthy' as const, catalogCompatible: true },
-    serena: { health: 'loaded_healthy' as const, catalogCompatible: true },
   };
 }
 
@@ -116,10 +115,10 @@ describe('manifest resolver', () => {
     expect(healthy.downgradeReasons).toEqual([]);
 
     const restoreStates = [
-      { extensionState: { gitnexus: { health: 'loaded_unhealthy' as const }, serena: { health: 'loaded_healthy' as const, catalogCompatible: true } } },
-      { extensionState: { gitnexus: { health: 'loaded_healthy' as const, catalogCompatible: false }, serena: { health: 'loaded_healthy' as const, catalogCompatible: true } } },
-      { extensionState: { gitnexus: { health: 'unknown' as const }, serena: { health: 'loaded_healthy' as const, catalogCompatible: true } } },
-      { extensionState: { gitnexus: { health: 'disabled' as const }, serena: { health: 'loaded_healthy' as const, catalogCompatible: true } } },
+      { extensionState: { gitnexus: { health: 'loaded_unhealthy' as const } } },
+      { extensionState: { gitnexus: { health: 'loaded_healthy' as const, catalogCompatible: false } } },
+      { extensionState: { gitnexus: { health: 'unknown' as const } } },
+      { extensionState: { gitnexus: { health: 'disabled' as const } } },
     ] as const;
 
     for (const { extensionState } of restoreStates) {
@@ -168,7 +167,6 @@ describe('manifest resolver', () => {
       manifestPolicy: policy ? { permissions: policy } : undefined,
       extensionState: {
         gitnexus: { health: 'loaded_unhealthy' as const },
-        serena: { health: 'loaded_healthy' as const, catalogCompatible: true },
       },
     });
 
@@ -221,18 +219,20 @@ describe('manifest resolver', () => {
         denied_natives_mode: 'hard',
       },
       specialistExclusions: {
-        disabledExtensions: ['serena'],
+        disabledExtensions: ['gitnexus'],
         deniedNatives: ['ls'],
       },
       extensionState: {
-        gitnexus: { health: 'loaded_healthy', catalogCompatible: true },
-        serena: { health: 'disabled' },
+        gitnexus: { health: 'disabled' },
       },
     });
 
     expect(resolved.warnings.some(w => w.includes('specialist exclusions'))).toBe(true);
+    expect(resolved.warnings.some(w => w.includes('gitnexus tools excluded by extension state'))).toBe(true);
     expect(resolved.attribution.some(entry => entry.layer === 'specialist_exclusion')).toBe(true);
-    expect(resolved.tools).toContain('gitnexus_query');
-    expect(resolved.tools).not.toContain('find_file');
+    // GitNexus disabled: no gitnexus tools, hard deny degrades, natives restored.
+    expect(resolved.tools).not.toContain('gitnexus_query');
+    expect(resolved.tools).toContain('read');
+    expect(resolved.tools).toContain('find');
   });
 });

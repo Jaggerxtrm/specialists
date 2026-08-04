@@ -574,7 +574,7 @@ Blocked fields are still guarded:
 
 Allowed override fields include:
 - `execution.model`, `execution.fallback_model`, `execution.timeout_ms`, `execution.stall_timeout_ms`, `execution.interactive`, `execution.thinking_level`, `execution.max_retries`, `execution.response_format`
-- `execution.extensions.serena`, `execution.extensions.gitnexus`
+- `execution.extensions.gitnexus` (`execution.extensions.serena` remains allowlisted for legacy configs but is deprecated and ignored)
 - `specialist.stall_detection.waiting_auto_close_ms`
 - `specialist.prompt.system_prompt_mode`
 
@@ -1229,18 +1229,19 @@ Key parameters:
 
 ### Extension opt-out
 
-Specialists can disable specific npm extensions:
+Specialists can disable the GitNexus npm extension:
 
 ```json
 {
   "execution": {
     "extensions": {
-      "serena": false,
       "gitnexus": false
     }
   }
 }
 ```
+
+The legacy `execution.extensions.serena` key stays parseable but is ignored — Serena extension injection was retired with the K4 Serena retirement (unitAI-e67up.8).
 
 ### `memory_injection` timeline event
 
@@ -1486,15 +1487,15 @@ Each specialist's `--tools` argument is computed at session start by `resolvePer
 ### Inputs
 
 1. The specialist's tier from `execution.permission_required` (`READ_ONLY`/`LOW`/`MEDIUM`/`HIGH`)
-2. The catalog index at `.specialists/catalog/index.json` (with `native.json` / `gitnexus.json` / `serena.json` siblings)
-3. Live extension health probe of `pi-gitnexus` and `pi-serena-tools` in the global npm modules directory
+2. The catalog index at `.specialists/catalog/index.json` (with `native.json` / `gitnexus.json` siblings)
+3. Live extension health probe of `pi-gitnexus` in the global npm modules directory
 4. Optional `permissions[<TIER>]` override block on the specialist JSON
 
 ### Resolution layers (in order)
 
 | Layer | Effect |
 |-------|--------|
-| `catalog` | Tier defaults from each catalog (native + gitnexus + serena) |
+| `catalog` | Tier defaults from each catalog (native + gitnexus) |
 | `specialist_override` | The specialist's `permissions[<TIER>]` block strips natives via `denied_natives_when_extension` |
 | `runtime_health` | Tools belonging to unhealthy extensions are dropped; if a hard-deny had stripped natives whose replacement extension is now unhealthy, those natives are restored automatically |
 
@@ -1516,7 +1517,7 @@ Each specialist's `--tools` argument is computed at session start by `resolvePer
 }
 ```
 
-Result at runtime when both extensions are healthy: explorer's `--tools` excludes native `grep`/`find`/`ls`, includes `gitnexus_query` + `search_for_pattern` + `find_file` + symbol-graph tools. If `pi-serena-tools` becomes unhealthy mid-run, the natives are restored.
+Result at runtime when the GitNexus extension is healthy: explorer's `--tools` excludes native `grep`/`find`/`ls`, includes `gitnexus_query` and the other graph tools. If `pi-gitnexus` becomes unhealthy mid-run, the natives are restored.
 
 ### Inspection
 

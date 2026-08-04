@@ -29,7 +29,6 @@
       "interactive": true,
       "max_retries": 0,
       "extensions": {
-        "serena": false,
         "gitnexus": false
       }
     },

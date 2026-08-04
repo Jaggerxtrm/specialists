@@ -139,7 +139,6 @@ export declare function resolvePermissionTools(options: {
 }): string | undefined;
 export declare function resolveGlobalNodeModulesDir(): string | undefined;
 export declare function validateWriteToolPathAgainstBoundary(toolName: string, toolArgs: Record<string, unknown> | undefined, worktreeBoundary: string | undefined): string | undefined;
-export declare function ensureSerenaForRootInSubprocess(serenaPoolPath: string, projectRoot: string, env: NodeJS.ProcessEnv): number | null;
 export declare class PiAgentSession {
     private options;
     private proc?;

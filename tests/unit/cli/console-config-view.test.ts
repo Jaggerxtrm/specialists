@@ -68,10 +68,12 @@ describe('describeLeaf — operationally-grounded hints (unitAI-ctb4u.31)', () =
   });
 
   it('boolean hints name the OPERATIONAL effect of false, not the type', () => {
+    // Serena retired (unitAI-e67up.8): the leaf stays editable for legacy
+    // configs but the hint marks it deprecated and ignored.
     const serena = describeLeaf('execution.extensions.serena').hint;
-    expect(serena).toContain('true|false');
+    expect(serena).toContain('deprecated');
+    expect(serena).toContain('ignored');
     expect(serena).toContain('Serena');
-    expect(serena).toContain('disables');
     const gitnexus = describeLeaf('execution.extensions.gitnexus').hint;
     expect(gitnexus).toContain('true|false');
     expect(gitnexus).toContain('GitNexus');
