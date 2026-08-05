@@ -1,8 +1,33 @@
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseSpecialist } from '../../../src/specialist/schema.js';
 
 const CONFIG_DIR = 'config/specialists';
+const REVIEWER_FIXTURE_DIR = join(process.cwd(), 'tests/fixtures/reviewer-gates');
+
+type RefusalRegressionContext = {
+  requirement: string;
+  writer_claim: string;
+  seconder: {
+    scope_verdict: string;
+    quality_verdict: string;
+    overall_verdict: string;
+  };
+  test_engineer: {
+    coverage_map: string;
+    source_bug_suspicions: string[];
+  };
+  test_runner: {
+    pass_count: number;
+    fail_count: number;
+    skip_count: number;
+  };
+  security_auditor: string;
+  obligations_scanner: string;
+  only_remaining_defect: string;
+  expected_reviewer_constraint: string;
+};
 
 async function loadSpec(name: 'reviewer' | 'seconder' | 'security-auditor') {
   return parseSpecialist(readFileSync(`${CONFIG_DIR}/${name}.specialist.json`, 'utf8'));
@@ -38,6 +63,40 @@ describe('review-chain hardening specialist configs', () => {
     expect(system).toContain('The verdict MUST NOT be PASS');
     expect(system).toContain('Failure-Mode Inversion Check: clear | operator-visible | regression | not-applicable');
     expect(system).toContain('operator_visibility_evidence');
+  });
+
+  it('binds a concrete green-chain silent-refusal fixture to the no-PASS contract', async () => {
+    const spec = await loadSpec('reviewer');
+    const system = spec.specialist.prompt.system ?? '';
+    const diff = readFileSync(
+      join(REVIEWER_FIXTURE_DIR, 'non-operator-visible-refusal.diff'),
+      'utf8',
+    );
+    const context = JSON.parse(
+      readFileSync(
+        join(REVIEWER_FIXTURE_DIR, 'non-operator-visible-refusal-context.json'),
+        'utf8',
+      ),
+    ) as RefusalRegressionContext;
+
+    expect(context.writer_claim).toBe('PASS');
+    expect(context.seconder.overall_verdict).toBe('PASS');
+    expect(context.test_engineer.coverage_map).toBe('complete');
+    expect(context.test_engineer.source_bug_suspicions).toEqual([]);
+    expect(context.test_runner).toEqual({ pass_count: 4, fail_count: 0, skip_count: 0 });
+    expect(context.security_auditor).toBe('not-required');
+    expect(context.obligations_scanner).toBe('CLEAN');
+    expect(context.expected_reviewer_constraint).toBe('MUST_NOT_PASS');
+    expect(context.only_remaining_defect).toContain('returns without a counter');
+
+    expect(diff).toContain('-  const accepted = rows.filter(isValidRow);');
+    expect(diff).toContain('+  if (rows.some((row) => !isValidRow(row))) {');
+    expect(diff).toContain('+    return;');
+    expect(diff).not.toMatch(/logger\.|metrics\.|throw new|structuredLog|recordRejection/);
+
+    expect(system).toContain('silent data loss → silent halt');
+    expect(system).toContain('A non-operator-visible refusal, drop, skip, or halt is a REGRESSION.');
+    expect(system).toContain('The verdict MUST NOT be PASS');
   });
 
   it('requires shared-choke-point placement without changing the release checklist format', async () => {
