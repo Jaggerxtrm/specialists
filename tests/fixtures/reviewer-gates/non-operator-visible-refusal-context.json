@@ -1,0 +1,22 @@
+{
+  "requirement": "Reject invalid rows without silently dropping rows or silently halting the contract.",
+  "writer_claim": "PASS",
+  "seconder": {
+    "scope_verdict": "PASS",
+    "quality_verdict": "PASS",
+    "overall_verdict": "PASS"
+  },
+  "test_engineer": {
+    "coverage_map": "complete",
+    "source_bug_suspicions": []
+  },
+  "test_runner": {
+    "pass_count": 4,
+    "fail_count": 0,
+    "skip_count": 0
+  },
+  "security_auditor": "not-required",
+  "obligations_scanner": "CLEAN",
+  "only_remaining_defect": "The new refusal path returns without a counter, structured log, surfaced status/error, durable rejection record, or other alert-able signal.",
+  "expected_reviewer_constraint": "MUST_NOT_PASS"
+}
