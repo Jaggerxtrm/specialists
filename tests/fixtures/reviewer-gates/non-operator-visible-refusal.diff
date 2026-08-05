@@ -1,0 +1,17 @@
+diff --git a/src/ingestion/process-contract.ts b/src/ingestion/process-contract.ts
+index 1111111..2222222 100644
+--- a/src/ingestion/process-contract.ts
++++ b/src/ingestion/process-contract.ts
+@@ -1,8 +1,10 @@
+ export async function ingestContract(
+   contract: Contract,
+   rows: Row[],
+ ): Promise<void> {
+-  const accepted = rows.filter(isValidRow);
+-  await writeRows(contract, accepted);
++  if (rows.some((row) => !isValidRow(row))) {
++    return;
++  }
++
++  await writeRows(contract, rows);
+ }
