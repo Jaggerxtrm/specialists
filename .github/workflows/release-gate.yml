@@ -12,7 +12,7 @@ jobs:
     outputs:
       cross_repo_assets: ${{ steps.filter.outputs.cross_repo_assets }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.1
       - uses: dorny/paths-filter@v4
         id: filter
         with:
@@ -33,7 +33,7 @@ jobs:
     if: needs.changes.outputs.cross_repo_assets == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.1
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
