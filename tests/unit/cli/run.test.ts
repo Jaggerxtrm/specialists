@@ -404,6 +404,78 @@ describe('run CLI', () => {
     expect(variables.obligations_diff).toContain('+// TODO(unitAI-abc12): tracked');
   });
 
+  it('tracks plain block-comment continuation lines', () => {
+    const remoteDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    childProcess.execSync('git init --bare', { cwd: remoteDir });
+    childProcess.execSync('git init -b main', { cwd: repoDir });
+    childProcess.execSync('git config user.email test@example.com', { cwd: repoDir });
+    childProcess.execSync('git config user.name Test User', { cwd: repoDir });
+    childProcess.execSync('mkdir -p src', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/README.md`, 'base\n');
+    childProcess.execSync('git add README.md && git commit -m base', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git push -u origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git fetch origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main', { cwd: repoDir });
+    childProcess.execSync('git checkout -b feature', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    fs.writeFileSync(
+      `${repoDir}/src/scan.ts`,
+      [
+        '/* TODO(unitAI-block-start): block start',
+        ' * HACK(unitAI-block-star): star continuation',
+        'FIXME(unitAI-plain): plain continuation',
+        'NOTE(release): closing line */',
+        '',
+      ].join('\n'),
+    );
+    childProcess.execSync('git add src && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    const variables = buildInjectedObligationsDiffVariables(repoDir);
+
+    expect(variables.obligations_diff).toContain('src/scan.ts:1 TODO [production] [TRACKED unitAI-block-start] /* TODO(unitAI-block-start): block start');
+    expect(variables.obligations_diff).toContain('src/scan.ts:2 HACK [production] [TRACKED unitAI-block-star] * HACK(unitAI-block-star): star continuation');
+    expect(variables.obligations_diff).toContain('src/scan.ts:3 FIXME [production] [TRACKED unitAI-plain] FIXME(unitAI-plain): plain continuation');
+    expect(variables.obligations_diff).toContain('src/scan.ts:4 NOTE(release) [production] [UNTRACKED] NOTE(release): closing line */');
+  });
+
+  it('ignores regex literal marker lookalikes and keeps real inline comments', () => {
+    const remoteDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    childProcess.execSync('git init --bare', { cwd: remoteDir });
+    childProcess.execSync('git init -b main', { cwd: repoDir });
+    childProcess.execSync('git config user.email test@example.com', { cwd: repoDir });
+    childProcess.execSync('git config user.name Test User', { cwd: repoDir });
+    childProcess.execSync('mkdir -p src', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/README.md`, 'base\n');
+    childProcess.execSync('git add README.md && git commit -m base', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git push -u origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git fetch origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main', { cwd: repoDir });
+    childProcess.execSync('git checkout -b feature', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    fs.writeFileSync(
+      `${repoDir}/src/scan.ts`,
+      [
+        'const regexSlash = /https?:\\/\\/TODO-in-regex/;',
+        'const regexBlock = /prefix\\/\\*FIXME-in-regex/;',
+        'const escapedSlash = /escaped\\//; // TEMP escaped slash comment',
+        'const charClass = /[\\/]value/; // XXX char class comment',
+        '',
+      ].join('\n'),
+    );
+    childProcess.execSync('git add src && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    const variables = buildInjectedObligationsDiffVariables(repoDir);
+
+    expect(variables.obligations_diff).toContain('src/scan.ts:3 TEMP [production] [UNTRACKED] const escapedSlash = /escaped\\//; // TEMP escaped slash comment');
+    expect(variables.obligations_diff).toContain('src/scan.ts:4 XXX [production] [UNTRACKED] const charClass = /[\\/]value/; // XXX char class comment');
+    expect(variables.obligations_diff).not.toContain('src/scan.ts:1 TODO');
+    expect(variables.obligations_diff).not.toContain('src/scan.ts:2 FIXME');
+  });
+
   it('ignores inert marker vocabulary in json strings and regex literals while keeping real comments', () => {
     const remoteDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
     const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();

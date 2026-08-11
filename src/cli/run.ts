@@ -884,45 +884,298 @@ function classifyObligationSurface(filePath: string): 'production' | 'test' {
   return TEST_PATH_PATTERNS.some((pattern) => pattern.test(normalizedPath)) ? 'test' : 'production';
 }
 
-function extractObligationComment(line: string): string | null {
-  const trimmedLine = line.trimStart();
-  if (trimmedLine.startsWith('*')) return trimmedLine;
+type ObligationLexicalMode = 'block-comment' | 'code' | 'double-quote' | 'regex' | 'single-quote' | 'template';
 
-  let activeQuote: '"' | '\'' | '`' | null = null;
-  let isEscaped = false;
+type ObligationLexicalState = {
+  mode: ObligationLexicalMode;
+  canStartRegex: boolean;
+  isEscaped: boolean;
+  isInRegexCharacterClass: boolean;
+  templateExpressionDepth: number;
+};
 
-  for (let index = 0; index < line.length; index += 1) {
+type ObligationCommentScanResult = {
+  comment: string | null;
+  state: ObligationLexicalState;
+};
+
+const REGEX_PREFIX_KEYWORDS = new Set([
+  'await',
+  'case',
+  'delete',
+  'do',
+  'else',
+  'in',
+  'instanceof',
+  'new',
+  'of',
+  'return',
+  'throw',
+  'typeof',
+  'void',
+  'yield',
+]);
+
+function createInitialObligationLexicalState(): ObligationLexicalState {
+  return {
+    mode: 'code',
+    canStartRegex: true,
+    isEscaped: false,
+    isInRegexCharacterClass: false,
+    templateExpressionDepth: 0,
+  };
+}
+
+function cloneObligationLexicalState(state: ObligationLexicalState): ObligationLexicalState {
+  return {
+    mode: state.mode,
+    canStartRegex: state.canStartRegex,
+    isEscaped: state.isEscaped,
+    isInRegexCharacterClass: state.isInRegexCharacterClass,
+    templateExpressionDepth: state.templateExpressionDepth,
+  };
+}
+
+function isHashCommentStart(line: string, index: number): boolean {
+  if (line[index] !== '#') return false;
+  if (index === 0) return true;
+  return /\s/.test(line[index - 1] ?? '');
+}
+
+function isIdentifierCharacter(character: string | undefined): boolean {
+  return !!character && /[A-Za-z0-9_$]/.test(character);
+}
+
+function isRegexPrefixPunctuation(character: string | undefined): boolean {
+  return !!character && '({[,;:=!?~%^&*|+-<>'.includes(character);
+}
+
+function updateRegexEligibilityFromToken(state: ObligationLexicalState, token: string): void {
+  state.canStartRegex = REGEX_PREFIX_KEYWORDS.has(token);
+}
+
+function extractObligationComment(line: string, initialState: ObligationLexicalState): ObligationCommentScanResult {
+  const state = cloneObligationLexicalState(initialState);
+  let markerComment: string | null = null;
+  let index = 0;
+
+  const rememberComment = (commentText: string): void => {
+    if (markerComment) return;
+    const trimmedComment = commentText.trimStart();
+    if (trimmedComment.match(OBLIGATION_MARKER_REGEX)) markerComment = trimmedComment;
+  };
+
+  while (index < line.length) {
+    if (state.mode === 'block-comment') {
+      const closeIndex = line.indexOf('*/', index);
+      const commentEnd = closeIndex >= 0 ? closeIndex + 2 : line.length;
+      rememberComment(line.slice(index, commentEnd));
+      if (closeIndex < 0) return { comment: markerComment, state };
+      state.mode = 'code';
+      state.canStartRegex = false;
+      index = closeIndex + 2;
+      continue;
+    }
+
+    if (state.mode === 'single-quote' || state.mode === 'double-quote') {
+      const quoteCharacter = state.mode === 'single-quote' ? '\'' : '"';
+      while (index < line.length) {
+        const character = line[index];
+        index += 1;
+        if (state.isEscaped) {
+          state.isEscaped = false;
+          continue;
+        }
+        if (character === '\\') {
+          state.isEscaped = true;
+          continue;
+        }
+        if (character === quoteCharacter) {
+          state.mode = 'code';
+          state.canStartRegex = false;
+          break;
+        }
+      }
+      continue;
+    }
+
+    if (state.mode === 'template') {
+      while (index < line.length) {
+        const character = line[index];
+        const nextCharacter = line[index + 1];
+        index += 1;
+
+        if (state.isEscaped) {
+          state.isEscaped = false;
+          continue;
+        }
+        if (character === '\\') {
+          state.isEscaped = true;
+          continue;
+        }
+        if (character === '`') {
+          state.mode = 'code';
+          state.canStartRegex = false;
+          break;
+        }
+        if (character === '$' && nextCharacter === '{') {
+          state.mode = 'code';
+          state.canStartRegex = true;
+          state.templateExpressionDepth = 1;
+          index += 1;
+          break;
+        }
+      }
+      continue;
+    }
+
+    if (state.mode === 'regex') {
+      while (index < line.length) {
+        const character = line[index];
+        index += 1;
+
+        if (state.isEscaped) {
+          state.isEscaped = false;
+          continue;
+        }
+        if (character === '\\') {
+          state.isEscaped = true;
+          continue;
+        }
+        if (character === '[') {
+          state.isInRegexCharacterClass = true;
+          continue;
+        }
+        if (character === ']' && state.isInRegexCharacterClass) {
+          state.isInRegexCharacterClass = false;
+          continue;
+        }
+        if (character === '/' && !state.isInRegexCharacterClass) {
+          state.mode = 'code';
+          state.canStartRegex = false;
+          break;
+        }
+      }
+      continue;
+    }
+
     const character = line[index];
+    const nextCharacter = line[index + 1];
 
-    if (activeQuote) {
-      if (isEscaped) {
-        isEscaped = false;
-        continue;
-      }
-      if (character === '\\') {
-        isEscaped = true;
-        continue;
-      }
-      if (character === activeQuote) activeQuote = null;
+    if (!character) break;
+    if (/\s/.test(character)) {
+      index += 1;
       continue;
     }
 
-    if (character === '"' || character === '\'' || character === '`') {
-      activeQuote = character;
+    if (isHashCommentStart(line, index)) {
+      rememberComment(line.slice(index));
+      return { comment: markerComment, state };
+    }
+
+    if (character === '/' && nextCharacter === '/') {
+      rememberComment(line.slice(index));
+      return { comment: markerComment, state };
+    }
+
+    if (character === '/' && nextCharacter === '*') {
+      const closeIndex = line.indexOf('*/', index + 2);
+      const commentEnd = closeIndex >= 0 ? closeIndex + 2 : line.length;
+      rememberComment(line.slice(index, commentEnd));
+      if (closeIndex < 0) {
+        state.mode = 'block-comment';
+        return { comment: markerComment, state };
+      }
+      state.canStartRegex = false;
+      index = closeIndex + 2;
       continue;
     }
 
-    if (character === '#') return line.slice(index).trimStart();
-
-    if (character === '/' && index + 1 < line.length) {
-      const nextCharacter = line[index + 1];
-      if (nextCharacter === '/' || nextCharacter === '*') {
-        return line.slice(index).trimStart();
-      }
+    if (character === '/' && state.canStartRegex) {
+      state.mode = 'regex';
+      state.isEscaped = false;
+      state.isInRegexCharacterClass = false;
+      index += 1;
+      continue;
     }
+
+    if (character === '\'' || character === '"') {
+      state.mode = character === '\'' ? 'single-quote' : 'double-quote';
+      state.isEscaped = false;
+      index += 1;
+      continue;
+    }
+
+    if (character === '`') {
+      state.mode = 'template';
+      state.isEscaped = false;
+      index += 1;
+      continue;
+    }
+
+    if (isIdentifierCharacter(character)) {
+      let token = character;
+      index += 1;
+      while (isIdentifierCharacter(line[index])) {
+        token += line[index];
+        index += 1;
+      }
+      updateRegexEligibilityFromToken(state, token);
+      continue;
+    }
+
+    if (/\d/.test(character)) {
+      index += 1;
+      while (/[0-9._]/.test(line[index] ?? '')) index += 1;
+      state.canStartRegex = false;
+      continue;
+    }
+
+    if (character === '{') {
+      if (state.templateExpressionDepth > 0) state.templateExpressionDepth += 1;
+      state.canStartRegex = true;
+      index += 1;
+      continue;
+    }
+
+    if (character === '}') {
+      if (state.templateExpressionDepth > 0) {
+        state.templateExpressionDepth -= 1;
+        if (state.templateExpressionDepth === 0) {
+          state.mode = 'template';
+          state.canStartRegex = false;
+          index += 1;
+          continue;
+        }
+      }
+      state.canStartRegex = false;
+      index += 1;
+      continue;
+    }
+
+    if (character === '(' || character === '[' || character === ',' || character === ';' || character === ':') {
+      state.canStartRegex = true;
+      index += 1;
+      continue;
+    }
+
+    if (character === ')' || character === ']') {
+      state.canStartRegex = false;
+      index += 1;
+      continue;
+    }
+
+    if ((character === '+' || character === '-') && nextCharacter === character) {
+      state.canStartRegex = false;
+      index += 2;
+      continue;
+    }
+
+    state.canStartRegex = isRegexPrefixPunctuation(character);
+    index += 1;
   }
 
-  return null;
+  return { comment: markerComment, state };
 }
 
 function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: string): InjectedDiffContext | null {
@@ -966,6 +1219,7 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
     namesCmd: string;
     diffCmd: (file: string) => string;
     inventoryCmd: string;
+    readFileContent: (file: string) => { ok: boolean; output: string };
   };
 
   const buildRangeSource = (label: string, baseSha: string): Source => ({
@@ -975,11 +1229,13 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
     namesCmd: `git diff --name-only ${shellQuote(baseSha)}..${shellQuote(reviewedHeadSha)}`,
     diffCmd: (file: string) => `git diff ${shellQuote(baseSha)}..${shellQuote(reviewedHeadSha)} -- ${shellQuote(file)}`,
     inventoryCmd: `git diff -U0 ${shellQuote(baseSha)}..${shellQuote(reviewedHeadSha)}`,
+    readFileContent: (file: string) => readResult(`git show ${shellQuote(`${reviewedHeadSha}:${file}`)}`),
   });
 
   const buildObligationsInventory = (
     inventoryCmd: string,
     changedPaths: readonly string[],
+    readFileContent: (file: string) => { ok: boolean; output: string },
   ): Pick<InjectedDiffContext, 'obligationsInventoryStatus' | 'obligationsInventorySummary' | 'obligationsInventoryLines'> => {
     const inventory = readResult(inventoryCmd);
     if (!inventory.ok) {
@@ -991,7 +1247,7 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
     }
 
     const allowedPaths = new Set(changedPaths);
-    const findings: string[] = [];
+    const addedLineNumbersByPath = new Map<string, Set<number>>();
     let currentFile: string | undefined;
     let nextNewLineNumber = 0;
     let parseGaps = 0;
@@ -1014,24 +1270,61 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
       }
 
       if (!line.startsWith('+') || line.startsWith('+++')) continue;
-
-      const addedLine = line.slice(1);
-      const comment = extractObligationComment(addedLine);
-      const markerMatch = comment?.match(OBLIGATION_MARKER_REGEX);
-      const lineNumber = nextNewLineNumber;
-      nextNewLineNumber += 1;
-      if (!markerMatch) continue;
-      if (!currentFile || !allowedPaths.has(currentFile)) continue;
-      if (!Number.isFinite(lineNumber) || lineNumber <= 0) {
+      if (!currentFile || !allowedPaths.has(currentFile)) {
+        nextNewLineNumber += 1;
+        continue;
+      }
+      if (!Number.isFinite(nextNewLineNumber) || nextNewLineNumber <= 0) {
         parseGaps += 1;
+        nextNewLineNumber += 1;
         continue;
       }
 
-      const surface = classifyObligationSurface(currentFile);
-      const trackedBeadId = comment?.match(TRACKED_OBLIGATION_REGEX)?.[1];
-      const status = surface === 'test' ? 'N/A' : trackedBeadId ? `TRACKED ${trackedBeadId}` : 'UNTRACKED';
-      const excerpt = addedLine.trim() || '(blank)';
-      findings.push(`- ${currentFile}:${lineNumber} ${markerMatch[1]} [${surface}] [${status}] ${excerpt}`);
+      const addedLineNumbers = addedLineNumbersByPath.get(currentFile) ?? new Set<number>();
+      addedLineNumbers.add(nextNewLineNumber);
+      addedLineNumbersByPath.set(currentFile, addedLineNumbers);
+      nextNewLineNumber += 1;
+    }
+
+    const findings: string[] = [];
+
+    for (const filePath of changedPaths) {
+      const addedLineNumbers = addedLineNumbersByPath.get(filePath);
+      if (!addedLineNumbers || addedLineNumbers.size === 0) continue;
+
+      const fileSnapshot = readFileContent(filePath);
+      if (!fileSnapshot.ok) {
+        parseGaps += addedLineNumbers.size;
+        continue;
+      }
+
+      const fileLines = fileSnapshot.output.split('\n');
+      const lexicalState = createInitialObligationLexicalState();
+
+      for (let lineIndex = 0; lineIndex < fileLines.length; lineIndex += 1) {
+        const lineNumber = lineIndex + 1;
+        const scanResult = extractObligationComment(fileLines[lineIndex] ?? '', lexicalState);
+        lexicalState.mode = scanResult.state.mode;
+        lexicalState.canStartRegex = scanResult.state.canStartRegex;
+        lexicalState.isEscaped = scanResult.state.isEscaped;
+        lexicalState.isInRegexCharacterClass = scanResult.state.isInRegexCharacterClass;
+        lexicalState.templateExpressionDepth = scanResult.state.templateExpressionDepth;
+
+        if (!addedLineNumbers.has(lineNumber)) continue;
+
+        const markerMatch = scanResult.comment?.match(OBLIGATION_MARKER_REGEX);
+        if (!markerMatch) continue;
+
+        const surface = classifyObligationSurface(filePath);
+        const trackedBeadId = scanResult.comment?.match(TRACKED_OBLIGATION_REGEX)?.[1];
+        const status = surface === 'test' ? 'N/A' : trackedBeadId ? `TRACKED ${trackedBeadId}` : 'UNTRACKED';
+        const excerpt = fileLines[lineIndex]?.trim() || '(blank)';
+        findings.push(`- ${filePath}:${lineNumber} ${markerMatch[1]} [${surface}] [${status}] ${excerpt}`);
+      }
+
+      for (const addedLineNumber of addedLineNumbers) {
+        if (addedLineNumber > fileLines.length) parseGaps += 1;
+      }
     }
 
     const markerCount = findings.length;
@@ -1061,6 +1354,13 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
           namesCmd: 'git diff --name-only',
           diffCmd: (f) => `git diff -- ${shellQuote(f)}`,
           inventoryCmd: 'git diff -U0',
+          readFileContent: (file: string) => {
+            try {
+              return { ok: true, output: readFileSync(join(cwd, file), 'utf8') };
+            } catch {
+              return { ok: false, output: '' };
+            }
+          },
         },
         {
           label: 'staged diff',
@@ -1068,6 +1368,7 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
           namesCmd: 'git diff --cached --name-only',
           diffCmd: (f) => `git diff --cached -- ${shellQuote(f)}`,
           inventoryCmd: 'git diff --cached -U0',
+          readFileContent: (file: string) => readResult(`git show ${shellQuote(`:${file}`)}`),
         },
         ...(mergeBase
           ? [buildRangeSource('branch-vs-base diff', mergeBase)]
@@ -1150,7 +1451,7 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
       excerptSections.length > 0 ? excerptSections.join('\n\n') : '(no hunk excerpts captured)',
     ].join('\n');
 
-    const obligationsInventory = buildObligationsInventory(src.inventoryCmd, files);
+    const obligationsInventory = buildObligationsInventory(src.inventoryCmd, files, src.readFileContent);
 
     return {
       source: `injected diff context (${src.label})`,
