@@ -884,6 +884,47 @@ function classifyObligationSurface(filePath: string): 'production' | 'test' {
   return TEST_PATH_PATTERNS.some((pattern) => pattern.test(normalizedPath)) ? 'test' : 'production';
 }
 
+function extractObligationComment(line: string): string | null {
+  const trimmedLine = line.trimStart();
+  if (trimmedLine.startsWith('*')) return trimmedLine;
+
+  let activeQuote: '"' | '\'' | '`' | null = null;
+  let isEscaped = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+
+    if (activeQuote) {
+      if (isEscaped) {
+        isEscaped = false;
+        continue;
+      }
+      if (character === '\\') {
+        isEscaped = true;
+        continue;
+      }
+      if (character === activeQuote) activeQuote = null;
+      continue;
+    }
+
+    if (character === '"' || character === '\'' || character === '`') {
+      activeQuote = character;
+      continue;
+    }
+
+    if (character === '#') return line.slice(index).trimStart();
+
+    if (character === '/' && index + 1 < line.length) {
+      const nextCharacter = line[index + 1];
+      if (nextCharacter === '/' || nextCharacter === '*') {
+        return line.slice(index).trimStart();
+      }
+    }
+  }
+
+  return null;
+}
+
 function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: string): InjectedDiffContext | null {
   const readResult = (command: string): { ok: boolean; output: string } => {
     try {
@@ -975,7 +1016,8 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
       if (!line.startsWith('+') || line.startsWith('+++')) continue;
 
       const addedLine = line.slice(1);
-      const markerMatch = addedLine.match(OBLIGATION_MARKER_REGEX);
+      const comment = extractObligationComment(addedLine);
+      const markerMatch = comment?.match(OBLIGATION_MARKER_REGEX);
       const lineNumber = nextNewLineNumber;
       nextNewLineNumber += 1;
       if (!markerMatch) continue;
@@ -986,7 +1028,7 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
       }
 
       const surface = classifyObligationSurface(currentFile);
-      const trackedBeadId = addedLine.match(TRACKED_OBLIGATION_REGEX)?.[1];
+      const trackedBeadId = comment?.match(TRACKED_OBLIGATION_REGEX)?.[1];
       const status = surface === 'test' ? 'N/A' : trackedBeadId ? `TRACKED ${trackedBeadId}` : 'UNTRACKED';
       const excerpt = addedLine.trim() || '(blank)';
       findings.push(`- ${currentFile}:${lineNumber} ${markerMatch[1]} [${surface}] [${status}] ${excerpt}`);

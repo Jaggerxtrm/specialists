@@ -404,6 +404,67 @@ describe('run CLI', () => {
     expect(variables.obligations_diff).toContain('+// TODO(unitAI-abc12): tracked');
   });
 
+  it('ignores inert marker vocabulary in json strings and regex literals while keeping real comments', () => {
+    const remoteDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    childProcess.execSync('git init --bare', { cwd: remoteDir });
+    childProcess.execSync('git init -b main', { cwd: repoDir });
+    childProcess.execSync('git config user.email test@example.com', { cwd: repoDir });
+    childProcess.execSync('git config user.name Test User', { cwd: repoDir });
+    childProcess.execSync('mkdir -p config/specialists src/cli src scripts', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/README.md`, 'base\n');
+    childProcess.execSync('git add README.md && git commit -m base', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git push -u origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git fetch origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main', { cwd: repoDir });
+    childProcess.execSync('git checkout -b feature', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    fs.writeFileSync(
+      `${repoDir}/config/specialists/debugger.specialist.json`,
+      '{"system":"Use structured form: // TODO(<follow-up-bead-id>): <one-line reason>."}\n',
+    );
+    fs.writeFileSync(
+      `${repoDir}/config/specialists/obligations-scanner.specialist.json`,
+      '{"description":"Scans executor diff for TODO/FIXME/HACK/XXX/TEMP/NOTE(release)/WIP in production code."}\n',
+    );
+    fs.writeFileSync(
+      `${repoDir}/src/cli/run.ts`,
+      [
+        'const OBLIGATION_MARKER_REGEX = /\\b(TODO|FIXME|HACK|XXX|TEMP|WIP|NOTE\\(release\\))(?![\\w-])/;',
+        'const TRACKED_OBLIGATION_REGEX = /\\b(?:TODO|FIXME|HACK|XXX|TEMP|WIP|NOTE\\(release\\))\\(([A-Za-z0-9.-]+)\\):/;',
+        '',
+      ].join('\n'),
+    );
+    fs.writeFileSync(
+      `${repoDir}/src/scan.ts`,
+      [
+        '// TODO(unitAI-real): tracked line comment',
+        'export const value = 1; // FIXME inline comment',
+        '/*',
+        ' * HACK(unitAI-block): block comment',
+        ' */',
+        '',
+      ].join('\n'),
+    );
+    fs.writeFileSync(`${repoDir}/config/pipeline.yaml`, 'image: latest # TEMP yaml comment\n');
+    fs.writeFileSync(`${repoDir}/scripts/run.sh`, 'echo ok # XXX shell comment\n');
+    childProcess.execSync('git add config src scripts && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    const variables = buildInjectedObligationsDiffVariables(repoDir);
+
+    expect(variables.obligations_diff).toContain('added-marker inventory: COMPLETE — complete exact-delta scan; 5 added marker match(es)');
+    expect(variables.obligations_diff).toContain('src/scan.ts:1 TODO [production] [TRACKED unitAI-real] // TODO(unitAI-real): tracked line comment');
+    expect(variables.obligations_diff).toContain('src/scan.ts:2 FIXME [production] [UNTRACKED] export const value = 1; // FIXME inline comment');
+    expect(variables.obligations_diff).toContain('src/scan.ts:4 HACK [production] [TRACKED unitAI-block] * HACK(unitAI-block): block comment');
+    expect(variables.obligations_diff).toContain('config/pipeline.yaml:1 TEMP [production] [UNTRACKED] image: latest # TEMP yaml comment');
+    expect(variables.obligations_diff).toContain('scripts/run.sh:1 XXX [production] [UNTRACKED] echo ok # XXX shell comment');
+    expect(variables.obligations_diff).not.toContain('config/specialists/debugger.specialist.json:1 TODO');
+    expect(variables.obligations_diff).not.toContain('config/specialists/obligations-scanner.specialist.json:1 TODO');
+    expect(variables.obligations_diff).not.toContain('src/cli/run.ts:1 TODO');
+    expect(variables.obligations_diff).not.toContain('src/cli/run.ts:2 TODO');
+  });
+
   it('detects all supported markers and classifies nested test surfaces', () => {
     const remoteDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
     const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
