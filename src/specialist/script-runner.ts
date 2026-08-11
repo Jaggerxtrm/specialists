@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { PiAgentSession, resolveGlobalNodeModulesDir, resolveRuntimeToolContract } from '../pi/session.js';
+import { PiAgentSession, resolveRuntimeToolContract } from '../pi/session.js';
 import { SpecialistLoader } from './loader.js';
 import { buildMandatoryRulesInjection } from './mandatory-rules.js';
 import { resolveModelChain } from './model-chain.js';
@@ -965,7 +965,7 @@ export function collectModelCandidates(input: ScriptGenerateRequest, spec: Speci
 
 type AttemptFailureReason = 'assistant_text_too_large' | 'stderr_too_large' | 'malformed_line_too_large';
 
-function appendExtensionArgs(args: string[], spec: Specialist): void {
+function appendExtensionArgs(args: string[], spec: Specialist, resolvedToolContract?: ResolvedToolContract): void {
   const permissionLevel = spec.specialist.execution.permission_required.toUpperCase();
   const piExtDir = join(homedir(), '.pi', 'agent', 'extensions');
   if (permissionLevel !== 'READ_ONLY') {
@@ -979,17 +979,9 @@ function appendExtensionArgs(args: string[], spec: Specialist): void {
   const cavemanPath = join(piExtDir, 'caveman');
   if (existsSync(cavemanPath)) args.push('-e', cavemanPath);
 
-  const npmGlobalDir = resolveGlobalNodeModulesDir();
-  // Serena extension injection retired (unitAI-e67up.8): `extensions.serena`
-  // config remains parseable but is ignored; only gitnexus opt-out is active.
-  const excludedExtensions = new Set([
-    spec.specialist.execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
-  ].filter((value): value is string => Boolean(value)));
-  if (!npmGlobalDir) return;
-
-  if (!excludedExtensions.has('pi-gitnexus')) {
-    const gitnexusPath = join(npmGlobalDir, 'pi-gitnexus');
-    if (existsSync(gitnexusPath)) args.push('-e', gitnexusPath);
+  const gitnexusContract = resolvedToolContract?.extensions.gitnexus;
+  if (gitnexusContract?.status === 'available' && gitnexusContract.packagePath && existsSync(gitnexusContract.packagePath)) {
+    args.push('-e', gitnexusContract.packagePath);
   }
 }
 
@@ -1144,7 +1136,7 @@ async function runSingleAttempt(
     args.push('--model', model);
     if (thinkingLevel) args.push('--thinking', thinkingLevel);
     if (systemPrompt) args.push(systemPromptMode === 'append' ? '--append-system-prompt' : '--system-prompt', systemPrompt);
-    appendExtensionArgs(args, spec);
+    appendExtensionArgs(args, spec, resolvedToolContract);
 
     const pi = spawn('pi', args, { stdio: ['pipe', 'pipe', 'pipe'], cwd: options.projectDir ?? process.cwd() });
     options.onChild?.(pi);

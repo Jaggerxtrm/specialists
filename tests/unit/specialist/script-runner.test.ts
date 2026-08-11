@@ -23,10 +23,11 @@ import {
 } from '../../../src/specialist/script-runner.js';
 import { createObservabilitySqliteClientAtPath } from '../../../src/specialist/observability-sqlite.js';
 
-const { spawnMock, spawnSyncMock, piSessionCreateMock, resolveRuntimeToolContractMock, sqliteClients } = vi.hoisted(() => ({
+const { spawnMock, spawnSyncMock, piSessionCreateMock, resolveGlobalNodeModulesDirMock, resolveRuntimeToolContractMock, sqliteClients } = vi.hoisted(() => ({
   spawnMock: vi.fn(),
   spawnSyncMock: vi.fn(() => ({ status: 1, stdout: '', stderr: '' })),
   piSessionCreateMock: vi.fn(),
+  resolveGlobalNodeModulesDirMock: vi.fn(() => undefined),
   resolveRuntimeToolContractMock: vi.fn(() => undefined),
   sqliteClients: new Map<string, any>(),
 }));
@@ -38,7 +39,7 @@ vi.mock('node:child_process', () => ({
 
 vi.mock('../../../src/pi/session.js', () => ({
   PiAgentSession: { create: piSessionCreateMock },
-  resolveGlobalNodeModulesDir: vi.fn(() => undefined),
+  resolveGlobalNodeModulesDir: resolveGlobalNodeModulesDirMock,
   resolveRuntimeToolContract: resolveRuntimeToolContractMock,
   resolvePermissionTools: vi.fn((options?: { level?: string }) => {
     const contract = resolveRuntimeToolContractMock(options);
@@ -93,6 +94,8 @@ afterEach(() => {
   spawnMock.mockReset();
   spawnSyncMock.mockClear();
   piSessionCreateMock.mockReset();
+  resolveGlobalNodeModulesDirMock.mockReset();
+  resolveGlobalNodeModulesDirMock.mockReturnValue(undefined);
   resolveRuntimeToolContractMock.mockReset();
   resolveRuntimeToolContractMock.mockReturnValue(undefined);
   sqliteClients.clear();
@@ -133,6 +136,7 @@ function createResolvedToolContract(overrides: Partial<{
   extensionTools: string[];
   gitnexusStatus: 'available' | 'disabled' | 'loaded_unhealthy';
   gitnexusTools: string[];
+  packagePath: string;
 }> = {}) {
   const toolsList = overrides.toolsList ?? ['read', 'grep', 'find', 'ls', 'gitnexus_query'];
   const nativeTools = overrides.nativeTools ?? ['read', 'grep', 'find', 'ls'];
@@ -153,7 +157,7 @@ function createResolvedToolContract(overrides: Partial<{
       gitnexus: {
         status: overrides.gitnexusStatus ?? 'available',
         packageName: 'pi-gitnexus',
-        packagePath: '/tmp/pi-gitnexus',
+        packagePath: overrides.packagePath ?? '/tmp/pi-gitnexus',
         activeTools: gitnexusTools,
       },
     },
@@ -360,13 +364,20 @@ describe('runScriptSpecialist resolved tool contract', () => {
     expect(piSessionCreateMock).not.toHaveBeenCalled();
   });
 
-  it('reuses one resolved contract for prompt evidence and direct pi launch tools', async () => {
+  it('reuses one resolved contract for prompt evidence, direct pi launch tools, and gitnexus package path', async () => {
+    const npmGlobalDir = mkdtempSync(join(tmpdir(), 'pi-global-'));
+    const rediscoveredGitnexusPath = join(npmGlobalDir, 'pi-gitnexus');
+    writeFileSync(rediscoveredGitnexusPath, '');
+    const contractPackagePath = join(mkdtempSync(join(tmpdir(), 'pi-contract-')), 'pi-gitnexus-contract');
+    writeFileSync(contractPackagePath, '');
+    resolveGlobalNodeModulesDirMock.mockReturnValue(npmGlobalDir);
     const resolvedToolContract = createResolvedToolContract({
-      toolsFlag: 'read,grep,find,ls',
-      toolsList: ['read', 'grep', 'find', 'ls'],
-      extensionTools: [],
-      gitnexusStatus: 'disabled',
-      gitnexusTools: [],
+      packagePath: contractPackagePath,
+      toolsFlag: 'read,grep,find,ls,gitnexus_query',
+      toolsList: ['read', 'grep', 'find', 'ls', 'gitnexus_query'],
+      extensionTools: ['gitnexus_query'],
+      gitnexusStatus: 'available',
+      gitnexusTools: ['gitnexus_query'],
     });
     resolveRuntimeToolContractMock.mockReturnValue(resolvedToolContract);
     const child = createSpawnMock();
@@ -386,9 +397,48 @@ describe('runScriptSpecialist resolved tool contract', () => {
     expect(resolveRuntimeToolContractMock).toHaveBeenCalledTimes(1);
     const prompt = child.stdin.write.mock.calls[0][0] as string;
     expect(prompt).toContain('## Resolved Tool Contract');
-    expect(prompt).toContain('gitnexus: disabled');
+    expect(prompt).toContain('gitnexus: available');
     const spawnArgs: string[] = spawnMock.mock.calls[0][1];
     expect(spawnArgs).toEqual(expect.arrayContaining(['--tools', resolvedToolContract.toolsFlag]));
+    const extensionPaths = spawnArgs.filter((value, index, args) => args[index - 1] === '-e');
+    expect(extensionPaths).toContain(contractPackagePath);
+    expect(extensionPaths).not.toContain(rediscoveredGitnexusPath);
+  });
+
+  it.each(['disabled', 'loaded_unhealthy'] as const)('does not load gitnexus extension for %s contract state on direct cli path', async (gitnexusStatus) => {
+    const npmGlobalDir = mkdtempSync(join(tmpdir(), 'pi-global-'));
+    const rediscoveredGitnexusPath = join(npmGlobalDir, 'pi-gitnexus');
+    writeFileSync(rediscoveredGitnexusPath, '');
+    const contractPackagePath = join(mkdtempSync(join(tmpdir(), 'pi-contract-')), 'pi-gitnexus-contract');
+    writeFileSync(contractPackagePath, '');
+    resolveGlobalNodeModulesDirMock.mockReturnValue(npmGlobalDir);
+    const resolvedToolContract = createResolvedToolContract({
+      packagePath: contractPackagePath,
+      toolsFlag: 'read,grep,find,ls',
+      toolsList: ['read', 'grep', 'find', 'ls'],
+      extensionTools: [],
+      gitnexusStatus,
+      gitnexusTools: [],
+    });
+    resolveRuntimeToolContractMock.mockReturnValue(resolvedToolContract);
+    const child = createSpawnMock();
+
+    const resultPromise = runScriptSpecialist(
+      { specialist: 'changelog-drafter', template: 'Contract follows\n\n$resolved_tool_contract', variables: { name: 'release notes' } },
+      { loader: makeLoader(baseSpec as never) as never, projectDir: '.' },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    child.stdout.emit('data', Buffer.from(`${JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] } })}
+`));
+    child.emit('close', 0);
+
+    await resultPromise;
+
+    const spawnArgs: string[] = spawnMock.mock.calls[0][1];
+    const extensionPaths = spawnArgs.filter((value, index, args) => args[index - 1] === '-e');
+    expect(extensionPaths).not.toContain(contractPackagePath);
+    expect(extensionPaths).not.toContain(rediscoveredGitnexusPath);
   });
 
   it('passes same resolved contract into PiAgentSession on write-capable script surface', async () => {
