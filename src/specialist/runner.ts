@@ -1016,6 +1016,7 @@ export class SpecialistRunner {
     const fallbackUsed = initialModel !== primaryModel;
 
     const permissionLevel = options.autonomyLevel ?? execution.permission_required;
+    const specialistPermissions = options.specialistPermissions ?? spec.specialist.permissions;
     const effectiveKeepAlive = options.noKeepAlive
       ? false
       : (options.keepAlive ?? execution.interactive ?? false);
@@ -1027,7 +1028,7 @@ export class SpecialistRunner {
     const resolvedToolContract = resolveRuntimeToolContract({
       level: permissionLevel,
       specialistName: options.specialistName ?? metadata.name,
-      specialistPermissions: options.specialistPermissions ?? (spec.specialist.permissions as PiSessionOptions['specialistPermissions']),
+      specialistPermissions,
       excludeExtensions,
     });
     const resolvedToolContractBlock = resolvedToolContract ? formatResolvedToolContract(resolvedToolContract) : '';
@@ -1406,7 +1407,7 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
           thinkingLevel: execution.thinking_level,
           permissionLevel,
           specialistName: options.specialistName ?? metadata.name,
-          specialistPermissions: options.specialistPermissions ?? (spec.specialist.permissions as PiSessionOptions['specialistPermissions']),
+          specialistPermissions,
           resolvedToolContract,
           stallTimeoutMs: execution.stall_timeout_ms,
           cwd: runCwd,

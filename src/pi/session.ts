@@ -163,19 +163,32 @@ export interface PiSessionOptions {
 
 let cachedToolCatalogIndex: ToolCatalogIndex | undefined;
 
+function toRuntimeToolCatalogs(catalogIndex: ToolCatalogIndex): readonly ToolCatalog[] {
+  return catalogIndex.catalogs.map((catalog) => ({
+    catalog: catalog.catalog,
+    precedence: catalog.precedence,
+    source_tiers: {
+      READ_ONLY: catalog.source_tiers.READ_ONLY ?? [],
+      LOW: catalog.source_tiers.LOW ?? [],
+      MEDIUM: catalog.source_tiers.MEDIUM ?? [],
+      HIGH: catalog.source_tiers.HIGH ?? [],
+    },
+  }));
+}
+
 function loadSharedToolCatalogIndex(): ToolCatalogIndex | undefined {
   if (cachedToolCatalogIndex) return cachedToolCatalogIndex;
 
   const overridePath = resolve(process.cwd(), '.specialists', 'catalog', 'index.json');
   try {
-    cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(overridePath, 'utf8')) as ToolCatalogIndex;
+    cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(overridePath, 'utf8'));
     return cachedToolCatalogIndex;
   } catch {
     try {
       const canonicalDir = resolveCanonicalAssetDir('catalog');
       if (!canonicalDir) return undefined;
       const canonicalPath = resolve(canonicalDir, 'index.json');
-      cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(canonicalPath, 'utf8')) as ToolCatalogIndex;
+      cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(canonicalPath, 'utf8'));
       return cachedToolCatalogIndex;
     } catch {
       return undefined;
@@ -265,9 +278,11 @@ export function resolveRuntimeToolContract(options: {
     excludeExtensions: options.excludeExtensions,
   });
 
+  const runtimeCatalogs = toRuntimeToolCatalogs(catalogIndex);
+
   return buildResolvedToolContract({
     tier,
-    catalogs: catalogIndex.catalogs as unknown as readonly ToolCatalog[],
+    catalogs: runtimeCatalogs,
     catalogDefaultOverrides: catalogIndex.default_overrides,
     manifestPolicy: options.specialistPermissions ? { permissions: options.specialistPermissions } : undefined,
     specialistOverride,

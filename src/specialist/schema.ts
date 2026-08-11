@@ -1,5 +1,6 @@
 // src/specialist/schema.ts
 import * as z from 'zod';
+import type { ManifestPolicy, ManifestPolicyTier } from './manifest-resolver.js';
 
 const KebabCase = z.string().regex(/^[a-z][a-z0-9-]*$/, 'Must be kebab-case');
 const Semver = z.string().regex(/^\d+\.\d+\.\d+$/, 'Must be semver (e.g. 1.0.0)');
@@ -107,6 +108,18 @@ const MandatoryRulesSchema = z.object({
   inline_rules: z.array(MandatoryRuleSchema).default([]),
 }).passthrough().optional();
 
+const SpecialistPermissionTierSchema: z.ZodType<ManifestPolicyTier> = z.object({
+  denied_natives_when_extension: z.array(z.string()).optional(),
+  denied_natives_mode: z.enum(['soft', 'hard']).optional(),
+}).passthrough();
+
+const SpecialistPermissionsSchema: z.ZodType<ManifestPolicy['permissions']> = z.object({
+  READ_ONLY: SpecialistPermissionTierSchema.optional(),
+  LOW: SpecialistPermissionTierSchema.optional(),
+  MEDIUM: SpecialistPermissionTierSchema.optional(),
+  HIGH: SpecialistPermissionTierSchema.optional(),
+}).partial();
+
 const StallDetectionSchema = z.object({
   /** ms of silence while running before warn (default 60_000) */
   running_silence_warn_ms: z.number().optional(),
@@ -130,6 +143,7 @@ export const SpecialistSchema = z.object({
     validation: ValidationSchema,
     stall_detection: StallDetectionSchema,
     mandatory_rules: MandatoryRulesSchema,
+    permissions: SpecialistPermissionsSchema.optional(),
     /** Write handoff output to this file path via unified job-file writer */
     output_file: z.string().optional(),
     notes_mode: z.enum(['full-trail', 'final-only']).default('full-trail'),
@@ -139,6 +153,7 @@ export const SpecialistSchema = z.object({
 }).passthrough();
 
 export type Specialist = z.infer<typeof SpecialistSchema>;
+export type SpecialistPermissions = NonNullable<Specialist['specialist']['permissions']>;
 export type ScriptEntry = { run: string; phase: 'pre' | 'post'; inject_output: boolean };
 
 // ── Layered field-merge contract ──────────────────────────────────────────────

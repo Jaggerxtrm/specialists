@@ -418,11 +418,13 @@ function resolveWorkingDirectory(
     bead_id?: string;
     worktree_path?: string;
     worktree_owner_job_id?: string;
+    base_sha_pinned?: string;
   } | null,
 ): {
   workingDirectory?: string;
   reusedFromJobId?: string;
   worktreeOwnerJobId?: string;
+  reusedBaseShaPinned?: string;
   inferredBeadId?: string;
   /** Coordinator integration branch the worktree's branch was based on, if any. */
   coordinatorBase?: string;
@@ -502,6 +504,7 @@ function resolveWorkingDirectory(
       workingDirectory: worktreePath,
       reusedFromJobId: args.reuseJobId,
       worktreeOwnerJobId,
+      reusedBaseShaPinned: targetStatus.base_sha_pinned,
       inferredBeadId: targetStatus.bead_id,
     };
   }
@@ -679,6 +682,21 @@ function runGit(cwd: string, args: string[]): string {
   }).trim();
 }
 
+function tryRunGit(cwd: string, args: string[]): string | undefined {
+  try {
+    const output = runGit(cwd, args);
+    return output || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveVerifiedBaseSha(cwd: string, candidate: string | undefined): string | undefined {
+  const trimmed = candidate?.trim();
+  if (!trimmed) return undefined;
+  return tryRunGit(cwd, ['rev-parse', '--verify', '--quiet', `${trimmed}^{commit}`]);
+}
+
 function formatErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -711,6 +729,24 @@ function runGitForBasePin(cwd: string, args: string[], runArgs: RunArgs): string
  *   current with origin is coordinator judgement (the P1-04 ladder), not this
  *   guard's call.
  */
+function resolveInheritedBasePin(worktreePath: string | undefined, recordedBaseSha: string | undefined): BasePinResult | undefined {
+  if (!worktreePath) return undefined;
+  const baseShaPinned = resolveVerifiedBaseSha(worktreePath, recordedBaseSha);
+  if (!baseShaPinned) return undefined;
+  const currentSha = tryRunGit(worktreePath, ['rev-parse', 'HEAD']);
+  const branch = tryRunGit(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  if (!currentSha || !branch) return undefined;
+  const commitsBehindText = tryRunGit(worktreePath, ['rev-list', '--count', `${currentSha}..${baseShaPinned}`]);
+  return {
+    baseShaPinned,
+    baseShaObserved: baseShaPinned,
+    currentSha,
+    branch,
+    commitsBehind: Number.parseInt(commitsBehindText ?? '0', 10) || 0,
+    override: false,
+  };
+}
+
 export function resolveBasePin(
   args: RunArgs,
   worktreePath?: string,
@@ -786,7 +822,7 @@ type InjectedDiffContext = {
   hunks: string;
 };
 
-function buildInjectedDiffContext(cwd: string, maxFiles = 20): InjectedDiffContext | null {
+function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: string): InjectedDiffContext | null {
   const read = (command: string): string => {
     try {
       return execSync(command, {
@@ -816,27 +852,34 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20): InjectedDiffConte
     diffCmd: (file: string) => string;
   };
 
-  const mergeBase = resolveMergeBase();
-  const sources: Source[] = [
-    {
-      label: 'unstaged diff',
-      statCmd: 'git diff --stat',
-      namesCmd: 'git diff --name-only',
-      diffCmd: (f) => `git diff -- ${shellQuote(f)}`,
-    },
-    {
-      label: 'staged diff',
-      statCmd: 'git diff --cached --stat',
-      namesCmd: 'git diff --cached --name-only',
-      diffCmd: (f) => `git diff --cached -- ${shellQuote(f)}`,
-    },
-    ...(mergeBase ? [{
-      label: `branch-vs-base diff (${mergeBase.slice(0, 12)}..HEAD)`,
-      statCmd: `git diff --stat ${shellQuote(mergeBase)}..HEAD`,
-      namesCmd: `git diff --name-only ${shellQuote(mergeBase)}..HEAD`,
-      diffCmd: (f: string) => `git diff ${shellQuote(mergeBase)}..HEAD -- ${shellQuote(f)}`,
-    }] : []),
-  ];
+  const buildRangeSource = (label: string, baseSha: string): Source => ({
+    label,
+    statCmd: `git diff --stat ${shellQuote(baseSha)}..HEAD`,
+    namesCmd: `git diff --name-only ${shellQuote(baseSha)}..HEAD`,
+    diffCmd: (file: string) => `git diff ${shellQuote(baseSha)}..HEAD -- ${shellQuote(file)}`,
+  });
+
+  const verifiedExplicitBaseSha = resolveVerifiedBaseSha(cwd, explicitBaseSha);
+  const mergeBase = verifiedExplicitBaseSha ? undefined : resolveMergeBase();
+  const sources: Source[] = verifiedExplicitBaseSha
+    ? [buildRangeSource(`recorded-base diff (${verifiedExplicitBaseSha.slice(0, 12)}..HEAD)`, verifiedExplicitBaseSha)]
+    : [
+        {
+          label: 'unstaged diff',
+          statCmd: 'git diff --stat',
+          namesCmd: 'git diff --name-only',
+          diffCmd: (f) => `git diff -- ${shellQuote(f)}`,
+        },
+        {
+          label: 'staged diff',
+          statCmd: 'git diff --cached --stat',
+          namesCmd: 'git diff --cached --name-only',
+          diffCmd: (f) => `git diff --cached -- ${shellQuote(f)}`,
+        },
+        ...(mergeBase
+          ? [buildRangeSource(`branch-vs-base diff (${mergeBase.slice(0, 12)}..HEAD)`, mergeBase)]
+          : []),
+      ];
 
   for (const src of sources) {
     const stat = read(src.statCmd);
@@ -883,8 +926,8 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20): InjectedDiffConte
   return null;
 }
 
-export function buildInjectedReviewerDiffVariables(cwd: string, maxFiles = 20): Record<string, string> {
-  const context = buildInjectedDiffContext(cwd, maxFiles);
+export function buildInjectedReviewerDiffVariables(cwd: string, maxFiles = 20, explicitBaseSha?: string): Record<string, string> {
+  const context = buildInjectedDiffContext(cwd, maxFiles, explicitBaseSha);
   if (!context) return {};
 
   return {
@@ -895,8 +938,8 @@ export function buildInjectedReviewerDiffVariables(cwd: string, maxFiles = 20): 
   };
 }
 
-export function buildInjectedWriterDiffVariables(cwd: string, maxFiles = 20): Record<string, string> {
-  const context = buildInjectedDiffContext(cwd, maxFiles);
+export function buildInjectedWriterDiffVariables(cwd: string, maxFiles = 20, explicitBaseSha?: string): Record<string, string> {
+  const context = buildInjectedDiffContext(cwd, maxFiles, explicitBaseSha);
   if (!context) return {};
 
   return {
@@ -915,8 +958,8 @@ export function buildInjectedWriterDiffVariables(cwd: string, maxFiles = 20): Re
   };
 }
 
-export function buildInjectedObligationsDiffVariables(cwd: string, maxFiles = 20): Record<string, string> {
-  const context = buildInjectedDiffContext(cwd, maxFiles);
+export function buildInjectedObligationsDiffVariables(cwd: string, maxFiles = 20, explicitBaseSha?: string): Record<string, string> {
+  const context = buildInjectedDiffContext(cwd, maxFiles, explicitBaseSha);
   if (!context) return {};
 
   return {
@@ -1150,13 +1193,21 @@ export async function run(): Promise<void> {
   });
 
   const effectiveArgs = { ...args, worktree: useWorktree };
-  const { workingDirectory, reusedFromJobId, worktreeOwnerJobId, inferredBeadId, coordinatorBase } = resolveWorkingDirectory(
+  const {
+    workingDirectory,
+    reusedFromJobId,
+    worktreeOwnerJobId,
+    reusedBaseShaPinned,
+    inferredBeadId,
+    coordinatorBase,
+  } = resolveWorkingDirectory(
     effectiveArgs,
     jobsDir,
     perm,
     (jobId) => statusReader.readStatus(jobId),
   );
-  const basePin = resolveBasePin(effectiveArgs, workingDirectory, coordinatorBase);
+  const basePin = resolveBasePin(effectiveArgs, workingDirectory, coordinatorBase)
+    ?? resolveInheritedBasePin(workingDirectory, reusedBaseShaPinned);
   await statusReader.dispose();
 
   if (!effectiveBeadId && inferredBeadId) {
@@ -1191,10 +1242,15 @@ export async function run(): Promise<void> {
 
   if (args.reuseJobId) {
     const reviewedJobId = extractReviewedJobIdOverride(prompt) ?? args.reuseJobId;
-    const injectedReviewerDiffVariables = workingDirectory && args.name === 'reviewer' ? buildInjectedReviewerDiffVariables(workingDirectory) : {};
-    const injectedWriterDiffVariables = workingDirectory && args.name === 'seconder' ? buildInjectedWriterDiffVariables(workingDirectory) : {};
+    const explicitDiffBaseSha = basePin?.baseShaPinned;
+    const injectedReviewerDiffVariables = workingDirectory && args.name === 'reviewer'
+      ? buildInjectedReviewerDiffVariables(workingDirectory, 20, explicitDiffBaseSha)
+      : {};
+    const injectedWriterDiffVariables = workingDirectory && args.name === 'seconder'
+      ? buildInjectedWriterDiffVariables(workingDirectory, 20, explicitDiffBaseSha)
+      : {};
     const injectedObligationsDiffVariables = workingDirectory && args.name === 'obligations-scanner'
-      ? buildInjectedObligationsDiffVariables(workingDirectory)
+      ? buildInjectedObligationsDiffVariables(workingDirectory, 20, explicitDiffBaseSha)
       : {};
     variables = {
       ...(variables ?? {}),
