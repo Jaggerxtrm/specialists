@@ -158,7 +158,7 @@ export async function loadResolvedConfigReport(args: {
   type ManifestPermissions = NonNullable<ResolverInput['manifestPolicy']>['permissions'];
   const specialistManifest = manifest as {
     specialist?: {
-      execution?: { permission_required?: ToolTier };
+      execution?: { permission_required?: ToolTier; extensions?: { gitnexus?: boolean | null } };
       permissions?: ManifestPermissions;
     };
   };
@@ -168,7 +168,13 @@ export async function loadResolvedConfigReport(args: {
     tier,
     catalogs,
     catalogDefaultOverrides: index.default_overrides,
+    manifestPolicy: specialistManifest.specialist?.permissions
+      ? { permissions: specialistManifest.specialist.permissions }
+      : undefined,
     specialistOverride,
+    specialistExclusions: specialistManifest.specialist?.execution?.extensions?.gitnexus === false
+      ? { disabledExtensions: ['gitnexus'] }
+      : undefined,
     extensionState,
   };
   const resolver = resolveManifestTools(resolverInput);

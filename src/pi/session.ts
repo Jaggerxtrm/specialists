@@ -44,7 +44,7 @@ import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, resolve, sep, join, dirname } from 'node:path';
 import { mapSpecialistBackend, getProviderArgs } from './backendMap.js';
 import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
-import { resolveManifestTools, type ManifestPolicy, type ManifestPolicyTier } from '../specialist/manifest-resolver.js';
+import { resolveEffectiveExtensionState, resolveManifestTools, type ExtensionState, type ManifestPolicy, type ManifestPolicyTier } from '../specialist/manifest-resolver.js';
 import { loadToolCatalogIndex, type ToolCatalogIndex } from '../specialist/tool-catalog.js';
 
 const TEST_COMMAND_STALL_TIMEOUT_MS = 300_000;
@@ -180,18 +180,75 @@ function loadSharedToolCatalogIndex(): ToolCatalogIndex | undefined {
   }
 }
 
-function probeExtensionHealth(packageName: string): 'loaded_healthy' | 'not_installed' {
-  const globalDir = resolveGlobalNodeModulesDir();
-  if (globalDir && existsSync(join(globalDir, packageName, 'package.json'))) {
-    return 'loaded_healthy';
+function readPackageVersion(packageJsonPath: string): string | undefined {
+  try {
+    const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { version?: string };
+    return typeof pkg.version === 'string' ? pkg.version : undefined;
+  } catch {
+    return undefined;
   }
-  return 'not_installed';
+}
+
+function resolveGitnexusRuntime(options: { catalogIndex: ToolCatalogIndex; excludeExtensions?: readonly string[] }): {
+  packageName: string;
+  packagePath?: string;
+  extensionState: ExtensionState;
+} {
+  const gitnexusCatalog = options.catalogIndex.catalogs.find(catalog => catalog.catalog === 'gitnexus');
+  const packageName = gitnexusCatalog?.package ?? 'pi-gitnexus';
+  if ((options.excludeExtensions ?? []).includes(packageName)) {
+    return {
+      packageName,
+      extensionState: { enabled: false, health: 'disabled', catalogCompatible: true },
+    };
+  }
+
+  const globalDir = resolveGlobalNodeModulesDir();
+  if (!globalDir) {
+    return {
+      packageName,
+      extensionState: { enabled: true, health: 'not_installed', catalogCompatible: false },
+    };
+  }
+
+  const packagePath = join(globalDir, packageName);
+  const packageJsonPath = join(packagePath, 'package.json');
+  if (!existsSync(packageJsonPath)) {
+    return {
+      packageName,
+      extensionState: { enabled: true, health: 'not_installed', catalogCompatible: false },
+    };
+  }
+
+  const installedVersion = readPackageVersion(packageJsonPath);
+  if (!installedVersion) {
+    return {
+      packageName,
+      packagePath,
+      extensionState: { enabled: true, health: 'loaded_unhealthy', catalogCompatible: false },
+    };
+  }
+
+  if (gitnexusCatalog && installedVersion !== gitnexusCatalog.version) {
+    return {
+      packageName,
+      packagePath,
+      extensionState: { enabled: true, health: 'loaded_unhealthy', catalogCompatible: false },
+    };
+  }
+
+  return {
+    packageName,
+    packagePath,
+    extensionState: { enabled: true, health: 'loaded_healthy', catalogCompatible: true },
+  };
 }
 
 export function resolvePermissionTools(options: {
   level?: string;
   specialistName?: string;
   specialistPermissions?: ManifestPolicy['permissions'];
+  excludeExtensions?: readonly string[];
 }): string | undefined {
   const catalogIndex = loadSharedToolCatalogIndex();
   if (!catalogIndex) return undefined;
@@ -200,13 +257,21 @@ export function resolvePermissionTools(options: {
   if (tier !== 'READ_ONLY' && tier !== 'LOW' && tier !== 'MEDIUM' && tier !== 'HIGH') return undefined;
 
   const specialistOverride: ManifestPolicyTier | undefined = options.specialistPermissions?.[tier];
+  const gitnexusRuntime = resolveGitnexusRuntime({
+    catalogIndex,
+    excludeExtensions: options.excludeExtensions,
+  });
   return resolveManifestTools({
     tier,
     catalogs: catalogIndex.catalogs as unknown as Parameters<typeof resolveManifestTools>[0]['catalogs'],
     catalogDefaultOverrides: catalogIndex.default_overrides,
+    manifestPolicy: options.specialistPermissions ? { permissions: options.specialistPermissions } : undefined,
     specialistOverride,
+    specialistExclusions: (options.excludeExtensions ?? []).includes(gitnexusRuntime.packageName)
+      ? { disabledExtensions: ['gitnexus'] }
+      : undefined,
     extensionState: {
-      gitnexus: { enabled: true, health: probeExtensionHealth('pi-gitnexus') },
+      gitnexus: gitnexusRuntime.extensionState,
     },
   }).tools || undefined;
 }
@@ -629,6 +694,7 @@ export class PiAgentSession {
       level: this.options.permissionLevel,
       specialistName: this.options.specialistName,
       specialistPermissions: this.options.specialistPermissions,
+      excludeExtensions: this.options.excludeExtensions,
     });
     if (toolsFlag) args.push('--tools', toolsFlag);
 
@@ -666,13 +732,15 @@ export class PiAgentSession {
     // Serena extension injection was retired with the K4 Serena retirement
     // (unitAI-e67up.8): legacy `excludeExtensions: ['pi-serena-tools']` entries
     // remain accepted and simply have nothing to exclude.
-    const npmGlobalDir = resolveGlobalNodeModulesDir();
-    const excludedExtensions = new Set(this.options.excludeExtensions ?? []);
-    if (npmGlobalDir) {
-      const gitnexusPackageName = 'pi-gitnexus';
-      if (!excludedExtensions.has(gitnexusPackageName)) {
-        const gitnexusPath = join(npmGlobalDir, gitnexusPackageName);
-        if (existsSync(gitnexusPath)) args.push('-e', gitnexusPath);
+    const catalogIndex = loadSharedToolCatalogIndex();
+    if (catalogIndex) {
+      const gitnexusRuntime = resolveGitnexusRuntime({
+        catalogIndex,
+        excludeExtensions: this.options.excludeExtensions,
+      });
+      const effectiveGitnexusState = resolveEffectiveExtensionState(gitnexusRuntime.extensionState);
+      if (effectiveGitnexusState.includeTools && gitnexusRuntime.packagePath && existsSync(gitnexusRuntime.packagePath)) {
+        args.push('-e', gitnexusRuntime.packagePath);
       }
     }
 

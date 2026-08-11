@@ -2,6 +2,7 @@ export type ToolTier = 'READ_ONLY' | 'LOW' | 'MEDIUM' | 'HIGH';
 export type ToolCatalogName = 'native' | 'gitnexus';
 export type ExtensionHealth = 'not_installed' | 'disabled' | 'loaded_healthy' | 'loaded_unhealthy' | 'unknown';
 export type DeniedNativesMode = 'soft' | 'hard';
+export type EffectiveExtensionStatus = 'available' | 'disabled' | 'not_installed' | 'loaded_unhealthy' | 'unknown' | 'catalog_incompatible';
 
 export interface ToolCatalog {
   catalog: ToolCatalogName;
@@ -27,6 +28,12 @@ export interface ExtensionState {
   health: ExtensionHealth;
   enabled?: boolean;
   catalogCompatible?: boolean;
+}
+
+export interface EffectiveExtensionState {
+  status: EffectiveExtensionStatus;
+  includeTools: boolean;
+  canEnforceHardDeny: boolean;
 }
 
 export interface ResolverInput {
@@ -59,7 +66,7 @@ export interface ResolverResult {
   attribution: readonly ToolLayerAttribution[];
 }
 
-const HEALTHY: ExtensionHealth[] = ['loaded_healthy'];
+const GITNEXUS_HARD_DENY_TOOLS = new Set(['grep', 'find', 'ls']);
 const GITNEXUS_BASE_TIER: ToolTier = 'READ_ONLY';
 
 function uniqueOrdered(values: readonly string[]): string[] {
@@ -97,23 +104,35 @@ function mergeTierPolicy(input: ResolverInput): ManifestPolicyTier {
   };
 }
 
-function shouldIncludeExtensionTools(name: ToolCatalogName, input: ResolverInput): boolean {
-  if (input.specialistExclusions?.disabledExtensions?.includes(name)) return false;
-  const state = input.extensionState?.[name];
-  if (!state) return true;
-  if (state.enabled === false) return false;
-  return state.health !== 'not_installed' && state.health !== 'disabled';
-}
-
 function getTierTools(catalogs: readonly ToolCatalog[], name: ToolCatalogName, tier: ToolTier): readonly string[] {
   const catalog = getCatalog(catalogs, name);
   return catalog?.source_tiers[tier] ?? [];
 }
 
-function canEnforceHardDeny(state: ExtensionState | undefined): boolean {
-  if (!state) return true;
-  if (!HEALTHY.includes(state.health)) return false;
-  return state.catalogCompatible !== false;
+function getEffectiveDeniedTools(tools: readonly string[]): string[] {
+  return tools.filter(tool => GITNEXUS_HARD_DENY_TOOLS.has(tool));
+}
+
+export function resolveEffectiveExtensionState(state: ExtensionState | undefined): EffectiveExtensionState {
+  if (!state) {
+    return { status: 'available', includeTools: true, canEnforceHardDeny: true };
+  }
+  if (state.enabled === false || state.health === 'disabled') {
+    return { status: 'disabled', includeTools: false, canEnforceHardDeny: false };
+  }
+  if (state.health === 'not_installed') {
+    return { status: 'not_installed', includeTools: false, canEnforceHardDeny: false };
+  }
+  if (state.health === 'loaded_unhealthy') {
+    return { status: 'loaded_unhealthy', includeTools: false, canEnforceHardDeny: false };
+  }
+  if (state.health === 'unknown') {
+    return { status: 'unknown', includeTools: false, canEnforceHardDeny: false };
+  }
+  if (state.catalogCompatible === false) {
+    return { status: 'catalog_incompatible', includeTools: false, canEnforceHardDeny: false };
+  }
+  return { status: 'available', includeTools: true, canEnforceHardDeny: true };
 }
 
 export function resolveManifestTools(input: ResolverInput): ResolverResult {
@@ -121,7 +140,7 @@ export function resolveManifestTools(input: ResolverInput): ResolverResult {
   const warnings: string[] = [];
   const attribution: ToolLayerAttribution[] = [];
   const downgradeReasons: string[] = [];
-  const effectiveDenied = new Set(policy.denied_natives_when_extension ?? []);
+  const effectiveDenied = new Set(getEffectiveDeniedTools(policy.denied_natives_when_extension ?? []));
   const deniedNatives: string[] = [];
 
   const nativeTools = getTierTools(input.catalogs, 'native', input.tier);
@@ -129,10 +148,13 @@ export function resolveManifestTools(input: ResolverInput): ResolverResult {
   const gitnexusExtras = input.tier === 'MEDIUM' || input.tier === 'HIGH'
     ? getTierTools(input.catalogs, 'gitnexus', input.tier).filter(tool => !gitnexusBase.includes(tool))
     : [];
+  const requestedGitnexusTools = uniqueOrdered([...gitnexusBase, ...gitnexusExtras]);
 
-  const gitnexusState = input.extensionState?.gitnexus;
-  const healthyGitnexus = canEnforceHardDeny(gitnexusState);
-  const hardDenyAllowed = policy.denied_natives_mode === 'hard' && healthyGitnexus;
+  const gitnexusState = input.specialistExclusions?.disabledExtensions?.includes('gitnexus')
+    ? { ...input.extensionState?.gitnexus, enabled: false, health: 'disabled' as const }
+    : input.extensionState?.gitnexus;
+  const effectiveGitnexusState = resolveEffectiveExtensionState(gitnexusState);
+  const hardDenyAllowed = policy.denied_natives_mode === 'hard' && effectiveGitnexusState.canEnforceHardDeny;
 
   const finalNativeTools = nativeTools.filter(tool => {
     if (!effectiveDenied.has(tool)) return true;
@@ -143,17 +165,18 @@ export function resolveManifestTools(input: ResolverInput): ResolverResult {
 
   const toolsList = uniqueOrdered([
     ...finalNativeTools,
-    ...((input.specialistExclusions?.disabledExtensions?.includes('gitnexus') ? [] : gitnexusBase)),
-    ...((input.specialistExclusions?.disabledExtensions?.includes('gitnexus') ? [] : gitnexusExtras)),
+    ...(effectiveGitnexusState.includeTools ? requestedGitnexusTools : []),
   ]);
 
-  if (!shouldIncludeExtensionTools('gitnexus', input)) warnings.push('gitnexus tools excluded by extension state');
+  if (!effectiveGitnexusState.includeTools && requestedGitnexusTools.length > 0) {
+    warnings.push(`gitnexus tools excluded by extension state: ${effectiveGitnexusState.status}`);
+  }
   if ((input.specialistExclusions?.disabledExtensions ?? []).length > 0) {
     warnings.push(`specialist exclusions: ${(input.specialistExclusions?.disabledExtensions ?? []).join(', ')}`);
     attribution.push({ layer: 'specialist_exclusion', source: 'specialist.json', tools: [] });
   }
 
-  attribution.push({ layer: 'catalog', source: 'tool catalogs', tools: nativeTools });
+  attribution.push({ layer: 'catalog', source: 'tool catalogs', tools: uniqueOrdered([...nativeTools, ...requestedGitnexusTools]) });
   if (input.catalogDefaultOverrides?.[input.tier]) {
     attribution.push({
       layer: 'catalog_default',
@@ -177,14 +200,7 @@ export function resolveManifestTools(input: ResolverInput): ResolverResult {
   }
   if (!hardDenyAllowed && policy.denied_natives_mode === 'hard' && effectiveDenied.size > 0) {
     const restoredNatives = nativeTools.filter(tool => effectiveDenied.has(tool));
-    const reasonParts = [gitnexusState]
-      .filter((state): state is ExtensionState => Boolean(state))
-      .flatMap(state => {
-        if (!HEALTHY.includes(state.health)) return [state.health];
-        if (state.catalogCompatible === false) return ['catalog_incompatible'];
-        return [];
-      });
-    const reason = reasonParts.length > 0 ? reasonParts.join(',') : 'unknown';
+    const reason = effectiveGitnexusState.status;
     warnings.push(`hard deny restored native fallback: ${reason}`);
     downgradeReasons.push(`restored native fallback for ${restoredNatives.join(',') || '(none)'} due to ${reason}`);
     attribution.push({ layer: 'runtime_health', source: 'fallback', tools: restoredNatives });
