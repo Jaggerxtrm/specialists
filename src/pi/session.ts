@@ -44,7 +44,7 @@ import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, resolve, sep, join, dirname } from 'node:path';
 import { mapSpecialistBackend, getProviderArgs } from './backendMap.js';
 import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
-import { resolveEffectiveExtensionState, type ExtensionState, type ManifestPolicy, type ManifestPolicyTier, type ToolCatalog } from '../specialist/manifest-resolver.js';
+import { type ExtensionState, type ManifestPolicy, type ManifestPolicyTier, type ToolCatalog } from '../specialist/manifest-resolver.js';
 import { buildResolvedToolContract, type ResolvedToolContract } from '../specialist/resolved-tool-contract.js';
 import { loadToolCatalogIndex, type ToolCatalogIndex } from '../specialist/tool-catalog.js';
 
@@ -769,18 +769,6 @@ export class PiAgentSession {
     const gitnexusContract = resolvedToolContract?.extensions.gitnexus;
     if (gitnexusContract?.status === 'available' && gitnexusContract.packagePath && existsSync(gitnexusContract.packagePath)) {
       args.push('-e', gitnexusContract.packagePath);
-    } else if (!resolvedToolContract) {
-      const catalogIndex = loadSharedToolCatalogIndex();
-      if (catalogIndex) {
-        const gitnexusRuntime = resolveGitnexusRuntime({
-          catalogIndex,
-          excludeExtensions: this.options.excludeExtensions,
-        });
-        const effectiveGitnexusState = resolveEffectiveExtensionState(gitnexusRuntime.extensionState);
-        if (effectiveGitnexusState.includeTools && gitnexusRuntime.packagePath && existsSync(gitnexusRuntime.packagePath)) {
-          args.push('-e', gitnexusRuntime.packagePath);
-        }
-      }
     }
 
     if (this.options.systemPrompt) {

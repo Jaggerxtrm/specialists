@@ -699,6 +699,46 @@ describe('PiAgentSession', () => {
     });
   });
 
+  it('loads exact GitNexus packagePath from available resolved tool contract', async () => {
+    await withNpmGlobal(npmGlobalDir => {
+      mkdirSync(join(npmGlobalDir, 'pi-gitnexus'), { recursive: true });
+      writeFileSync(join(npmGlobalDir, 'pi-gitnexus', 'package.json'), JSON.stringify({ name: 'pi-gitnexus', version: '0.6.1' }));
+      mkdirSync(join(npmGlobalDir, 'contract-gitnexus'), { recursive: true });
+      writeFileSync(join(npmGlobalDir, 'contract-gitnexus', 'package.json'), JSON.stringify({ name: 'contract-gitnexus', version: '0.6.1' }));
+    }, async npmGlobalDir => {
+      const contractPackagePath = join(npmGlobalDir, 'contract-gitnexus');
+      const session = await PiAgentSession.create({
+        model: 'gemini',
+        resolvedToolContract: {
+          effectiveTier: 'LOW',
+          toolsFlag: 'read,bash,gitnexus_query',
+          toolsList: ['read', 'bash', 'gitnexus_query'],
+          nativeTools: ['read', 'bash'],
+          extensionTools: ['gitnexus_query'],
+          deniedNativeTools: [],
+          deniedNativesMode: 'soft',
+          preferenceSignals: [],
+          downgradeReasons: [],
+          warnings: [],
+          extensions: {
+            gitnexus: {
+              status: 'available',
+              packageName: 'contract-gitnexus',
+              packagePath: contractPackagePath,
+              activeTools: ['gitnexus_query'],
+            },
+          },
+        },
+      });
+      await session.start();
+
+      const args: string[] = mockSpawn.mock.calls[0][1];
+      expect(args).toContain(contractPackagePath);
+      expect(args).not.toContain(join(npmGlobalDir, 'pi-gitnexus'));
+      expect(getToolsArg(args)).toBe('read,bash,gitnexus_query');
+    });
+  });
+
   it('resolveRuntimeToolContract reports healthy extension state and exact --tools contract', async () => {
     await withGitnexusInstall('0.6.1', async () => {
       const contract = resolveRuntimeToolContract({ level: 'READ_ONLY' });
@@ -807,7 +847,7 @@ describe('PiAgentSession', () => {
     });
   });
 
-  it('injects npm extensions by default when installed', async () => {
+  it('skips GitNexus when runtime contract is missing even if package is installed', async () => {
     const npmGlobalDir = mkdtempSync(join(tmpdir(), 'pi-npm-global-'));
     const prevGlobalDir = process.env.PI_NPM_GLOBAL_DIR;
     try {
@@ -820,10 +860,10 @@ describe('PiAgentSession', () => {
       await session.start();
 
       const args: string[] = mockSpawn.mock.calls[0][1];
-      expect(args).toContain(join(npmGlobalDir, 'pi-gitnexus'));
-      // Serena extension is retired: never injected even when installed.
+      expect(args).not.toContain(join(npmGlobalDir, 'pi-gitnexus'));
       expect(args).not.toContain(join(npmGlobalDir, 'pi-serena-tools'));
       expect(args.join(' ')).not.toMatch(/serena/i);
+      expect(getToolsArg(args)).toBeUndefined();
     } finally {
       if (prevGlobalDir === undefined) delete process.env.PI_NPM_GLOBAL_DIR;
       else process.env.PI_NPM_GLOBAL_DIR = prevGlobalDir;
