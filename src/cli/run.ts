@@ -1,7 +1,7 @@
 // src/cli/run.ts
 
-import { join, resolve, sep } from 'node:path';
-import { constants as fsConstants, existsSync, fstatSync, openSync, readFileSync, readSync, readdirSync, statSync, writeFileSync, closeSync } from 'node:fs';
+import { dirname, join, resolve, sep } from 'node:path';
+import { constants as fsConstants, existsSync, fstatSync, openSync, readFileSync, readSync, readdirSync, realpathSync, statSync, writeFileSync, closeSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { spawn as cpSpawn, execSync } from 'node:child_process';
 import { SpecialistLoader } from '../specialist/loader.js';
@@ -818,6 +818,24 @@ function buildReusedWorktreeAwarenessBlock(options: {
 type HunkCoverageStatus = 'complete' | 'truncated' | 'omitted';
 type ObligationsInventoryStatus = 'complete' | 'incomplete' | 'blocked';
 
+type SnapshotReaderFs = {
+  openSync: typeof openSync;
+  fstatSync: typeof fstatSync;
+  readSync: typeof readSync;
+  closeSync: typeof closeSync;
+  realpathSync: typeof realpathSync;
+  constants: Pick<typeof fsConstants, 'O_RDONLY' | 'O_NOFOLLOW'>;
+};
+
+const snapshotReaderFs: SnapshotReaderFs = {
+  openSync,
+  fstatSync,
+  readSync,
+  closeSync,
+  realpathSync,
+  constants: fsConstants,
+};
+
 type InjectedDiffFileEvidence = {
   path: string;
   status: HunkCoverageStatus;
@@ -1178,6 +1196,63 @@ function extractObligationComment(line: string, initialState: ObligationLexicalS
   return { comment: markerComment, state };
 }
 
+export function readSafeSnapshotFile(
+  cwd: string,
+  file: string,
+  maxBytes: number,
+  fsApi: SnapshotReaderFs = snapshotReaderFs,
+): { ok: boolean; output: string } {
+  const noFollowFlag = fsApi.constants.O_NOFOLLOW;
+  if (typeof noFollowFlag !== 'number') return { ok: false, output: '' };
+
+  try {
+    const resolvedCwd = fsApi.realpathSync.native(resolve(cwd));
+    const candidatePath = resolve(cwd, file);
+    const lexicalContainment = candidatePath === resolvedCwd || candidatePath.startsWith(`${resolvedCwd}${sep}`);
+    if (!lexicalContainment) return { ok: false, output: '' };
+
+    const realParentPath = fsApi.realpathSync.native(dirname(candidatePath));
+    const parentContained = realParentPath === resolvedCwd || realParentPath.startsWith(`${resolvedCwd}${sep}`);
+    if (!parentContained) return { ok: false, output: '' };
+
+    let fd: number | undefined;
+    let result: { ok: boolean; output: string } = { ok: false, output: '' };
+    try {
+      fd = fsApi.openSync(candidatePath, fsApi.constants.O_RDONLY | noFollowFlag);
+      const stat = fsApi.fstatSync(fd);
+      if (!stat.isFile() || stat.size > maxBytes) return result;
+
+      const realFilePath = fsApi.realpathSync.native(candidatePath);
+      const fileContained = realFilePath === resolvedCwd || realFilePath.startsWith(`${resolvedCwd}${sep}`);
+      if (!fileContained) return result;
+
+      const buffer = Buffer.alloc(stat.size);
+      let bytesRead = 0;
+      while (bytesRead < buffer.length) {
+        const chunkSize = fsApi.readSync(fd, buffer, bytesRead, buffer.length - bytesRead, bytesRead);
+        if (chunkSize <= 0) return result;
+        bytesRead += chunkSize;
+      }
+
+      result = { ok: true, output: buffer.toString('utf8') };
+    } catch {
+      return { ok: false, output: '' };
+    } finally {
+      if (fd !== undefined) {
+        try {
+          fsApi.closeSync(fd);
+        } catch {
+          result = { ok: false, output: '' };
+        }
+      }
+    }
+
+    return result;
+  } catch {
+    return { ok: false, output: '' };
+  }
+}
+
 function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: string): InjectedDiffContext | null {
   const readResult = (command: string): { ok: boolean; output: string } => {
     try {
@@ -1221,36 +1296,6 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
     diffCmd: (file: string) => string;
     inventoryCmd: string;
     readFileContent: (file: string) => { ok: boolean; output: string };
-  };
-
-  const readSafeWorktreeFile = (file: string): { ok: boolean; output: string } => {
-    const resolvedCwd = resolve(cwd);
-    const candidatePath = resolve(cwd, file);
-    const isContained = candidatePath === resolvedCwd || candidatePath.startsWith(`${resolvedCwd}${sep}`);
-    if (!isContained) return { ok: false, output: '' };
-
-    let fd: number | undefined;
-    try {
-      fd = openSync(candidatePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-      const stat = fstatSync(fd);
-      if (!stat.isFile()) return { ok: false, output: '' };
-      if (stat.size > MAX_SNAPSHOT_BYTES) return { ok: false, output: '' };
-
-      const buffer = Buffer.alloc(stat.size);
-      let bytesRead = 0;
-      while (bytesRead < buffer.length) {
-        const chunkSize = readSync(fd, buffer, bytesRead, buffer.length - bytesRead, bytesRead);
-        if (chunkSize === 0) break;
-        bytesRead += chunkSize;
-      }
-
-      if (bytesRead !== buffer.length) return { ok: false, output: '' };
-      return { ok: true, output: buffer.toString('utf8') };
-    } catch {
-      return { ok: false, output: '' };
-    } finally {
-      if (fd !== undefined) closeSync(fd);
-    }
   };
 
   const buildRangeSource = (label: string, baseSha: string): Source => ({
@@ -1385,7 +1430,7 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
           namesCmd: 'git diff --name-only',
           diffCmd: (f) => `git diff -- ${shellQuote(f)}`,
           inventoryCmd: 'git diff -U0',
-          readFileContent: (file: string) => readSafeWorktreeFile(file),
+          readFileContent: (file: string) => readSafeSnapshotFile(cwd, file, MAX_SNAPSHOT_BYTES),
         },
         {
           label: 'staged diff',

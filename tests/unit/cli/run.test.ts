@@ -15,7 +15,7 @@ import { SpecialistRunner } from '../../../src/specialist/runner.js';
 import { Supervisor } from '../../../src/specialist/supervisor.js';
 import { initSchema } from '../../../src/specialist/observability-sqlite.js';
 import { resolveObservabilityDbLocation } from '../../../src/specialist/observability-db.js';
-import { buildInjectedObligationsDiffVariables, buildInjectedReviewerDiffVariables, buildInjectedWriterDiffVariables, buildTmuxLiveFeedCommand, resolveBasePin, run, startEventTailer, type RunArgs } from '../../../src/cli/run.js';
+import { buildInjectedObligationsDiffVariables, buildInjectedReviewerDiffVariables, buildInjectedWriterDiffVariables, buildTmuxLiveFeedCommand, readSafeSnapshotFile, resolveBasePin, run, startEventTailer, type RunArgs } from '../../../src/cli/run.js';
 
 function makeRunArgs(overrides: Partial<RunArgs> = {}): RunArgs {
   return {
@@ -442,6 +442,44 @@ describe('run CLI', () => {
     expect(variables.obligations_diff).toContain('added-marker inventory: INCOMPLETE');
     expect(variables.obligations_diff).not.toContain('unitAI-oversized');
     expect(variables.obligations_diff).not.toContain('should stay hidden');
+  });
+
+  it('returns unavailable when O_NOFOLLOW is unsupported', () => {
+    const result = readSafeSnapshotFile('/repo', 'src/scan.ts', 1024, {
+      openSync: vi.fn(),
+      fstatSync: vi.fn(),
+      readSync: vi.fn(),
+      closeSync: vi.fn(),
+      realpathSync: { native: vi.fn() } as typeof fs.realpathSync,
+      constants: { O_RDONLY: 0, O_NOFOLLOW: undefined as unknown as number },
+    });
+
+    expect(result).toEqual({ ok: false, output: '' });
+  });
+
+  it('returns unavailable when closeSync fails after successful read', () => {
+    const openSyncMock = vi.fn(() => 11);
+    const fstatSyncMock = vi.fn(() => ({ isFile: () => true, size: 4 }));
+    const readSyncMock = vi.fn((_fd, buffer: Buffer) => {
+      buffer.write('safe');
+      return 4;
+    });
+    const closeSyncMock = vi.fn(() => {
+      throw new Error('close failed');
+    });
+    const realpathNativeMock = vi.fn((value: string) => value === '/repo' ? '/repo' : value);
+
+    const result = readSafeSnapshotFile('/repo', 'src/scan.ts', 1024, {
+      openSync: openSyncMock,
+      fstatSync: fstatSyncMock as typeof fs.fstatSync,
+      readSync: readSyncMock as typeof fs.readSync,
+      closeSync: closeSyncMock,
+      realpathSync: { native: realpathNativeMock } as typeof fs.realpathSync,
+      constants: { O_RDONLY: 0, O_NOFOLLOW: 1 },
+    });
+
+    expect(result).toEqual({ ok: false, output: '' });
+    expect(closeSyncMock).toHaveBeenCalledWith(11);
   });
 
   it('tracks plain block-comment continuation lines', () => {
