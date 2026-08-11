@@ -815,26 +815,91 @@ function buildReusedWorktreeAwarenessBlock(options: {
   ].join('\n');
 }
 
+type HunkCoverageStatus = 'complete' | 'truncated' | 'omitted';
+type ObligationsInventoryStatus = 'complete' | 'incomplete' | 'blocked';
+
+type InjectedDiffFileEvidence = {
+  path: string;
+  status: HunkCoverageStatus;
+  detail?: string;
+};
+
 type InjectedDiffContext = {
   source: string;
   stat: string;
   files: string;
+  pathCoverage: string;
   hunks: string;
+  hunkCompleteness: string;
+  obligationsInventoryStatus: ObligationsInventoryStatus;
+  obligationsInventorySummary: string;
+  obligationsInventoryLines: string;
 };
 
+const OBLIGATION_MARKER_REGEX = /\b(TODO|FIXME|HACK|XXX|TEMP|WIP|NOTE\(release\))(?![\w-])/;
+const TRACKED_OBLIGATION_REGEX = /\b(?:TODO|FIXME|HACK|XXX|TEMP|WIP|NOTE\(release\))\(([A-Za-z0-9.-]+)\):/;
+const TEST_PATH_PATTERNS = [
+  /(?:^|\/)test\//,
+  /(?:^|\/)tests\//,
+  /(?:^|\/)__tests__\//,
+  /\.spec\./,
+  /\.test\./,
+  /\.fixture\./,
+  /(?:^|\/)fixtures?\//,
+  /(?:^|\/)mocks?\//,
+  /(?:^|\/)e2e\//,
+  /(?:^|\/)docs\//,
+] as const;
+
+function formatHunkCoverageEntry(entry: InjectedDiffFileEvidence): string {
+  const detail = entry.detail ? ` (${entry.detail})` : '';
+  return `${entry.path} — hunks: ${entry.status}${detail}`;
+}
+
+function summarizeHunkCompleteness(entries: readonly InjectedDiffFileEvidence[]): string {
+  if (entries.length === 0) return 'complete — 0/0 changed paths carried hunk evidence';
+
+  const completeCount = entries.filter((entry) => entry.status === 'complete').length;
+  const truncatedCount = entries.filter((entry) => entry.status === 'truncated').length;
+  const omittedCount = entries.filter((entry) => entry.status === 'omitted').length;
+  const excerptedCount = completeCount + truncatedCount;
+
+  if (truncatedCount === 0 && omittedCount === 0) {
+    return `complete — ${excerptedCount}/${entries.length} changed paths carried full hunk evidence`;
+  }
+
+  const detailParts = [
+    `${completeCount} complete`,
+    `${truncatedCount} truncated`,
+    `${omittedCount} omitted`,
+  ];
+  return `partial — ${excerptedCount}/${entries.length} changed paths carried hunk excerpts; ${detailParts.join(', ')}`;
+}
+
+function classifyObligationSurface(filePath: string): 'production' | 'test' {
+  const normalizedPath = filePath.replaceAll('\\', '/');
+  return TEST_PATH_PATTERNS.some((pattern) => pattern.test(normalizedPath)) ? 'test' : 'production';
+}
+
 function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: string): InjectedDiffContext | null {
-  const read = (command: string): string => {
+  const readResult = (command: string): { ok: boolean; output: string } => {
     try {
-      return execSync(command, {
-        cwd,
-        stdio: 'pipe',
-        encoding: 'utf-8',
-        timeout: 5000,
-      }).trim();
+      return {
+        ok: true,
+        output: execSync(command, {
+          cwd,
+          stdio: 'pipe',
+          encoding: 'utf-8',
+          timeout: 5000,
+          maxBuffer: 8 * 1024 * 1024,
+        }).trimEnd(),
+      };
     } catch {
-      return '';
+      return { ok: false, output: '' };
     }
   };
+
+  const read = (command: string): string => readResult(command).output.trim();
 
   const MAX_TOTAL_HUNKS_CHARS = 12_000;
   const MAX_FILE_DIFF_CHARS = 2_000;
@@ -850,6 +915,7 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
     statCmd: string;
     namesCmd: string;
     diffCmd: (file: string) => string;
+    inventoryCmd: string;
   };
 
   const buildRangeSource = (label: string, baseSha: string): Source => ({
@@ -857,7 +923,80 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
     statCmd: `git diff --stat ${shellQuote(baseSha)}..HEAD`,
     namesCmd: `git diff --name-only ${shellQuote(baseSha)}..HEAD`,
     diffCmd: (file: string) => `git diff ${shellQuote(baseSha)}..HEAD -- ${shellQuote(file)}`,
+    inventoryCmd: `git diff -U0 ${shellQuote(baseSha)}..HEAD`,
   });
+
+  const buildObligationsInventory = (
+    inventoryCmd: string,
+    changedPaths: readonly string[],
+  ): Pick<InjectedDiffContext, 'obligationsInventoryStatus' | 'obligationsInventorySummary' | 'obligationsInventoryLines'> => {
+    const inventory = readResult(inventoryCmd);
+    if (!inventory.ok) {
+      return {
+        obligationsInventoryStatus: 'blocked',
+        obligationsInventorySummary: 'BLOCKED — unable to scan exact delta for added markers',
+        obligationsInventoryLines: 'BLOCKED: exact-delta marker inventory unavailable from selected diff source.',
+      };
+    }
+
+    const allowedPaths = new Set(changedPaths);
+    const findings: string[] = [];
+    let currentFile: string | undefined;
+    let nextNewLineNumber = 0;
+    let parseGaps = 0;
+
+    for (const line of inventory.output.split('\n')) {
+      if (line.startsWith('+++ ')) {
+        const rawPath = line.slice(4).trim();
+        if (rawPath === '/dev/null') {
+          currentFile = undefined;
+          continue;
+        }
+        currentFile = rawPath.startsWith('b/') ? rawPath.slice(2) : rawPath;
+        continue;
+      }
+
+      const hunkMatch = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (hunkMatch) {
+        nextNewLineNumber = Number(hunkMatch[1]);
+        continue;
+      }
+
+      if (!line.startsWith('+') || line.startsWith('+++')) continue;
+
+      const addedLine = line.slice(1);
+      const markerMatch = addedLine.match(OBLIGATION_MARKER_REGEX);
+      const lineNumber = nextNewLineNumber;
+      nextNewLineNumber += 1;
+      if (!markerMatch) continue;
+      if (!currentFile || !allowedPaths.has(currentFile)) continue;
+      if (!Number.isFinite(lineNumber) || lineNumber <= 0) {
+        parseGaps += 1;
+        continue;
+      }
+
+      const surface = classifyObligationSurface(currentFile);
+      const trackedBeadId = addedLine.match(TRACKED_OBLIGATION_REGEX)?.[1];
+      const status = surface === 'test' ? 'N/A' : trackedBeadId ? `TRACKED ${trackedBeadId}` : 'UNTRACKED';
+      const excerpt = addedLine.trim() || '(blank)';
+      findings.push(`- ${currentFile}:${lineNumber} ${markerMatch[1]} [${surface}] [${status}] ${excerpt}`);
+    }
+
+    const markerCount = findings.length;
+    if (parseGaps > 0) {
+      return {
+        obligationsInventoryStatus: 'incomplete',
+        obligationsInventorySummary: `INCOMPLETE — exact-delta scan found ${markerCount} added marker match(es) with ${parseGaps} parse gap(s)`,
+        obligationsInventoryLines: findings.length > 0 ? findings.join('\n') : '(none)',
+      };
+    }
+
+    return {
+      obligationsInventoryStatus: 'complete',
+      obligationsInventorySummary: `complete exact-delta scan; ${markerCount} added marker match(es)`,
+      obligationsInventoryLines: findings.length > 0 ? findings.join('\n') : '(none)',
+    };
+  };
 
   const verifiedExplicitBaseSha = resolveVerifiedBaseSha(cwd, explicitBaseSha);
   const mergeBase = verifiedExplicitBaseSha ? undefined : resolveMergeBase();
@@ -869,12 +1008,14 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
           statCmd: 'git diff --stat',
           namesCmd: 'git diff --name-only',
           diffCmd: (f) => `git diff -- ${shellQuote(f)}`,
+          inventoryCmd: 'git diff -U0',
         },
         {
           label: 'staged diff',
           statCmd: 'git diff --cached --stat',
           namesCmd: 'git diff --cached --name-only',
           diffCmd: (f) => `git diff --cached -- ${shellQuote(f)}`,
+          inventoryCmd: 'git diff --cached -U0',
         },
         ...(mergeBase
           ? [buildRangeSource(`branch-vs-base diff (${mergeBase.slice(0, 12)}..HEAD)`, mergeBase)]
@@ -887,39 +1028,88 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean)
-      .slice(0, maxFiles)
       .filter((file) => !AUTO_COMMIT_NOISE_PREFIXES.some((prefix) => file.startsWith(prefix)));
 
     if (files.length === 0) continue;
 
     let remaining = MAX_TOTAL_HUNKS_CHARS;
-    const sections: string[] = [];
+    let excerptedFiles = 0;
+    const coverage: InjectedDiffFileEvidence[] = [];
+    const excerptSections: string[] = [];
+
     for (const file of files) {
-      if (remaining <= 0) break;
-      const diff = read(src.diffCmd(file));
-      const truncated = diff.length > MAX_FILE_DIFF_CHARS
-        ? `${diff.slice(0, MAX_FILE_DIFF_CHARS)}
-... [truncated]`
-        : diff;
-      const section = truncated ? `### ${file}\n${truncated}` : `### ${file}\n(no hunks)`;
-      if (section.length > remaining) {
-        sections.push(`${section.slice(0, remaining)}
-... [truncated]`);
-        remaining = 0;
-        break;
+      if (excerptedFiles >= maxFiles) {
+        coverage.push({ path: file, status: 'omitted', detail: `excerpt file cap ${maxFiles}` });
+        continue;
       }
-      sections.push(section);
+      if (remaining <= 0) {
+        coverage.push({ path: file, status: 'omitted', detail: 'total hunk excerpt budget exhausted' });
+        continue;
+      }
+
+      const diff = read(src.diffCmd(file));
+      let excerpt = diff || '(no hunks)';
+      const detailParts: string[] = [];
+      let status: HunkCoverageStatus = 'complete';
+
+      if (excerpt.length > MAX_FILE_DIFF_CHARS) {
+        excerpt = `${excerpt.slice(0, MAX_FILE_DIFF_CHARS)}\n... [truncated after ${MAX_FILE_DIFF_CHARS} chars]`;
+        status = 'truncated';
+        detailParts.push(`per-file excerpt limit ${MAX_FILE_DIFF_CHARS} chars`);
+      }
+
+      const buildSection = (detail: string | undefined, body: string): string => {
+        const detailSuffix = detail ? `; ${detail}` : '';
+        return `### ${file}\n[hunks: ${status}${detailSuffix}]\n${body}`;
+      };
+
+      let detail = detailParts.length > 0 ? detailParts.join('; ') : undefined;
+      let section = buildSection(detail, excerpt);
+      if (section.length > remaining) {
+        status = 'truncated';
+        detailParts.push('total hunk excerpt budget exhausted');
+        detail = detailParts.join('; ');
+        const header = `### ${file}\n[hunks: ${status}; ${detail}]\n`;
+        const availableBodyChars = Math.max(0, remaining - header.length);
+        if (availableBodyChars === 0) {
+          coverage.push({ path: file, status: 'omitted', detail: 'total hunk excerpt budget exhausted' });
+          remaining = 0;
+          continue;
+        }
+        const truncatedBody = `${excerpt.slice(0, availableBodyChars)}\n... [truncated by total hunk excerpt budget]`;
+        section = `${header}${truncatedBody}`;
+      }
+
+      excerptSections.push(section);
+      coverage.push({ path: file, status, detail });
       remaining -= section.length + 2;
+      excerptedFiles += 1;
     }
 
-    const hunks = sections.join('\n\n');
-    if (!hunks.trim()) continue;
+    const hunkCompleteness = summarizeHunkCompleteness(coverage);
+    const changedPathCoverage = coverage.map(formatHunkCoverageEntry).join('\n');
+    const hunks = [
+      `Hunk evidence completeness: ${hunkCompleteness}`,
+      '',
+      'Changed path coverage:',
+      changedPathCoverage,
+      '',
+      'Hunk excerpts:',
+      excerptSections.length > 0 ? excerptSections.join('\n\n') : '(no hunk excerpts captured)',
+    ].join('\n');
+
+    const obligationsInventory = buildObligationsInventory(src.inventoryCmd, files);
 
     return {
       source: `injected diff context (${src.label})`,
       stat: stat || '(no stat)',
       files: files.join('\n'),
+      pathCoverage: changedPathCoverage,
       hunks,
+      hunkCompleteness,
+      obligationsInventoryStatus: obligationsInventory.obligationsInventoryStatus,
+      obligationsInventorySummary: obligationsInventory.obligationsInventorySummary,
+      obligationsInventoryLines: obligationsInventory.obligationsInventoryLines,
     };
   }
 
@@ -945,9 +1135,13 @@ export function buildInjectedWriterDiffVariables(cwd: string, maxFiles = 20, exp
   return {
     writer_diff: [
       `Source: ${context.source}`,
+      `Hunk evidence completeness: ${context.hunkCompleteness}`,
       '',
       'Changed files:',
       context.files,
+      '',
+      'Changed path coverage:',
+      context.pathCoverage,
       '',
       'Diff stat:',
       context.stat,
@@ -967,6 +1161,17 @@ export function buildInjectedObligationsDiffVariables(cwd: string, maxFiles = 20
       '## Obligations Diff Evidence',
       `- source: ${context.source}`,
       `- changed files: ${context.files.split('\n').filter(Boolean).length}`,
+      `- hunk evidence completeness: ${context.hunkCompleteness}`,
+      `- added-marker inventory: ${context.obligationsInventoryStatus.toUpperCase()} — ${context.obligationsInventorySummary}`,
+      '',
+      '### Changed files',
+      context.files,
+      '',
+      '### Changed path coverage',
+      context.pathCoverage,
+      '',
+      '### Added marker inventory',
+      context.obligationsInventoryLines,
       '',
       '### Diff stat',
       context.stat,

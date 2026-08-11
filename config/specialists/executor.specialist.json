@@ -98,12 +98,10 @@
     },
     "capabilities": {
       "required_tools": [
-        "bash",
         "read",
-        "grep",
-        "glob",
-        "write",
-        "edit"
+        "bash",
+        "edit",
+        "write"
       ],
       "external_commands": [
         "git",

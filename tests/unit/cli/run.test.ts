@@ -368,10 +368,10 @@ describe('run CLI', () => {
 
     const variables = buildInjectedReviewerDiffVariables(repoDir);
 
-    expect(variables).toEqual(expect.objectContaining({
-      reviewer_diff_source: expect.stringContaining('branch-vs-base diff'),
-      reviewer_diff_files: 'src/cli/run.ts',
-    }));
+    expect(variables.reviewer_diff_source).toContain('branch-vs-base diff');
+    expect(variables.reviewer_diff_files).toBe('src/cli/run.ts');
+    expect(variables.reviewer_diff_hunks).toContain('Hunk evidence completeness: complete');
+    expect(variables.reviewer_diff_hunks).toContain('src/cli/run.ts — hunks: complete');
     expect(variables.reviewer_diff_files).not.toContain('.xtrm/SKILL.md');
   });
 
@@ -397,8 +397,108 @@ describe('run CLI', () => {
 
     expect(variables.obligations_diff).toContain('## Obligations Diff Evidence');
     expect(variables.obligations_diff).toContain('branch-vs-base diff');
+    expect(variables.obligations_diff).toContain('added-marker inventory: COMPLETE');
+    expect(variables.obligations_diff).toContain('### Added marker inventory');
+    expect(variables.obligations_diff).toContain('src/scan.ts:2 TODO [production] [TRACKED unitAI-abc12] // TODO(unitAI-abc12): tracked');
     expect(variables.obligations_diff).toContain('### Diff hunks');
     expect(variables.obligations_diff).toContain('+// TODO(unitAI-abc12): tracked');
+  });
+
+  it('detects all supported markers and classifies nested test surfaces', () => {
+    const remoteDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    childProcess.execSync('git init --bare', { cwd: remoteDir });
+    childProcess.execSync('git init -b main', { cwd: repoDir });
+    childProcess.execSync('git config user.email test@example.com', { cwd: repoDir });
+    childProcess.execSync('git config user.name Test User', { cwd: repoDir });
+    childProcess.execSync('mkdir -p src src/nested/test src/nested/fixture src/nested/mock src/nested/e2e src/nested/docs src/nested/__tests__', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/src/scan.ts`, 'base\n');
+    childProcess.execSync('git add src/scan.ts && git commit -m base', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git push -u origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git fetch origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main', { cwd: repoDir });
+    childProcess.execSync('git checkout -b feature', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    fs.writeFileSync(
+      `${repoDir}/src/scan.ts`,
+      [
+        'base',
+        '// TODO(unitAI-todo): tracked todo',
+        '// FIXME(unitAI-fixme): tracked fixme',
+        '// HACK(unitAI-hack): tracked hack',
+        '// XXX bare xxx',
+        '// TEMP bare temp',
+        '// WIP bare wip',
+        '// NOTE(release): release note',
+        '',
+      ].join('\n'),
+    );
+    fs.writeFileSync(`${repoDir}/src/nested/test/check.ts`, '// TODO(unitAI-test): nested test\n');
+    fs.writeFileSync(`${repoDir}/src/nested/fixture/check.ts`, '// FIXME(unitAI-fixture): nested fixture\n');
+    fs.writeFileSync(`${repoDir}/src/nested/mock/check.ts`, '// HACK(unitAI-mock): nested mock\n');
+    fs.writeFileSync(`${repoDir}/src/nested/e2e/check.ts`, '// XXX(unitAI-e2e): nested e2e\n');
+    fs.writeFileSync(`${repoDir}/src/nested/docs/check.ts`, '// TEMP(unitAI-docs): nested docs\n');
+    fs.writeFileSync(`${repoDir}/src/nested/__tests__/check.ts`, '// WIP(unitAI-inner): nested __tests__\n');
+    childProcess.execSync('git add src && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    const variables = buildInjectedObligationsDiffVariables(repoDir);
+
+    expect(variables.obligations_diff).toContain('src/scan.ts:2 TODO [production] [TRACKED unitAI-todo] // TODO(unitAI-todo): tracked todo');
+    expect(variables.obligations_diff).toContain('src/scan.ts:3 FIXME [production] [TRACKED unitAI-fixme] // FIXME(unitAI-fixme): tracked fixme');
+    expect(variables.obligations_diff).toContain('src/scan.ts:4 HACK [production] [TRACKED unitAI-hack] // HACK(unitAI-hack): tracked hack');
+    expect(variables.obligations_diff).toContain('src/scan.ts:5 XXX [production] [UNTRACKED] // XXX bare xxx');
+    expect(variables.obligations_diff).toContain('src/scan.ts:6 TEMP [production] [UNTRACKED] // TEMP bare temp');
+    expect(variables.obligations_diff).toContain('src/scan.ts:7 WIP [production] [UNTRACKED] // WIP bare wip');
+    expect(variables.obligations_diff).toContain('src/scan.ts:8 NOTE(release) [production] [UNTRACKED] // NOTE(release): release note');
+    expect(variables.obligations_diff).toContain('src/nested/test/check.ts:1 TODO [test] [N/A] // TODO(unitAI-test): nested test');
+    expect(variables.obligations_diff).toContain('src/nested/fixture/check.ts:1 FIXME [test] [N/A] // FIXME(unitAI-fixture): nested fixture');
+    expect(variables.obligations_diff).toContain('src/nested/mock/check.ts:1 HACK [test] [N/A] // HACK(unitAI-mock): nested mock');
+    expect(variables.obligations_diff).toContain('src/nested/e2e/check.ts:1 XXX [test] [N/A] // XXX(unitAI-e2e): nested e2e');
+    expect(variables.obligations_diff).toContain('src/nested/docs/check.ts:1 TEMP [test] [N/A] // TEMP(unitAI-docs): nested docs');
+    expect(variables.obligations_diff).toContain('src/nested/__tests__/check.ts:1 WIP [test] [N/A] // WIP(unitAI-inner): nested __tests__');
+  });
+
+  it('keeps full changed-path inventory when hunk excerpts omit tail files', () => {
+    const remoteDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    childProcess.execSync('git init --bare', { cwd: remoteDir });
+    childProcess.execSync('git init -b main', { cwd: repoDir });
+    childProcess.execSync('git config user.email test@example.com', { cwd: repoDir });
+    childProcess.execSync('git config user.name Test User', { cwd: repoDir });
+    childProcess.execSync('mkdir -p src', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/README.md`, 'base\n');
+    childProcess.execSync('git add README.md && git commit -m base', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git push -u origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git fetch origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main', { cwd: repoDir });
+    childProcess.execSync('git checkout -b feature', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    for (let index = 0; index < 22; index += 1) {
+      const fileName = `file-${String(index).padStart(2, '0')}.ts`;
+      const content = index === 0
+        ? '// TODO(unitAI-first): first marker\n'
+        : index === 21
+          ? '// FIXME last marker\n'
+          : `export const value${index} = ${index};\n`;
+      fs.writeFileSync(`${repoDir}/src/${fileName}`, content);
+    }
+    childProcess.execSync('git add src && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    const reviewerVariables = buildInjectedReviewerDiffVariables(repoDir);
+    const obligationsVariables = buildInjectedObligationsDiffVariables(repoDir);
+
+    expect(reviewerVariables.reviewer_diff_files).toContain('src/file-00.ts');
+    expect(reviewerVariables.reviewer_diff_files).toContain('src/file-21.ts');
+    expect(reviewerVariables.reviewer_diff_hunks).toContain('Hunk evidence completeness: partial — 20/22 changed paths carried hunk excerpts; 20 complete, 0 truncated, 2 omitted');
+    expect(reviewerVariables.reviewer_diff_hunks).toContain('src/file-00.ts — hunks: complete');
+    expect(reviewerVariables.reviewer_diff_hunks).toContain('src/file-21.ts — hunks: omitted (excerpt file cap 20)');
+
+    expect(obligationsVariables.obligations_diff).toContain('- changed files: 22');
+    expect(obligationsVariables.obligations_diff).toContain('added-marker inventory: COMPLETE');
+    expect(obligationsVariables.obligations_diff).toContain('src/file-00.ts:1 TODO [production] [TRACKED unitAI-first] // TODO(unitAI-first): first marker');
+    expect(obligationsVariables.obligations_diff).toContain('src/file-21.ts:1 FIXME [production] [UNTRACKED] // FIXME last marker');
   });
 
   it('builds writer_diff from the same worktree diff source as reviewer context', () => {
@@ -423,7 +523,9 @@ describe('run CLI', () => {
     const variables = buildInjectedWriterDiffVariables(repoDir);
 
     expect(variables.writer_diff).toContain('Source: injected diff context (branch-vs-base diff');
+    expect(variables.writer_diff).toContain('Hunk evidence completeness: complete');
     expect(variables.writer_diff).toContain('Changed files:\nsrc/writer.ts');
+    expect(variables.writer_diff).toContain('Changed path coverage:\nsrc/writer.ts — hunks: complete');
     expect(variables.writer_diff).toContain('Diff stat:');
     expect(variables.writer_diff).toContain('+writer change');
     expect(variables.writer_diff).not.toContain('.xtrm/SKILL.md');

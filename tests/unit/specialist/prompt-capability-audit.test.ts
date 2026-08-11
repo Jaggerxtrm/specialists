@@ -1,9 +1,46 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { resolveManifestTools, type ToolCatalog, type ToolTier } from '../../../src/specialist/manifest-resolver.js';
 
 function readConfig(path: string): string {
   return readFileSync(join(process.cwd(), path), 'utf8');
+}
+
+function readConfigJson<T>(path: string): T {
+  return JSON.parse(readConfig(path)) as T;
+}
+
+type SpecialistConfig = {
+  execution: {
+    permission_required: ToolTier;
+    extensions?: { gitnexus?: boolean | null };
+  };
+  capabilities?: {
+    required_tools?: string[];
+  };
+};
+
+function loadCatalogIndex(): {
+  catalogs: ToolCatalog[];
+  default_overrides?: Record<string, { denied_natives_when_extension?: readonly string[]; denied_natives_mode?: 'soft' | 'hard' }>;
+} {
+  return readConfigJson('config/catalog/index.json');
+}
+
+function resolveRequiredToolContract(spec: SpecialistConfig): readonly string[] {
+  const catalogIndex = loadCatalogIndex();
+  return resolveManifestTools({
+    tier: spec.execution.permission_required,
+    catalogs: catalogIndex.catalogs,
+    catalogDefaultOverrides: catalogIndex.default_overrides,
+    specialistExclusions: spec.execution.extensions?.gitnexus === false ? { disabledExtensions: ['gitnexus'] } : undefined,
+    extensionState: {
+      gitnexus: spec.execution.extensions?.gitnexus === false
+        ? { health: 'disabled' }
+        : { health: 'loaded_healthy', catalogCompatible: true },
+    },
+  }).toolsList;
 }
 
 describe('specialist prompt capability audit', () => {
@@ -39,5 +76,41 @@ describe('specialist prompt capability audit', () => {
     expect(json).toContain('$obligations_diff');
     expect(json).not.toContain('Run `git diff $(git merge-base HEAD master)..HEAD`');
     expect(json).not.toContain('Grep is fine.');
+  });
+
+  it('every shipped required_tools list stays satisfiable under effective runtime contract', () => {
+    const configDir = join(process.cwd(), 'config/specialists');
+    const failures: string[] = [];
+
+    for (const fileName of readdirSync(configDir).filter((entry) => entry.endsWith('.specialist.json'))) {
+      const path = `config/specialists/${fileName}`;
+      const spec = readConfigJson<{ specialist: SpecialistConfig }>(path).specialist;
+      const requiredTools = spec.capabilities?.required_tools ?? [];
+      if (requiredTools.length === 0) continue;
+
+      const resolvedTools = resolveRequiredToolContract(spec).map((tool) => tool.toLowerCase());
+      const missingTools = requiredTools.filter((tool) => !resolvedTools.includes(tool.toLowerCase()));
+      if (missingTools.length === 0) continue;
+
+      failures.push(`${path}: missing [${missingTools.join(', ')}] from [${resolvedTools.join(', ')}]`);
+    }
+
+    expect(failures).toEqual([]);
+  });
+
+  it('every shipped required_tools list uses canonical lowercase tool ids', () => {
+    const configDir = join(process.cwd(), 'config/specialists');
+    const failures: string[] = [];
+
+    for (const fileName of readdirSync(configDir).filter((entry) => entry.endsWith('.specialist.json'))) {
+      const path = `config/specialists/${fileName}`;
+      const spec = readConfigJson<{ specialist: SpecialistConfig }>(path).specialist;
+      const requiredTools = spec.capabilities?.required_tools ?? [];
+      const invalidTools = requiredTools.filter((tool) => tool !== tool.toLowerCase());
+      if (invalidTools.length === 0) continue;
+      failures.push(`${path}: ${invalidTools.join(', ')}`);
+    }
+
+    expect(failures).toEqual([]);
   });
 });

@@ -52,14 +52,17 @@ describe('run explicit-base diff injection', () => {
 
     expect(reviewerVariables.reviewer_diff_source).toContain('recorded-base diff');
     expect(reviewerVariables.reviewer_diff_files).toBe('src/current-task.ts');
-    expect(reviewerVariables.reviewer_diff_hunks).toContain('src/current-task.ts');
+    expect(reviewerVariables.reviewer_diff_hunks).toContain('Hunk evidence completeness: complete');
+    expect(reviewerVariables.reviewer_diff_hunks).toContain('src/current-task.ts — hunks: complete');
     expect(reviewerVariables.reviewer_diff_hunks).not.toContain('src/prior-task.ts');
 
     expect(writerVariables.writer_diff).toContain('recorded-base diff');
+    expect(writerVariables.writer_diff).toContain('Changed path coverage:\nsrc/current-task.ts — hunks: complete');
     expect(writerVariables.writer_diff).toContain('src/current-task.ts');
     expect(writerVariables.writer_diff).not.toContain('src/prior-task.ts');
 
     expect(obligationsVariables.obligations_diff).toContain('recorded-base diff');
+    expect(obligationsVariables.obligations_diff).toContain('added-marker inventory: COMPLETE');
     expect(obligationsVariables.obligations_diff).toContain('src/current-task.ts');
     expect(obligationsVariables.obligations_diff).not.toContain('src/prior-task.ts');
   });
@@ -129,7 +132,7 @@ describe('run reused-job explicit-base plumbing', () => {
         assertVariables: (variables: Record<string, string> | undefined) => {
           expect(variables?.reviewer_diff_source).toContain('recorded-base diff');
           expect(variables?.reviewer_diff_files).toBe('src/current-task.ts');
-          expect(variables?.reviewer_diff_hunks).toContain('src/current-task.ts');
+          expect(variables?.reviewer_diff_hunks).toContain('src/current-task.ts — hunks: complete');
           expect(variables?.reviewer_diff_hunks).not.toContain('src/prior-task.ts');
         },
       },
@@ -138,6 +141,7 @@ describe('run reused-job explicit-base plumbing', () => {
         taskTemplate: 'Do $prompt\n$writer_diff',
         assertVariables: (variables: Record<string, string> | undefined) => {
           expect(variables?.writer_diff).toContain('recorded-base diff');
+          expect(variables?.writer_diff).toContain('Changed path coverage:\nsrc/current-task.ts — hunks: complete');
           expect(variables?.writer_diff).toContain('src/current-task.ts');
           expect(variables?.writer_diff).not.toContain('src/prior-task.ts');
         },
@@ -147,6 +151,7 @@ describe('run reused-job explicit-base plumbing', () => {
         taskTemplate: 'Do $prompt\n$obligations_diff',
         assertVariables: (variables: Record<string, string> | undefined) => {
           expect(variables?.obligations_diff).toContain('recorded-base diff');
+          expect(variables?.obligations_diff).toContain('added-marker inventory: COMPLETE');
           expect(variables?.obligations_diff).toContain('src/current-task.ts');
           expect(variables?.obligations_diff).not.toContain('src/prior-task.ts');
         },

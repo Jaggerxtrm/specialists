@@ -53,10 +53,8 @@
     },
     "capabilities": {
       "required_tools": [
-        "bash",
         "read",
-        "grep",
-        "glob",
+        "bash",
         "edit"
       ],
       "external_commands": [

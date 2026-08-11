@@ -49,8 +49,7 @@
         "bun"
       ],
       "required_tools": [
-        "Read",
-        "Bash"
+        "read"
       ]
     },
     "validation": {

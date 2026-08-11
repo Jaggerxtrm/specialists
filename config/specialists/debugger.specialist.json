@@ -52,10 +52,8 @@
     },
     "capabilities": {
       "required_tools": [
-        "bash",
-        "grep",
-        "find",
         "read",
+        "bash",
         "edit",
         "write"
       ],
