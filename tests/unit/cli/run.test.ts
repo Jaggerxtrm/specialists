@@ -5,7 +5,7 @@ import * as crypto from 'node:crypto';
 import * as childProcess from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import * as tmuxUtils from '../../../src/cli/tmux-utils.js';
 import * as worktree from '../../../src/specialist/worktree.js';
 
@@ -402,6 +402,46 @@ describe('run CLI', () => {
     expect(variables.obligations_diff).toContain('src/scan.ts:2 TODO [production] [TRACKED unitAI-abc12] // TODO(unitAI-abc12): tracked');
     expect(variables.obligations_diff).toContain('### Diff hunks');
     expect(variables.obligations_diff).toContain('+// TODO(unitAI-abc12): tracked');
+  });
+
+  it('marks unstaged symlink snapshots incomplete without reading external marker content', () => {
+    const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    const externalDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    childProcess.execSync('git init -b main', { cwd: repoDir });
+    childProcess.execSync('git config user.email test@example.com', { cwd: repoDir });
+    childProcess.execSync('git config user.name Test User', { cwd: repoDir });
+    childProcess.execSync('mkdir -p src', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/src/scan.ts`, 'base\n');
+    childProcess.execSync('git add src/scan.ts && git commit -m base', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${externalDir}/secret.ts`, '// TODO(unitAI-secret): external secret\n');
+    fs.rmSync(`${repoDir}/src/scan.ts`);
+    fs.symlinkSync(relative(join(repoDir, 'src'), `${externalDir}/secret.ts`), `${repoDir}/src/scan.ts`);
+
+    const variables = buildInjectedObligationsDiffVariables(repoDir);
+
+    expect(variables.obligations_diff).toContain('source: injected diff context (unstaged diff)');
+    expect(variables.obligations_diff).toContain('added-marker inventory: INCOMPLETE');
+    expect(variables.obligations_diff).not.toContain('unitAI-secret');
+    expect(variables.obligations_diff).not.toContain('external secret');
+  });
+
+  it('marks oversized unstaged snapshots incomplete before reading marker content', () => {
+    const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    childProcess.execSync('git init -b main', { cwd: repoDir });
+    childProcess.execSync('git config user.email test@example.com', { cwd: repoDir });
+    childProcess.execSync('git config user.name Test User', { cwd: repoDir });
+    childProcess.execSync('mkdir -p src', { cwd: repoDir, shell: '/bin/bash' as never });
+    const oversizedPrefix = 'x'.repeat((8 * 1024 * 1024) + 1);
+    fs.writeFileSync(`${repoDir}/src/scan.ts`, `${oversizedPrefix}\n`);
+    childProcess.execSync('git add src/scan.ts && git commit -m base', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/src/scan.ts`, `${oversizedPrefix}\n// TODO(unitAI-oversized): should stay hidden\n`);
+
+    const variables = buildInjectedObligationsDiffVariables(repoDir);
+
+    expect(variables.obligations_diff).toContain('source: injected diff context (unstaged diff)');
+    expect(variables.obligations_diff).toContain('added-marker inventory: INCOMPLETE');
+    expect(variables.obligations_diff).not.toContain('unitAI-oversized');
+    expect(variables.obligations_diff).not.toContain('should stay hidden');
   });
 
   it('tracks plain block-comment continuation lines', () => {

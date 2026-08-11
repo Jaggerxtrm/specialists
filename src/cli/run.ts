@@ -1,7 +1,7 @@
 // src/cli/run.ts
 
-import { join } from 'node:path';
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { join, resolve, sep } from 'node:path';
+import { constants as fsConstants, existsSync, fstatSync, openSync, readFileSync, readSync, readdirSync, statSync, writeFileSync, closeSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { spawn as cpSpawn, execSync } from 'node:child_process';
 import { SpecialistLoader } from '../specialist/loader.js';
@@ -1200,6 +1200,7 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
 
   const MAX_TOTAL_HUNKS_CHARS = 12_000;
   const MAX_FILE_DIFF_CHARS = 2_000;
+  const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
   const reviewedHeadSha = read('git rev-parse HEAD');
   if (!reviewedHeadSha) return null;
 
@@ -1220,6 +1221,36 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
     diffCmd: (file: string) => string;
     inventoryCmd: string;
     readFileContent: (file: string) => { ok: boolean; output: string };
+  };
+
+  const readSafeWorktreeFile = (file: string): { ok: boolean; output: string } => {
+    const resolvedCwd = resolve(cwd);
+    const candidatePath = resolve(cwd, file);
+    const isContained = candidatePath === resolvedCwd || candidatePath.startsWith(`${resolvedCwd}${sep}`);
+    if (!isContained) return { ok: false, output: '' };
+
+    let fd: number | undefined;
+    try {
+      fd = openSync(candidatePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+      const stat = fstatSync(fd);
+      if (!stat.isFile()) return { ok: false, output: '' };
+      if (stat.size > MAX_SNAPSHOT_BYTES) return { ok: false, output: '' };
+
+      const buffer = Buffer.alloc(stat.size);
+      let bytesRead = 0;
+      while (bytesRead < buffer.length) {
+        const chunkSize = readSync(fd, buffer, bytesRead, buffer.length - bytesRead, bytesRead);
+        if (chunkSize === 0) break;
+        bytesRead += chunkSize;
+      }
+
+      if (bytesRead !== buffer.length) return { ok: false, output: '' };
+      return { ok: true, output: buffer.toString('utf8') };
+    } catch {
+      return { ok: false, output: '' };
+    } finally {
+      if (fd !== undefined) closeSync(fd);
+    }
   };
 
   const buildRangeSource = (label: string, baseSha: string): Source => ({
@@ -1354,13 +1385,7 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
           namesCmd: 'git diff --name-only',
           diffCmd: (f) => `git diff -- ${shellQuote(f)}`,
           inventoryCmd: 'git diff -U0',
-          readFileContent: (file: string) => {
-            try {
-              return { ok: true, output: readFileSync(join(cwd, file), 'utf8') };
-            } catch {
-              return { ok: false, output: '' };
-            }
-          },
+          readFileContent: (file: string) => readSafeWorktreeFile(file),
         },
         {
           label: 'staged diff',
