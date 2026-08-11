@@ -826,6 +826,9 @@ type InjectedDiffFileEvidence = {
 
 type InjectedDiffContext = {
   source: string;
+  reviewedBaseSha?: string;
+  reviewedHeadSha: string;
+  worktreeState: 'clean' | 'dirty';
   stat: string;
   files: string;
   pathCoverage: string;
@@ -903,15 +906,21 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
 
   const MAX_TOTAL_HUNKS_CHARS = 12_000;
   const MAX_FILE_DIFF_CHARS = 2_000;
+  const reviewedHeadSha = read('git rev-parse HEAD');
+  if (!reviewedHeadSha) return null;
+
+  const worktreeStatus = readResult('git status --porcelain=v1 --untracked-files=all');
+  const worktreeState: 'clean' | 'dirty' = !worktreeStatus.ok || worktreeStatus.output.trim() ? 'dirty' : 'clean';
 
   const resolveMergeBase = (): string => {
     const headRef = read('git symbolic-ref refs/remotes/origin/HEAD');
     const baseBranch = headRef ? headRef.split('/').pop() ?? 'main' : 'main';
-    return read(`git merge-base ${shellQuote(baseBranch)} HEAD`);
+    return read(`git merge-base ${shellQuote(baseBranch)} ${shellQuote(reviewedHeadSha)}`);
   };
 
   type Source = {
     label: string;
+    reviewedBaseSha?: string;
     statCmd: string;
     namesCmd: string;
     diffCmd: (file: string) => string;
@@ -919,11 +928,12 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
   };
 
   const buildRangeSource = (label: string, baseSha: string): Source => ({
-    label,
-    statCmd: `git diff --stat ${shellQuote(baseSha)}..HEAD`,
-    namesCmd: `git diff --name-only ${shellQuote(baseSha)}..HEAD`,
-    diffCmd: (file: string) => `git diff ${shellQuote(baseSha)}..HEAD -- ${shellQuote(file)}`,
-    inventoryCmd: `git diff -U0 ${shellQuote(baseSha)}..HEAD`,
+    label: `${label} (${baseSha}..${reviewedHeadSha})`,
+    reviewedBaseSha: baseSha,
+    statCmd: `git diff --stat ${shellQuote(baseSha)}..${shellQuote(reviewedHeadSha)}`,
+    namesCmd: `git diff --name-only ${shellQuote(baseSha)}..${shellQuote(reviewedHeadSha)}`,
+    diffCmd: (file: string) => `git diff ${shellQuote(baseSha)}..${shellQuote(reviewedHeadSha)} -- ${shellQuote(file)}`,
+    inventoryCmd: `git diff -U0 ${shellQuote(baseSha)}..${shellQuote(reviewedHeadSha)}`,
   });
 
   const buildObligationsInventory = (
@@ -1001,7 +1011,7 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
   const verifiedExplicitBaseSha = resolveVerifiedBaseSha(cwd, explicitBaseSha);
   const mergeBase = verifiedExplicitBaseSha ? undefined : resolveMergeBase();
   const sources: Source[] = verifiedExplicitBaseSha
-    ? [buildRangeSource(`recorded-base diff (${verifiedExplicitBaseSha.slice(0, 12)}..HEAD)`, verifiedExplicitBaseSha)]
+    ? [buildRangeSource('recorded-base diff', verifiedExplicitBaseSha)]
     : [
         {
           label: 'unstaged diff',
@@ -1018,7 +1028,7 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
           inventoryCmd: 'git diff --cached -U0',
         },
         ...(mergeBase
-          ? [buildRangeSource(`branch-vs-base diff (${mergeBase.slice(0, 12)}..HEAD)`, mergeBase)]
+          ? [buildRangeSource('branch-vs-base diff', mergeBase)]
           : []),
       ];
 
@@ -1102,6 +1112,9 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: 
 
     return {
       source: `injected diff context (${src.label})`,
+      reviewedBaseSha: src.reviewedBaseSha,
+      reviewedHeadSha,
+      worktreeState,
       stat: stat || '(no stat)',
       files: files.join('\n'),
       pathCoverage: changedPathCoverage,
@@ -1121,7 +1134,12 @@ export function buildInjectedReviewerDiffVariables(cwd: string, maxFiles = 20, e
   if (!context) return {};
 
   return {
-    reviewer_diff_source: context.source,
+    reviewer_diff_source: [
+      context.source,
+      context.reviewedBaseSha ? `reviewed-base: ${context.reviewedBaseSha}` : undefined,
+      `reviewed-head: ${context.reviewedHeadSha}`,
+      `worktree-state: ${context.worktreeState}`,
+    ].filter(Boolean).join('\n'),
     reviewer_diff_stat: context.stat,
     reviewer_diff_files: context.files,
     reviewer_diff_hunks: context.hunks,
@@ -1135,6 +1153,9 @@ export function buildInjectedWriterDiffVariables(cwd: string, maxFiles = 20, exp
   return {
     writer_diff: [
       `Source: ${context.source}`,
+      ...(context.reviewedBaseSha ? [`Reviewed base: ${context.reviewedBaseSha}`] : []),
+      `Reviewed head: ${context.reviewedHeadSha}`,
+      `Worktree state: ${context.worktreeState}`,
       `Hunk evidence completeness: ${context.hunkCompleteness}`,
       '',
       'Changed files:',
@@ -1160,6 +1181,9 @@ export function buildInjectedObligationsDiffVariables(cwd: string, maxFiles = 20
     obligations_diff: [
       '## Obligations Diff Evidence',
       `- source: ${context.source}`,
+      ...(context.reviewedBaseSha ? [`- reviewed-base: ${context.reviewedBaseSha}`] : []),
+      `- reviewed-head: ${context.reviewedHeadSha}`,
+      `- worktree-state: ${context.worktreeState}`,
       `- changed files: ${context.files.split('\n').filter(Boolean).length}`,
       `- hunk evidence completeness: ${context.hunkCompleteness}`,
       `- added-marker inventory: ${context.obligationsInventoryStatus.toUpperCase()} — ${context.obligationsInventorySummary}`,

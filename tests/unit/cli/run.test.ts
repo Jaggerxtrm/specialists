@@ -518,11 +518,15 @@ describe('run CLI', () => {
     childProcess.execSync('git checkout -b feature', { cwd: repoDir, shell: '/bin/bash' as never });
     fs.writeFileSync(`${repoDir}/src/writer.ts`, 'base\nwriter change\n');
     childProcess.execSync('git add src/writer.ts && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+    const headSha = childProcess.execSync('git rev-parse HEAD', { cwd: repoDir, encoding: 'utf8' }).trim();
     fs.writeFileSync(`${repoDir}/.xtrm/SKILL.md`, 'noise\n');
 
     const variables = buildInjectedWriterDiffVariables(repoDir);
 
-    expect(variables.writer_diff).toContain('Source: injected diff context (branch-vs-base diff');
+    expect(variables.writer_diff).toContain(`Source: injected diff context (branch-vs-base diff (`);
+    expect(variables.writer_diff).toContain(`..${headSha}))`);
+    expect(variables.writer_diff).toContain(`Reviewed head: ${headSha}`);
+    expect(variables.writer_diff).toContain('Worktree state: dirty');
     expect(variables.writer_diff).toContain('Hunk evidence completeness: complete');
     expect(variables.writer_diff).toContain('Changed files:\nsrc/writer.ts');
     expect(variables.writer_diff).toContain('Changed path coverage:\nsrc/writer.ts — hunks: complete');
@@ -1093,6 +1097,7 @@ describe('run CLI', () => {
     childProcess.execSync('git checkout -b feature', { cwd: repoDir, shell: '/bin/bash' as never });
     fs.writeFileSync(`${repoDir}/src/writer.ts`, 'base\nwriter change\n');
     childProcess.execSync('git add src/writer.ts && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+    const headSha = childProcess.execSync('git rev-parse HEAD', { cwd: repoDir, encoding: 'utf8' }).trim();
 
     process.argv = ['node', 'specialists', 'run', 'seconder', '--prompt', 'review writer', '--job', 'job-writer'];
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
@@ -1145,6 +1150,8 @@ describe('run CLI', () => {
     }));
     expect(runArgs.variables?.writer_diff).toContain('src/writer.ts');
     expect(runArgs.variables?.writer_diff).toContain('+writer change');
+    expect(runArgs.variables?.writer_diff).toContain(`Reviewed head: ${headSha}`);
+    expect(runArgs.variables?.writer_diff).toContain('Worktree state: clean');
   });
 
   it('prefers explicit reviewed_job_id override from prompt over --job lineage', async () => {

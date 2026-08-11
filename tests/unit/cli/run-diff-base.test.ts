@@ -11,7 +11,7 @@ import {
   run,
 } from '../../../src/cli/run.js';
 
-function createStackedBranchRepo(): { repoDir: string; priorTaskSha: string } {
+function createStackedBranchRepo(): { repoDir: string; priorTaskSha: string; headSha: string } {
   const remoteDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
   const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
   childProcess.execSync('git init --bare', { cwd: remoteDir });
@@ -34,13 +34,14 @@ function createStackedBranchRepo(): { repoDir: string; priorTaskSha: string } {
   childProcess.execSync('git checkout -b task-2', { cwd: repoDir, shell: '/bin/bash' as never });
   fs.writeFileSync(`${repoDir}/src/current-task.ts`, 'current task\n');
   childProcess.execSync('git add src/current-task.ts && git commit -m task-2', { cwd: repoDir, shell: '/bin/bash' as never });
+  const headSha = childProcess.execSync('git rev-parse HEAD', { cwd: repoDir, encoding: 'utf8' }).trim();
 
-  return { repoDir, priorTaskSha };
+  return { repoDir, priorTaskSha, headSha };
 }
 
 describe('run explicit-base diff injection', () => {
   it('uses recorded base sha instead of merge-base for stacked task deltas', () => {
-    const { repoDir, priorTaskSha } = createStackedBranchRepo();
+    const { repoDir, priorTaskSha, headSha } = createStackedBranchRepo();
 
     const mergeBaseVariables = buildInjectedReviewerDiffVariables(repoDir);
     const reviewerVariables = buildInjectedReviewerDiffVariables(repoDir, 20, priorTaskSha);
@@ -50,18 +51,24 @@ describe('run explicit-base diff injection', () => {
     expect(mergeBaseVariables.reviewer_diff_files).toContain('src/prior-task.ts');
     expect(mergeBaseVariables.reviewer_diff_files).toContain('src/current-task.ts');
 
-    expect(reviewerVariables.reviewer_diff_source).toContain('recorded-base diff');
+    expect(reviewerVariables.reviewer_diff_source).toContain(`recorded-base diff (${priorTaskSha}..${headSha})`);
+    expect(reviewerVariables.reviewer_diff_source).toContain(`reviewed-head: ${headSha}`);
+    expect(reviewerVariables.reviewer_diff_source).toContain('worktree-state: clean');
     expect(reviewerVariables.reviewer_diff_files).toBe('src/current-task.ts');
     expect(reviewerVariables.reviewer_diff_hunks).toContain('Hunk evidence completeness: complete');
     expect(reviewerVariables.reviewer_diff_hunks).toContain('src/current-task.ts — hunks: complete');
     expect(reviewerVariables.reviewer_diff_hunks).not.toContain('src/prior-task.ts');
 
-    expect(writerVariables.writer_diff).toContain('recorded-base diff');
+    expect(writerVariables.writer_diff).toContain(`Source: injected diff context (recorded-base diff (${priorTaskSha}..${headSha}))`);
+    expect(writerVariables.writer_diff).toContain(`Reviewed head: ${headSha}`);
+    expect(writerVariables.writer_diff).toContain('Worktree state: clean');
     expect(writerVariables.writer_diff).toContain('Changed path coverage:\nsrc/current-task.ts — hunks: complete');
     expect(writerVariables.writer_diff).toContain('src/current-task.ts');
     expect(writerVariables.writer_diff).not.toContain('src/prior-task.ts');
 
-    expect(obligationsVariables.obligations_diff).toContain('recorded-base diff');
+    expect(obligationsVariables.obligations_diff).toContain(`- source: injected diff context (recorded-base diff (${priorTaskSha}..${headSha}))`);
+    expect(obligationsVariables.obligations_diff).toContain(`- reviewed-head: ${headSha}`);
+    expect(obligationsVariables.obligations_diff).toContain('- worktree-state: clean');
     expect(obligationsVariables.obligations_diff).toContain('added-marker inventory: COMPLETE');
     expect(obligationsVariables.obligations_diff).toContain('src/current-task.ts');
     expect(obligationsVariables.obligations_diff).not.toContain('src/prior-task.ts');
@@ -90,7 +97,7 @@ describe('run reused-job explicit-base plumbing', () => {
   });
 
   it('feeds reviewer, seconder, and obligations variables from reused job base_sha_pinned', async () => {
-    const { repoDir, priorTaskSha } = createStackedBranchRepo();
+    const { repoDir, priorTaskSha, headSha } = createStackedBranchRepo();
     const loaderGet = vi.spyOn(SpecialistLoader.prototype, 'get');
     const runnerRun = vi.spyOn(SpecialistRunner.prototype, 'run').mockResolvedValue({
       output: 'done',
@@ -130,7 +137,9 @@ describe('run reused-job explicit-base plumbing', () => {
         specialist: 'reviewer',
         taskTemplate: 'Do $prompt\n$reviewer_diff_source\n$reviewer_diff_files\n$reviewer_diff_hunks',
         assertVariables: (variables: Record<string, string> | undefined) => {
-          expect(variables?.reviewer_diff_source).toContain('recorded-base diff');
+          expect(variables?.reviewer_diff_source).toContain(`recorded-base diff (${priorTaskSha}..${headSha})`);
+          expect(variables?.reviewer_diff_source).toContain(`reviewed-head: ${headSha}`);
+          expect(variables?.reviewer_diff_source).toContain('worktree-state: clean');
           expect(variables?.reviewer_diff_files).toBe('src/current-task.ts');
           expect(variables?.reviewer_diff_hunks).toContain('src/current-task.ts — hunks: complete');
           expect(variables?.reviewer_diff_hunks).not.toContain('src/prior-task.ts');
@@ -140,7 +149,9 @@ describe('run reused-job explicit-base plumbing', () => {
         specialist: 'seconder',
         taskTemplate: 'Do $prompt\n$writer_diff',
         assertVariables: (variables: Record<string, string> | undefined) => {
-          expect(variables?.writer_diff).toContain('recorded-base diff');
+          expect(variables?.writer_diff).toContain(`Source: injected diff context (recorded-base diff (${priorTaskSha}..${headSha}))`);
+          expect(variables?.writer_diff).toContain(`Reviewed head: ${headSha}`);
+          expect(variables?.writer_diff).toContain('Worktree state: clean');
           expect(variables?.writer_diff).toContain('Changed path coverage:\nsrc/current-task.ts — hunks: complete');
           expect(variables?.writer_diff).toContain('src/current-task.ts');
           expect(variables?.writer_diff).not.toContain('src/prior-task.ts');
@@ -150,7 +161,9 @@ describe('run reused-job explicit-base plumbing', () => {
         specialist: 'obligations-scanner',
         taskTemplate: 'Do $prompt\n$obligations_diff',
         assertVariables: (variables: Record<string, string> | undefined) => {
-          expect(variables?.obligations_diff).toContain('recorded-base diff');
+          expect(variables?.obligations_diff).toContain(`- source: injected diff context (recorded-base diff (${priorTaskSha}..${headSha}))`);
+          expect(variables?.obligations_diff).toContain(`- reviewed-head: ${headSha}`);
+          expect(variables?.obligations_diff).toContain('- worktree-state: clean');
           expect(variables?.obligations_diff).toContain('added-marker inventory: COMPLETE');
           expect(variables?.obligations_diff).toContain('src/current-task.ts');
           expect(variables?.obligations_diff).not.toContain('src/prior-task.ts');
