@@ -134,7 +134,7 @@ function createResolvedToolContract(overrides: Partial<{
   toolsList: string[];
   nativeTools: string[];
   extensionTools: string[];
-  gitnexusStatus: 'available' | 'disabled' | 'loaded_unhealthy';
+  gitnexusStatus: 'available' | 'disabled' | 'loaded_unhealthy' | 'catalog_incompatible' | 'not_installed';
   gitnexusTools: string[];
   packagePath: string;
 }> = {}) {
@@ -405,7 +405,33 @@ describe('runScriptSpecialist resolved tool contract', () => {
     expect(extensionPaths).not.toContain(rediscoveredGitnexusPath);
   });
 
-  it.each(['disabled', 'loaded_unhealthy'] as const)('does not load gitnexus extension for %s contract state on direct cli path', async (gitnexusStatus) => {
+  it('does not load gitnexus extension when resolved tool contract is missing on direct cli path', async () => {
+    const npmGlobalDir = mkdtempSync(join(tmpdir(), 'pi-global-'));
+    const rediscoveredGitnexusPath = join(npmGlobalDir, 'pi-gitnexus');
+    writeFileSync(rediscoveredGitnexusPath, '');
+    resolveGlobalNodeModulesDirMock.mockReturnValue(npmGlobalDir);
+    resolveRuntimeToolContractMock.mockReturnValue(undefined);
+    const child = createSpawnMock();
+
+    const resultPromise = runScriptSpecialist(
+      { specialist: 'changelog-drafter', template: 'draft $name', variables: { name: 'release notes' } },
+      { loader: makeLoader(baseSpec as never) as never, projectDir: '.' },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    child.stdout.emit('data', Buffer.from(`${JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] } })}
+`));
+    child.emit('close', 0);
+
+    await resultPromise;
+
+    const spawnArgs: string[] = spawnMock.mock.calls[0][1];
+    expect(spawnArgs).not.toContain('--tools');
+    const extensionPaths = spawnArgs.filter((value, index, args) => args[index - 1] === '-e');
+    expect(extensionPaths).not.toContain(rediscoveredGitnexusPath);
+  });
+
+  it.each(['disabled', 'loaded_unhealthy', 'catalog_incompatible', 'not_installed'] as const)('does not load gitnexus extension for %s contract state on direct cli path', async (gitnexusStatus) => {
     const npmGlobalDir = mkdtempSync(join(tmpdir(), 'pi-global-'));
     const rediscoveredGitnexusPath = join(npmGlobalDir, 'pi-gitnexus');
     writeFileSync(rediscoveredGitnexusPath, '');
