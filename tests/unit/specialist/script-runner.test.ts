@@ -23,10 +23,11 @@ import {
 } from '../../../src/specialist/script-runner.js';
 import { createObservabilitySqliteClientAtPath } from '../../../src/specialist/observability-sqlite.js';
 
-const { spawnMock, spawnSyncMock, piSessionCreateMock, sqliteClients } = vi.hoisted(() => ({
+const { spawnMock, spawnSyncMock, piSessionCreateMock, resolveRuntimeToolContractMock, sqliteClients } = vi.hoisted(() => ({
   spawnMock: vi.fn(),
   spawnSyncMock: vi.fn(() => ({ status: 1, stdout: '', stderr: '' })),
   piSessionCreateMock: vi.fn(),
+  resolveRuntimeToolContractMock: vi.fn(() => undefined),
   sqliteClients: new Map<string, any>(),
 }));
 
@@ -38,7 +39,11 @@ vi.mock('node:child_process', () => ({
 vi.mock('../../../src/pi/session.js', () => ({
   PiAgentSession: { create: piSessionCreateMock },
   resolveGlobalNodeModulesDir: vi.fn(() => undefined),
-  resolvePermissionTools: vi.fn(() => undefined),
+  resolveRuntimeToolContract: resolveRuntimeToolContractMock,
+  resolvePermissionTools: vi.fn((options?: { level?: string }) => {
+    const contract = resolveRuntimeToolContractMock(options);
+    return contract?.toolsFlag;
+  }),
 }));
 
 vi.mock('../../../src/specialist/observability-sqlite.js', () => {
@@ -88,6 +93,8 @@ afterEach(() => {
   spawnMock.mockReset();
   spawnSyncMock.mockClear();
   piSessionCreateMock.mockReset();
+  resolveRuntimeToolContractMock.mockReset();
+  resolveRuntimeToolContractMock.mockReturnValue(undefined);
   sqliteClients.clear();
   delete process.env.SPECIALISTS_SCRIPT_PROMPT_LIMIT_BYTES;
   delete process.env.SPECIALISTS_SCRIPT_STDOUT_LIMIT_BYTES;
@@ -116,6 +123,41 @@ function createSpawnMock(): FakeChild {
   const child = new FakeChild();
   spawnMock.mockReturnValue(child as never);
   return child;
+}
+
+function createResolvedToolContract(overrides: Partial<{
+  effectiveTier: string;
+  toolsFlag: string;
+  toolsList: string[];
+  nativeTools: string[];
+  extensionTools: string[];
+  gitnexusStatus: 'available' | 'disabled' | 'loaded_unhealthy';
+  gitnexusTools: string[];
+}> = {}) {
+  const toolsList = overrides.toolsList ?? ['read', 'grep', 'find', 'ls', 'gitnexus_query'];
+  const nativeTools = overrides.nativeTools ?? ['read', 'grep', 'find', 'ls'];
+  const extensionTools = overrides.extensionTools ?? ['gitnexus_query'];
+  const gitnexusTools = overrides.gitnexusTools ?? extensionTools;
+  return {
+    effectiveTier: overrides.effectiveTier ?? 'READ_ONLY',
+    toolsFlag: overrides.toolsFlag ?? toolsList.join(','),
+    toolsList,
+    nativeTools,
+    extensionTools,
+    deniedNativeTools: [],
+    deniedNativesMode: 'soft' as const,
+    preferenceSignals: [],
+    downgradeReasons: [],
+    warnings: [],
+    extensions: {
+      gitnexus: {
+        status: overrides.gitnexusStatus ?? 'available',
+        packageName: 'pi-gitnexus',
+        packagePath: '/tmp/pi-gitnexus',
+        activeTools: gitnexusTools,
+      },
+    },
+  };
 }
 
 describe('script-runner compat guard', () => {
@@ -277,6 +319,127 @@ describe('runScriptSpecialist aliasing', () => {
     if (result.success) {
       expect(result.meta).toMatchObject({ specialist: 'changelog-drafter', requested_specialist: 'changelog-keeper', resolved_specialist: 'changelog-drafter' });
     }
+  });
+});
+
+describe('runScriptSpecialist resolved tool contract', () => {
+  it.each(['script', 'serve'] as const)('fails before launch when %s surface cannot satisfy required tool', async (surface) => {
+    resolveRuntimeToolContractMock.mockReturnValue(createResolvedToolContract({
+      toolsFlag: 'read,grep,find,ls',
+      toolsList: ['read', 'grep', 'find', 'ls'],
+      extensionTools: [],
+      gitnexusStatus: 'disabled',
+      gitnexusTools: [],
+    }));
+
+    const result = await runScriptSpecialist(
+      { specialist: 'changelog-drafter', variables: { name: 'release notes' } },
+      {
+        loader: makeLoader({
+          ...baseSpec,
+          specialist: {
+            ...baseSpec.specialist,
+            execution: {
+              ...baseSpec.specialist.execution,
+              extensions: { gitnexus: false },
+            },
+            capabilities: { required_tools: ['gitnexus_query'] },
+          },
+        } as never) as never,
+        projectDir: '.',
+        surface,
+      },
+    );
+
+    expect(result).toMatchObject({ success: false });
+    if (!result.success) {
+      expect(result.error).toContain('tool "gitnexus_query" missing from resolved runtime contract');
+    }
+    expect(resolveRuntimeToolContractMock).toHaveBeenCalledTimes(1);
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(piSessionCreateMock).not.toHaveBeenCalled();
+  });
+
+  it('reuses one resolved contract for prompt evidence and direct pi launch tools', async () => {
+    const resolvedToolContract = createResolvedToolContract({
+      toolsFlag: 'read,grep,find,ls',
+      toolsList: ['read', 'grep', 'find', 'ls'],
+      extensionTools: [],
+      gitnexusStatus: 'disabled',
+      gitnexusTools: [],
+    });
+    resolveRuntimeToolContractMock.mockReturnValue(resolvedToolContract);
+    const child = createSpawnMock();
+
+    const resultPromise = runScriptSpecialist(
+      { specialist: 'changelog-drafter', template: 'Contract follows\n\n$resolved_tool_contract', variables: { name: 'release notes' } },
+      { loader: makeLoader(baseSpec as never) as never, projectDir: '.' },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    child.stdout.emit('data', Buffer.from(`${JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] } })}
+`));
+    child.emit('close', 0);
+
+    await resultPromise;
+
+    expect(resolveRuntimeToolContractMock).toHaveBeenCalledTimes(1);
+    const prompt = child.stdin.write.mock.calls[0][0] as string;
+    expect(prompt).toContain('## Resolved Tool Contract');
+    expect(prompt).toContain('gitnexus: disabled');
+    const spawnArgs: string[] = spawnMock.mock.calls[0][1];
+    expect(spawnArgs).toEqual(expect.arrayContaining(['--tools', resolvedToolContract.toolsFlag]));
+  });
+
+  it('passes same resolved contract into PiAgentSession on write-capable script surface', async () => {
+    const resolvedToolContract = createResolvedToolContract({
+      effectiveTier: 'MEDIUM',
+      toolsFlag: 'read,grep,find,ls,bash,edit',
+      toolsList: ['read', 'grep', 'find', 'ls', 'bash', 'edit'],
+      nativeTools: ['read', 'grep', 'find', 'ls', 'bash', 'edit'],
+      extensionTools: [],
+      gitnexusStatus: 'disabled',
+      gitnexusTools: [],
+    });
+    resolveRuntimeToolContractMock.mockReturnValue(resolvedToolContract);
+    const session = {
+      start: vi.fn(async () => undefined),
+      prompt: vi.fn(async () => undefined),
+      waitForDone: vi.fn(async () => undefined),
+      getLastOutput: vi.fn(async () => 'ok'),
+      getStderr: vi.fn(() => ''),
+      close: vi.fn(async () => undefined),
+      kill: vi.fn(),
+    };
+    piSessionCreateMock.mockResolvedValue(session);
+
+    await runScriptSpecialist(
+      { specialist: 'service-knowledge-sync', template: 'Contract follows\n\n$resolved_tool_contract', variables: { name: 'release notes' } },
+      {
+        loader: makeLoader({
+          ...baseSpec,
+          specialist: {
+            ...baseSpec.specialist,
+            metadata: { name: 'service-knowledge-sync' },
+            execution: {
+              ...baseSpec.specialist.execution,
+              permission_required: 'MEDIUM',
+            },
+          },
+        } as never) as never,
+        projectDir: '.',
+        surface: 'script',
+        trust: { allowWriteCapable: true },
+      },
+    );
+
+    expect(resolveRuntimeToolContractMock).toHaveBeenCalledTimes(1);
+    expect(piSessionCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+      resolvedToolContract,
+    }));
+    const prompt = session.prompt.mock.calls[0][0] as string;
+    expect(prompt).toContain('## Resolved Tool Contract');
+    expect(prompt).toContain('effective tier: MEDIUM');
   });
 });
 
