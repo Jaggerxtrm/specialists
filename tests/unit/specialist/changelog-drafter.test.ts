@@ -7,14 +7,25 @@ import { compatGuard, runScriptSpecialist } from '../../../src/specialist/script
 
 const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
 
-vi.mock('node:child_process', () => ({
-  spawn: spawnMock,
-}));
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return {
+    ...actual,
+    spawn: spawnMock,
+  };
+});
 
 class FakeChild extends EventEmitter {
   stdout = new EventEmitter();
   stderr = new EventEmitter();
+  stdin = new EventEmitter() as EventEmitter & { write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> };
   kill = vi.fn();
+
+  constructor() {
+    super();
+    this.stdin.write = vi.fn();
+    this.stdin.end = vi.fn();
+  }
 }
 
 describe('changelog-drafter specialist', () => {
@@ -37,7 +48,12 @@ describe('changelog-drafter specialist', () => {
     spawnMock.mockReturnValue(child as never);
 
     const outcomePromise = runScriptSpecialist(
-      { specialist: 'changelog-drafter', requested_specialist: 'changelog-drafter', template: 'hello' },
+      {
+        specialist: 'changelog-drafter',
+        requested_specialist: 'changelog-drafter',
+        template: 'hello',
+        model_override: 'anthropic/claude-sonnet-4-6',
+      },
       { loader, projectDir: '.', trust: { allowSkills: false, allowLocalScripts: false } },
     );
 

@@ -924,12 +924,13 @@ describe('runScriptSpecialist skill forwarding', () => {
     await resultPromise;
 
     const spawnArgs: string[] = spawnMock.mock.calls[0][1];
-    expect(spawnArgs).not.toContain('--no-skills');
-    expect(spawnArgs).toEqual(expect.arrayContaining([
-      '--skill', skillOne,
-      skillTwo,
-      '/skills/inherited/SKILL.md',
-    ]));
+    const forwardedSkills = spawnArgs
+      .map((arg, index) => ({ arg, next: spawnArgs[index + 1] }))
+      .filter(({ arg }) => arg === '--skill')
+      .map(({ next }) => next);
+
+    expect(spawnArgs).toContain('--no-skills');
+    expect(forwardedSkills).toEqual([skillOne, skillTwo, '/skills/inherited/SKILL.md']);
     expect(spawnArgs.filter((arg) => arg === '--skill')).toHaveLength(3);
   });
 });
