@@ -110,7 +110,7 @@ function getTierTools(catalogs: readonly ToolCatalog[], name: ToolCatalogName, t
 }
 
 function getEffectiveDeniedTools(tools: readonly string[]): string[] {
-  return tools.filter(tool => GITNEXUS_HARD_DENY_TOOLS.has(tool));
+  return tools.filter(tool => tool !== 'read');
 }
 
 export function resolveEffectiveExtensionState(state: ExtensionState | undefined): EffectiveExtensionState {
@@ -141,6 +141,7 @@ export function resolveManifestTools(input: ResolverInput): ResolverResult {
   const attribution: ToolLayerAttribution[] = [];
   const downgradeReasons: string[] = [];
   const effectiveDenied = new Set(getEffectiveDeniedTools(policy.denied_natives_when_extension ?? []));
+  const hardDeniedTools = new Set(Array.from(effectiveDenied).filter(tool => GITNEXUS_HARD_DENY_TOOLS.has(tool)));
   const deniedNatives: string[] = [];
 
   const nativeTools = getTierTools(input.catalogs, 'native', input.tier);
@@ -157,7 +158,7 @@ export function resolveManifestTools(input: ResolverInput): ResolverResult {
   const hardDenyAllowed = policy.denied_natives_mode === 'hard' && effectiveGitnexusState.canEnforceHardDeny;
 
   const finalNativeTools = nativeTools.filter(tool => {
-    if (!effectiveDenied.has(tool)) return true;
+    if (!hardDeniedTools.has(tool)) return true;
     if (!hardDenyAllowed) return true;
     deniedNatives.push(tool);
     return false;
@@ -198,8 +199,8 @@ export function resolveManifestTools(input: ResolverInput): ResolverResult {
       tools: input.specialistOverride.denied_natives_when_extension ?? [],
     });
   }
-  if (!hardDenyAllowed && policy.denied_natives_mode === 'hard' && effectiveDenied.size > 0) {
-    const restoredNatives = nativeTools.filter(tool => effectiveDenied.has(tool));
+  if (!hardDenyAllowed && policy.denied_natives_mode === 'hard' && hardDeniedTools.size > 0) {
+    const restoredNatives = nativeTools.filter(tool => hardDeniedTools.has(tool));
     const reason = effectiveGitnexusState.status;
     warnings.push(`hard deny restored native fallback: ${reason}`);
     downgradeReasons.push(`restored native fallback for ${restoredNatives.join(',') || '(none)'} due to ${reason}`);

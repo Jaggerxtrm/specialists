@@ -93,6 +93,51 @@ describe('manifest resolver', () => {
     expect(resolved.downgradeReasons).toEqual([]);
   });
 
+  it('keeps explicit soft deny write in preference signals while native read stays available', async () => {
+    const catalogs = await loadCatalogs();
+    const defaults = await loadCatalogDefaults();
+    const resolved = resolveManifestTools({
+      tier: 'HIGH',
+      catalogs,
+      catalogDefaultOverrides: defaults,
+      specialistOverride: {
+        denied_natives_when_extension: ['write'],
+        denied_natives_mode: 'soft',
+      },
+      extensionState: makeHealthyState(),
+    });
+
+    expect(resolved.toolsList).toContain('read');
+    expect(resolved.toolsList).toContain('write');
+    expect(resolved.deniedNatives).toEqual([]);
+    expect(resolved.preferenceSignals).toEqual(['soft deny prefers extension tools for: grep,find,ls,write']);
+  });
+
+  it('soft deny keeps native tools when replacement extension is unhealthy', async () => {
+    const catalogs = await loadCatalogs();
+    const resolved = resolveManifestTools({
+      tier: 'READ_ONLY',
+      catalogs,
+      manifestPolicy: {
+        permissions: {
+          READ_ONLY: {
+            denied_natives_when_extension: ['grep', 'find', 'ls'],
+            denied_natives_mode: 'soft',
+          },
+        },
+      },
+      extensionState: {
+        gitnexus: { health: 'loaded_unhealthy' as const },
+      },
+    });
+
+    expect(resolved.toolsList).toEqual(['read', 'grep', 'find', 'ls']);
+    expect(resolved.toolsList).not.toContain('gitnexus_query');
+    expect(resolved.deniedNatives).toEqual([]);
+    expect(resolved.downgradeReasons).toEqual([]);
+    expect(resolved.warnings).toContain('gitnexus tools excluded by extension state: loaded_unhealthy');
+  });
+
   it('hard deny strips natives only when replacement extensions are healthy', async () => {
     const catalogs = await loadCatalogs();
     const policy = {

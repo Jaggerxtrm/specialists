@@ -96,12 +96,11 @@ function getToolsArg(args: readonly string[]): string | undefined {
   return toolsIdx >= 0 ? args[toolsIdx + 1] : undefined;
 }
 
-async function withGitnexusInstall<T>(version: string, run: (npmGlobalDir: string) => Promise<T>): Promise<T> {
+async function withNpmGlobal<T>(setup: (npmGlobalDir: string) => void, run: (npmGlobalDir: string) => Promise<T>): Promise<T> {
   const npmGlobalDir = mkdtempSync(join(tmpdir(), 'pi-npm-global-'));
   const prevGlobalDir = process.env.PI_NPM_GLOBAL_DIR;
   try {
-    mkdirSync(join(npmGlobalDir, 'pi-gitnexus'), { recursive: true });
-    writeFileSync(join(npmGlobalDir, 'pi-gitnexus', 'package.json'), JSON.stringify({ name: 'pi-gitnexus', version }));
+    setup(npmGlobalDir);
     process.env.PI_NPM_GLOBAL_DIR = npmGlobalDir;
     return await run(npmGlobalDir);
   } finally {
@@ -109,6 +108,13 @@ async function withGitnexusInstall<T>(version: string, run: (npmGlobalDir: strin
     else process.env.PI_NPM_GLOBAL_DIR = prevGlobalDir;
     rmSync(npmGlobalDir, { recursive: true, force: true });
   }
+}
+
+async function withGitnexusInstall<T>(version: string, run: (npmGlobalDir: string) => Promise<T>): Promise<T> {
+  return withNpmGlobal(npmGlobalDir => {
+    mkdirSync(join(npmGlobalDir, 'pi-gitnexus'), { recursive: true });
+    writeFileSync(join(npmGlobalDir, 'pi-gitnexus', 'package.json'), JSON.stringify({ name: 'pi-gitnexus', version }));
+  }, run);
 }
 
 
@@ -676,6 +682,34 @@ describe('PiAgentSession', () => {
       expect(resolvedToolNames).not.toContain('grep');
       expect(resolvedToolNames).not.toContain('find');
       expect(resolvedToolNames).not.toContain('ls');
+    });
+  });
+
+  it('emits resolved --tools before injecting healthy GitNexus extension', async () => {
+    await withGitnexusInstall('0.6.1', async npmGlobalDir => {
+      const session = await PiAgentSession.create({ model: 'gemini', permissionLevel: 'LOW' });
+      await session.start();
+
+      const args: string[] = mockSpawn.mock.calls[0][1];
+      const toolsIndex = args.indexOf('--tools');
+      const extensionIndex = args.indexOf(join(npmGlobalDir, 'pi-gitnexus'));
+      expect(toolsIndex).toBeGreaterThan(-1);
+      expect(extensionIndex).toBeGreaterThan(toolsIndex);
+      expect(getToolsArg(args)?.split(',')).toEqual(expect.arrayContaining(['read', 'bash', 'gitnexus_query']));
+    });
+  });
+
+  it('suppresses GitNexus with unhealthy package metadata before --tools emission', async () => {
+    await withNpmGlobal(npmGlobalDir => {
+      mkdirSync(join(npmGlobalDir, 'pi-gitnexus'), { recursive: true });
+      writeFileSync(join(npmGlobalDir, 'pi-gitnexus', 'package.json'), JSON.stringify({ name: 'pi-gitnexus' }));
+    }, async npmGlobalDir => {
+      const session = await PiAgentSession.create({ model: 'gemini', permissionLevel: 'LOW' });
+      await session.start();
+
+      const args: string[] = mockSpawn.mock.calls[0][1];
+      expect(getToolsArg(args)?.split(',')).toEqual(['read', 'grep', 'find', 'ls', 'bash']);
+      expect(args).not.toContain(join(npmGlobalDir, 'pi-gitnexus'));
     });
   });
 
