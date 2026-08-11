@@ -827,6 +827,14 @@ type SnapshotReaderFs = {
   constants: Pick<typeof fsConstants, 'O_RDONLY' | 'O_NOFOLLOW'>;
 };
 
+function resolveOpenedDescriptorPath(fd: number, fsApi: SnapshotReaderFs): string | null {
+  try {
+    return fsApi.realpathSync.native(`/proc/self/fd/${fd}`);
+  } catch {
+    return null;
+  }
+}
+
 const snapshotReaderFs: SnapshotReaderFs = {
   openSync,
   fstatSync,
@@ -1222,8 +1230,10 @@ export function readSafeSnapshotFile(
       const stat = fsApi.fstatSync(fd);
       if (!stat.isFile() || stat.size > maxBytes) return result;
 
-      const realFilePath = fsApi.realpathSync.native(candidatePath);
-      const fileContained = realFilePath === resolvedCwd || realFilePath.startsWith(`${resolvedCwd}${sep}`);
+      const openedPath = resolveOpenedDescriptorPath(fd, fsApi);
+      if (!openedPath) return result;
+
+      const fileContained = openedPath === resolvedCwd || openedPath.startsWith(`${resolvedCwd}${sep}`);
       if (!fileContained) return result;
 
       const buffer = Buffer.alloc(stat.size);

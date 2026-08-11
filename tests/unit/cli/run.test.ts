@@ -457,6 +457,66 @@ describe('run CLI', () => {
     expect(result).toEqual({ ok: false, output: '' });
   });
 
+  it('returns unavailable when opened descriptor resolves outside worktree', () => {
+    const openSyncMock = vi.fn(() => 11);
+    const fstatSyncMock = vi.fn(() => ({ isFile: () => true, size: 4 }));
+    const readSyncMock = vi.fn((_fd, buffer: Buffer) => {
+      buffer.write('safe');
+      return 4;
+    });
+    const closeSyncMock = vi.fn();
+    const realpathNativeMock = vi.fn((value: string) => {
+      if (value === '/repo') return '/repo';
+      if (value === '/repo/src') return '/repo/src';
+      if (value === '/proc/self/fd/11') return '/tmp/escape/scan.ts';
+      return value;
+    });
+
+    const result = readSafeSnapshotFile('/repo', 'src/scan.ts', 1024, {
+      openSync: openSyncMock,
+      fstatSync: fstatSyncMock as typeof fs.fstatSync,
+      readSync: readSyncMock as typeof fs.readSync,
+      closeSync: closeSyncMock,
+      realpathSync: { native: realpathNativeMock } as typeof fs.realpathSync,
+      constants: { O_RDONLY: 0, O_NOFOLLOW: 1 },
+    });
+
+    expect(result).toEqual({ ok: false, output: '' });
+    expect(readSyncMock).not.toHaveBeenCalled();
+    expect(closeSyncMock).toHaveBeenCalledWith(11);
+  });
+
+  it('returns unavailable when descriptor attestation is unavailable', () => {
+    const openSyncMock = vi.fn(() => 11);
+    const fstatSyncMock = vi.fn(() => ({ isFile: () => true, size: 4 }));
+    const readSyncMock = vi.fn((_fd, buffer: Buffer) => {
+      buffer.write('safe');
+      return 4;
+    });
+    const closeSyncMock = vi.fn(() => {
+      throw new Error('close failed');
+    });
+    const realpathNativeMock = vi.fn((value: string) => {
+      if (value === '/repo') return '/repo';
+      if (value === '/repo/src') return '/repo/src';
+      if (value === '/proc/self/fd/11') throw new Error('procfs unavailable');
+      return value;
+    });
+
+    const result = readSafeSnapshotFile('/repo', 'src/scan.ts', 1024, {
+      openSync: openSyncMock,
+      fstatSync: fstatSyncMock as typeof fs.fstatSync,
+      readSync: readSyncMock as typeof fs.readSync,
+      closeSync: closeSyncMock,
+      realpathSync: { native: realpathNativeMock } as typeof fs.realpathSync,
+      constants: { O_RDONLY: 0, O_NOFOLLOW: 1 },
+    });
+
+    expect(result).toEqual({ ok: false, output: '' });
+    expect(readSyncMock).not.toHaveBeenCalled();
+    expect(closeSyncMock).toHaveBeenCalledWith(11);
+  });
+
   it('returns unavailable when closeSync fails after successful read', () => {
     const openSyncMock = vi.fn(() => 11);
     const fstatSyncMock = vi.fn(() => ({ isFile: () => true, size: 4 }));
@@ -467,7 +527,12 @@ describe('run CLI', () => {
     const closeSyncMock = vi.fn(() => {
       throw new Error('close failed');
     });
-    const realpathNativeMock = vi.fn((value: string) => value === '/repo' ? '/repo' : value);
+    const realpathNativeMock = vi.fn((value: string) => {
+      if (value === '/repo') return '/repo';
+      if (value === '/repo/src') return '/repo/src';
+      if (value === '/proc/self/fd/11') return '/repo/src/scan.ts';
+      return value;
+    });
 
     const result = readSafeSnapshotFile('/repo', 'src/scan.ts', 1024, {
       openSync: openSyncMock,
