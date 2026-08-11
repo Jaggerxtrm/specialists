@@ -12,7 +12,7 @@ vi.mock('node:child_process', () => ({
 }));
 
 import { execFileSync, spawn } from 'node:child_process';
-import { PiAgentSession, StallTimeoutError, validateWriteToolPathAgainstBoundary } from '../../../src/pi/session.js';
+import { PiAgentSession, StallTimeoutError, resolveRuntimeToolContract, validateWriteToolPathAgainstBoundary } from '../../../src/pi/session.js';
 
 const mockSpawn = spawn as ReturnType<typeof vi.fn>;
 const mockExecFileSync = execFileSync as ReturnType<typeof vi.fn>;
@@ -696,6 +696,24 @@ describe('PiAgentSession', () => {
       expect(toolsIndex).toBeGreaterThan(-1);
       expect(extensionIndex).toBeGreaterThan(toolsIndex);
       expect(getToolsArg(args)?.split(',')).toEqual(expect.arrayContaining(['read', 'bash', 'gitnexus_query']));
+    });
+  });
+
+  it('resolveRuntimeToolContract reports healthy extension state and exact --tools contract', async () => {
+    await withGitnexusInstall('0.6.1', async () => {
+      const contract = resolveRuntimeToolContract({ level: 'READ_ONLY' });
+      expect(contract?.toolsFlag.split(',')).toEqual(expect.arrayContaining(['read', 'gitnexus_query', 'gitnexus_context']));
+      expect(contract?.toolsFlag.split(',')).not.toContain('grep');
+      expect(contract?.extensions.gitnexus?.status).toBe('available');
+    });
+  });
+
+  it('resolveRuntimeToolContract reports disabled special case for bare-style opt-out', async () => {
+    await withGitnexusInstall('0.6.1', async () => {
+      const contract = resolveRuntimeToolContract({ level: 'READ_ONLY', excludeExtensions: ['pi-gitnexus'] });
+      expect(contract?.toolsFlag).toBe('read,grep,find,ls');
+      expect(contract?.extensions.gitnexus?.status).toBe('disabled');
+      expect(contract?.downgradeReasons).toEqual(['restored native fallback for grep,find,ls due to disabled']);
     });
   });
 

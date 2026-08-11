@@ -44,7 +44,8 @@ import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, resolve, sep, join, dirname } from 'node:path';
 import { mapSpecialistBackend, getProviderArgs } from './backendMap.js';
 import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
-import { resolveEffectiveExtensionState, resolveManifestTools, type ExtensionState, type ManifestPolicy, type ManifestPolicyTier } from '../specialist/manifest-resolver.js';
+import { resolveEffectiveExtensionState, type ExtensionState, type ManifestPolicy, type ManifestPolicyTier, type ToolCatalog } from '../specialist/manifest-resolver.js';
+import { buildResolvedToolContract, type ResolvedToolContract } from '../specialist/resolved-tool-contract.js';
 import { loadToolCatalogIndex, type ToolCatalogIndex } from '../specialist/tool-catalog.js';
 
 const TEST_COMMAND_STALL_TIMEOUT_MS = 300_000;
@@ -120,6 +121,8 @@ export interface PiSessionOptions {
   env?: Record<string, string>;
   /** npm extension package names to skip when assembling pi -e args */
   excludeExtensions?: string[];
+  /** Shared resolver-backed runtime contract computed before launch. */
+  resolvedToolContract?: ResolvedToolContract;
   /** Called with each text token as it arrives */
   onToken?: (delta: string) => void;
   /** Called with each thinking token */
@@ -244,12 +247,12 @@ function resolveGitnexusRuntime(options: { catalogIndex: ToolCatalogIndex; exclu
   };
 }
 
-export function resolvePermissionTools(options: {
+export function resolveRuntimeToolContract(options: {
   level?: string;
   specialistName?: string;
   specialistPermissions?: ManifestPolicy['permissions'];
   excludeExtensions?: readonly string[];
-}): string | undefined {
+}): ResolvedToolContract | undefined {
   const catalogIndex = loadSharedToolCatalogIndex();
   if (!catalogIndex) return undefined;
 
@@ -261,9 +264,10 @@ export function resolvePermissionTools(options: {
     catalogIndex,
     excludeExtensions: options.excludeExtensions,
   });
-  return resolveManifestTools({
+
+  return buildResolvedToolContract({
     tier,
-    catalogs: catalogIndex.catalogs as unknown as Parameters<typeof resolveManifestTools>[0]['catalogs'],
+    catalogs: catalogIndex.catalogs as unknown as readonly ToolCatalog[],
     catalogDefaultOverrides: catalogIndex.default_overrides,
     manifestPolicy: options.specialistPermissions ? { permissions: options.specialistPermissions } : undefined,
     specialistOverride,
@@ -273,7 +277,22 @@ export function resolvePermissionTools(options: {
     extensionState: {
       gitnexus: gitnexusRuntime.extensionState,
     },
-  }).tools || undefined;
+    extensionPackages: {
+      gitnexus: {
+        packageName: gitnexusRuntime.packageName,
+        packagePath: gitnexusRuntime.packagePath,
+      },
+    },
+  });
+}
+
+export function resolvePermissionTools(options: {
+  level?: string;
+  specialistName?: string;
+  specialistPermissions?: ManifestPolicy['permissions'];
+  excludeExtensions?: readonly string[];
+}): string | undefined {
+  return resolveRuntimeToolContract(options)?.toolsFlag || undefined;
 }
 
 export function resolveGlobalNodeModulesDir(): string | undefined {
@@ -690,13 +709,13 @@ export class PiAgentSession {
     ];
 
     // Enforce permission level via --tools flag
-    const toolsFlag = resolvePermissionTools({
+    const resolvedToolContract = this.options.resolvedToolContract ?? resolveRuntimeToolContract({
       level: this.options.permissionLevel,
       specialistName: this.options.specialistName,
       specialistPermissions: this.options.specialistPermissions,
       excludeExtensions: this.options.excludeExtensions,
     });
-    if (toolsFlag) args.push('--tools', toolsFlag);
+    if (resolvedToolContract?.toolsFlag) args.push('--tools', resolvedToolContract.toolsFlag);
 
     // Thinking level (models that don't support it ignore the flag)
     if (this.options.thinkingLevel) {
@@ -732,15 +751,20 @@ export class PiAgentSession {
     // Serena extension injection was retired with the K4 Serena retirement
     // (unitAI-e67up.8): legacy `excludeExtensions: ['pi-serena-tools']` entries
     // remain accepted and simply have nothing to exclude.
-    const catalogIndex = loadSharedToolCatalogIndex();
-    if (catalogIndex) {
-      const gitnexusRuntime = resolveGitnexusRuntime({
-        catalogIndex,
-        excludeExtensions: this.options.excludeExtensions,
-      });
-      const effectiveGitnexusState = resolveEffectiveExtensionState(gitnexusRuntime.extensionState);
-      if (effectiveGitnexusState.includeTools && gitnexusRuntime.packagePath && existsSync(gitnexusRuntime.packagePath)) {
-        args.push('-e', gitnexusRuntime.packagePath);
+    const gitnexusContract = resolvedToolContract?.extensions.gitnexus;
+    if (gitnexusContract?.status === 'available' && gitnexusContract.packagePath && existsSync(gitnexusContract.packagePath)) {
+      args.push('-e', gitnexusContract.packagePath);
+    } else if (!resolvedToolContract) {
+      const catalogIndex = loadSharedToolCatalogIndex();
+      if (catalogIndex) {
+        const gitnexusRuntime = resolveGitnexusRuntime({
+          catalogIndex,
+          excludeExtensions: this.options.excludeExtensions,
+        });
+        const effectiveGitnexusState = resolveEffectiveExtensionState(gitnexusRuntime.extensionState);
+        if (effectiveGitnexusState.includeTools && gitnexusRuntime.packagePath && existsSync(gitnexusRuntime.packagePath)) {
+          args.push('-e', gitnexusRuntime.packagePath);
+        }
       }
     }
 

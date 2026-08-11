@@ -15,7 +15,7 @@ import { SpecialistRunner } from '../../../src/specialist/runner.js';
 import { Supervisor } from '../../../src/specialist/supervisor.js';
 import { initSchema } from '../../../src/specialist/observability-sqlite.js';
 import { resolveObservabilityDbLocation } from '../../../src/specialist/observability-db.js';
-import { buildInjectedReviewerDiffVariables, buildInjectedWriterDiffVariables, buildTmuxLiveFeedCommand, resolveBasePin, run, startEventTailer, type RunArgs } from '../../../src/cli/run.js';
+import { buildInjectedObligationsDiffVariables, buildInjectedReviewerDiffVariables, buildInjectedWriterDiffVariables, buildTmuxLiveFeedCommand, resolveBasePin, run, startEventTailer, type RunArgs } from '../../../src/cli/run.js';
 
 function makeRunArgs(overrides: Partial<RunArgs> = {}): RunArgs {
   return {
@@ -373,6 +373,32 @@ describe('run CLI', () => {
       reviewer_diff_files: 'src/cli/run.ts',
     }));
     expect(variables.reviewer_diff_files).not.toContain('.xtrm/SKILL.md');
+  });
+
+  it('builds obligations_diff from same injected diff source without requiring shell reconstruction', () => {
+    const remoteDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    childProcess.execSync('git init --bare', { cwd: remoteDir });
+    childProcess.execSync('git init -b main', { cwd: repoDir });
+    childProcess.execSync('git config user.email test@example.com', { cwd: repoDir });
+    childProcess.execSync('git config user.name Test User', { cwd: repoDir });
+    childProcess.execSync('mkdir -p src .xtrm', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/src/scan.ts`, 'base\n');
+    childProcess.execSync('git add src/scan.ts && git commit -m base', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git push -u origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git fetch origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main', { cwd: repoDir });
+    childProcess.execSync('git checkout -b feature', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/src/scan.ts`, 'base\n// TODO(unitAI-abc12): tracked\n');
+    childProcess.execSync('git add src/scan.ts && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    const variables = buildInjectedObligationsDiffVariables(repoDir);
+
+    expect(variables.obligations_diff).toContain('## Obligations Diff Evidence');
+    expect(variables.obligations_diff).toContain('branch-vs-base diff');
+    expect(variables.obligations_diff).toContain('### Diff hunks');
+    expect(variables.obligations_diff).toContain('+// TODO(unitAI-abc12): tracked');
   });
 
   it('builds writer_diff from the same worktree diff source as reviewer context', () => {

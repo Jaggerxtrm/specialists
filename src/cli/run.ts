@@ -915,6 +915,25 @@ export function buildInjectedWriterDiffVariables(cwd: string, maxFiles = 20): Re
   };
 }
 
+export function buildInjectedObligationsDiffVariables(cwd: string, maxFiles = 20): Record<string, string> {
+  const context = buildInjectedDiffContext(cwd, maxFiles);
+  if (!context) return {};
+
+  return {
+    obligations_diff: [
+      '## Obligations Diff Evidence',
+      `- source: ${context.source}`,
+      `- changed files: ${context.files.split('\n').filter(Boolean).length}`,
+      '',
+      '### Diff stat',
+      context.stat,
+      '',
+      '### Diff hunks',
+      context.hunks,
+    ].join('\n'),
+  };
+}
+
 // ── Handler ────────────────────────────────────────────────────────────────────
 export async function run(): Promise<void> {
   const args = await parseArgs(process.argv.slice(3));
@@ -1174,12 +1193,16 @@ export async function run(): Promise<void> {
     const reviewedJobId = extractReviewedJobIdOverride(prompt) ?? args.reuseJobId;
     const injectedReviewerDiffVariables = workingDirectory && args.name === 'reviewer' ? buildInjectedReviewerDiffVariables(workingDirectory) : {};
     const injectedWriterDiffVariables = workingDirectory && args.name === 'seconder' ? buildInjectedWriterDiffVariables(workingDirectory) : {};
+    const injectedObligationsDiffVariables = workingDirectory && args.name === 'obligations-scanner'
+      ? buildInjectedObligationsDiffVariables(workingDirectory)
+      : {};
     variables = {
       ...(variables ?? {}),
       reviewed_job_id: reviewedJobId,
       reused_worktree_awareness: buildReusedWorktreeAwarenessBlock({ reusedFromJobId: args.reuseJobId, worktreeOwnerJobId }),
       ...injectedReviewerDiffVariables,
       ...injectedWriterDiffVariables,
+      ...injectedObligationsDiffVariables,
     };
   }
 

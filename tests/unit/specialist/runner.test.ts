@@ -402,6 +402,45 @@ describe('SpecialistRunner', () => {
     }
   });
 
+  it('injects resolved tool contract into prompt variables before launch', async () => {
+    const sessionFactory = vi.fn().mockResolvedValue(mockSession);
+    const runner = new SpecialistRunner({
+      loader: makeLoader(
+        { extensions: { gitnexus: false } },
+        'auto',
+        { task_template: 'Contract follows\n\n$resolved_tool_contract' },
+      ),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory,
+    });
+
+    await runner.run({ name: 'test-spec', prompt: 'do thing' });
+
+    const promptArg = mockSession.prompt.mock.calls.at(-1)?.[0] as string;
+    expect(promptArg).toContain('## Resolved Tool Contract');
+    expect(promptArg).toContain('effective tier: READ_ONLY');
+    expect(promptArg).toContain('gitnexus: disabled');
+  });
+
+  it('fails fast when required tool is impossible under resolved runtime contract', async () => {
+    const runner = new SpecialistRunner({
+      loader: makeLoader(
+        { extensions: { gitnexus: false } },
+        'auto',
+        {},
+        { capabilities: { required_tools: ['gitnexus_query'] } },
+      ),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory: vi.fn().mockResolvedValue(mockSession),
+    });
+
+    await expect(runner.run({ name: 'test-spec', prompt: 'do thing' })).rejects.toThrow(
+      'tool "gitnexus_query" missing from resolved runtime contract',
+    );
+  });
+
   it('injects markdown output contract when response_format=markdown', async () => {
     const sessionFactory = vi.fn().mockResolvedValue(mockSession);
     const runner = new SpecialistRunner({
@@ -606,7 +645,7 @@ describe('SpecialistRunner', () => {
       sessionFactory: vi.fn().mockResolvedValue(mockSession),
     });
 
-    await runner.run({ name: 'test-spec', prompt: 'analyze this' }, undefined, undefined, undefined, undefined, undefined, undefined, undefined, onResumeReady);
+    await runner.run({ name: 'test-spec', prompt: 'analyze this' }, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, onResumeReady);
 
     expect(onResumeReady).toHaveBeenCalledOnce();
     expect(mockSession.close).not.toHaveBeenCalled();
@@ -621,7 +660,7 @@ describe('SpecialistRunner', () => {
       sessionFactory: vi.fn().mockResolvedValue(mockSession),
     });
 
-    await runner.run({ name: 'test-spec', prompt: 'analyze this', noKeepAlive: true }, undefined, undefined, undefined, undefined, undefined, undefined, undefined, onResumeReady);
+    await runner.run({ name: 'test-spec', prompt: 'analyze this', noKeepAlive: true }, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, onResumeReady);
 
     expect(onResumeReady).not.toHaveBeenCalled();
     expect(mockSession.close).toHaveBeenCalledOnce();
@@ -1159,7 +1198,7 @@ describe('SpecialistRunner', () => {
       const reviewerConfig = JSON.parse(readFileSync(reviewerConfigPath, 'utf8'));
       const systemPrompt = reviewerConfig?.specialist?.prompt?.system ?? '';
       expect(systemPrompt).toContain('## AUTHORITATIVE REVIEW CONTEXT');
-      expect(systemPrompt).toContain('Evidence precedence, highest to lowest');
+      expect(systemPrompt).toContain('Evidence precedence for lineage, requirements, and evidence availability, highest to lowest');
       expect(systemPrompt).toContain('Missing local artifacts MUST NOT trigger FAIL by itself.');
       expect(systemPrompt).toContain('authoritative_lineage_present: yes|no');
       expect(systemPrompt).toContain('authoritative_result_present: yes|no');

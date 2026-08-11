@@ -5,6 +5,7 @@ import { buildBeadBoundaryInstruction, renderTaskPrompt } from './task-prompt.js
 import {
   PiAgentSession,
   SessionKilledError,
+  resolveRuntimeToolContract,
   type PiSessionOptions,
   type SessionMetricEvent,
   type SessionRunMetrics,
@@ -17,6 +18,7 @@ import { createObservabilitySqliteClient } from './observability-sqlite.js';
 import type { TimelineEvent, TimelineEventRunComplete } from './timeline-events.js';
 import { resolveModelChain } from './model-chain.js';
 import type { RuntimeOriginV1 } from './runtime-origin.js';
+import { formatResolvedToolContract, type ResolvedToolContract } from './resolved-tool-contract.js';
 
 export interface RunOptions {
   name: string;
@@ -261,6 +263,7 @@ function isToolAvailable(tool: string, permissionLevel: string): boolean {
 export function validateBeforeRun(
   spec: { specialist: { skills?: { paths?: string[]; scripts?: Array<{ run?: string; path?: string; phase: string; inject_output: boolean }> }; capabilities?: { external_commands?: string[]; required_tools?: string[] } } },
   permissionLevel: string,
+  resolvedToolContract?: ResolvedToolContract,
 ): void {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -314,6 +317,12 @@ export function validateBeforeRun(
     if (!isToolAvailable(tool, permissionLevel)) {
       errors.push(
         `  ✗ capabilities.required_tools: tool "${tool}" requires higher permission than "${permissionLevel}"`,
+      );
+      continue;
+    }
+    if (resolvedToolContract && !resolvedToolContract.toolsList.some((availableTool) => availableTool.toLowerCase() === tool.toLowerCase())) {
+      errors.push(
+        `  ✗ capabilities.required_tools: tool "${tool}" missing from resolved runtime contract (${resolvedToolContract.toolsFlag || '(none)'})`,
       );
     }
   }
@@ -1006,14 +1015,6 @@ export class SpecialistRunner {
     const initialModel = selectAvailableModel(modelChain, circuitBreaker);
     const fallbackUsed = initialModel !== primaryModel;
 
-    await hooks.emit('pre_render', invocationId, metadata.name, metadata.version, {
-      variables_keys: Object.keys(options.variables ?? {}),
-      backend_resolved: initialModel,
-      fallback_used: fallbackUsed,
-      circuit_breaker_state: circuitBreaker.getState(initialModel),
-      scope: 'project',
-    });
-
     const permissionLevel = options.autonomyLevel ?? execution.permission_required;
     const effectiveKeepAlive = options.noKeepAlive
       ? false
@@ -1023,9 +1024,28 @@ export class SpecialistRunner {
     const excludeExtensions = [
       execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
     ].filter((value): value is string => Boolean(value));
+    const resolvedToolContract = resolveRuntimeToolContract({
+      level: permissionLevel,
+      specialistName: options.specialistName ?? metadata.name,
+      specialistPermissions: options.specialistPermissions ?? (spec.specialist.permissions as PiSessionOptions['specialistPermissions']),
+      excludeExtensions,
+    });
+    const resolvedToolContractBlock = resolvedToolContract ? formatResolvedToolContract(resolvedToolContract) : '';
+    const promptVariables = {
+      ...(options.variables ?? {}),
+      ...(resolvedToolContractBlock ? { resolved_tool_contract: resolvedToolContractBlock } : {}),
+    };
+
+    await hooks.emit('pre_render', invocationId, metadata.name, metadata.version, {
+      variables_keys: Object.keys(promptVariables),
+      backend_resolved: initialModel,
+      fallback_used: fallbackUsed,
+      circuit_breaker_state: circuitBreaker.getState(initialModel),
+      scope: 'project',
+    });
 
     // Pre-run validation: check scripts exist, commands/tools are available, shebang typos
-    validateBeforeRun(spec, permissionLevel);
+    validateBeforeRun(spec, permissionLevel, resolvedToolContract);
 
     // Pre-phase scripts/commands run locally before the pi session starts.
     // Their stdout is captured and injected into the task via $pre_script_output.
@@ -1065,7 +1085,7 @@ export class SpecialistRunner {
       completedBlockers,
       fallbackPrompt: () => this.resolvePromptWithBeadContext(options, runCwd, beadsClient),
       preScriptOutput,
-      variables: options.variables,
+      variables: promptVariables,
       reusedFromJobId: options.reusedFromJobId,
       worktreeOwnerJobId: options.worktreeOwnerJobId,
       gitnexusSummary: gitnexusSummary || undefined,
@@ -1387,6 +1407,7 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
           permissionLevel,
           specialistName: options.specialistName ?? metadata.name,
           specialistPermissions: options.specialistPermissions ?? (spec.specialist.permissions as PiSessionOptions['specialistPermissions']),
+          resolvedToolContract,
           stallTimeoutMs: execution.stall_timeout_ms,
           cwd: runCwd,
           worktreeBoundary: options.worktreeBoundary,

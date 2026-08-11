@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import type { ResolvedToolContract } from '../../../src/specialist/resolved-tool-contract.js';
 
 const CATALOG = {
   catalog: 'gitnexus',
@@ -42,6 +43,21 @@ describe('resolution diagnostics', () => {
 
   it('formats resolved report with attribution and tools', async () => {
     const { classifyExtensionProbe, formatResolvedConfigReport } = await loadDiagnostics();
+    const toolContract: ResolvedToolContract = {
+      effectiveTier: 'LOW',
+      toolsFlag: 'read,ls,gitnexus_query',
+      toolsList: ['read', 'ls', 'gitnexus_query'],
+      nativeTools: ['read', 'ls'],
+      extensionTools: ['gitnexus_query'],
+      deniedNativeTools: [],
+      deniedNativesMode: 'soft',
+      preferenceSignals: [],
+      downgradeReasons: ['restored native fallback for read due to loaded_unhealthy'],
+      warnings: [],
+      extensions: {
+        gitnexus: { status: 'available', packageName: 'pi-gitnexus', activeTools: ['gitnexus_query'] },
+      },
+    };
     const output = formatResolvedConfigReport({
       specialist: 'executor',
       manifest: { specialist: { metadata: { name: 'executor' } } },
@@ -58,12 +74,15 @@ describe('resolution diagnostics', () => {
         warnings: [],
         attribution: [{ layer: 'tier_policy', source: 'manifest policy', tools: ['read', 'ls'] }],
       },
+      toolContract,
     });
 
     expect(output).toContain('specialist: executor');
     expect(output).toContain('layer attribution:');
     expect(output).toContain('downgrade reasons: restored native fallback for read due to loaded_unhealthy');
     expect(output).toContain('--tools: read,ls,gitnexus_query');
+    expect(output).toContain('resolved tool contract:');
+    expect(output).toContain('actual native tools: read, ls');
   });
 
   it('loadResolvedConfigReport suppresses disabled GitNexus tools for bare', async () => {
@@ -81,8 +100,8 @@ describe('resolution diagnostics', () => {
         catalogsPath: join(process.cwd(), 'config', 'catalog', 'index.json'),
       });
 
-      expect(report.resolver.toolsList).toEqual(['read', 'grep', 'find', 'ls']);
-      expect(report.resolver.toolsList).not.toContain('gitnexus_query');
+      expect(report.toolContract.toolsList).toEqual(['read', 'grep', 'find', 'ls']);
+      expect(report.toolContract.toolsList).not.toContain('gitnexus_query');
     } finally {
       rmSync(npmGlobalDir, { recursive: true, force: true });
     }
@@ -104,8 +123,8 @@ describe('resolution diagnostics', () => {
       });
 
       expect(report.catalogCompatibility.join(' | ')).toContain('version mismatch: installed 9.9.9 != catalog 0.6.1');
-      expect(report.resolver.toolsList).toEqual(['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write']);
-      expect(report.resolver.toolsList).not.toContain('gitnexus_query');
+      expect(report.toolContract.toolsList).toEqual(['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write']);
+      expect(report.toolContract.toolsList).not.toContain('gitnexus_query');
     } finally {
       rmSync(npmGlobalDir, { recursive: true, force: true });
     }

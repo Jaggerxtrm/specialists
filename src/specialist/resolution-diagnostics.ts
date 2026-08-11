@@ -13,6 +13,7 @@ import {
   type ToolCatalogName,
   type ToolTier,
 } from './manifest-resolver.js';
+import { buildResolvedToolContract, formatResolvedToolContract, type ResolvedToolContract } from './resolved-tool-contract.js';
 
 const require = createRequire(import.meta.url);
 
@@ -62,6 +63,7 @@ export interface ResolvedConfigReport {
   catalogs: readonly CatalogRecord[];
   extensionAvailability: readonly ExtensionProbe[];
   resolver: ResolverResult;
+  toolContract: ResolvedToolContract;
   catalogCompatibility: readonly string[];
 }
 
@@ -177,6 +179,15 @@ export async function loadResolvedConfigReport(args: {
       : undefined,
     extensionState,
   };
+  const extensionPackages = Object.fromEntries(
+    probes
+      .filter((probe) => probe.name !== 'native')
+      .map((probe) => [probe.name, { packageName: probe.package }]),
+  ) as NonNullable<Parameters<typeof buildResolvedToolContract>[0]['extensionPackages']>;
+  const toolContract = buildResolvedToolContract({
+    ...resolverInput,
+    extensionPackages,
+  });
   const resolver = resolveManifestTools(resolverInput);
   const catalogCompatibility = probes
     .filter(probe => probe.drift !== 'none' || probe.health !== 'loaded_healthy')
@@ -188,6 +199,7 @@ export async function loadResolvedConfigReport(args: {
     catalogs,
     extensionAvailability: probes,
     resolver,
+    toolContract,
     catalogCompatibility,
   };
 }
@@ -211,11 +223,13 @@ export function formatResolvedConfigReport(report: ResolvedConfigReport): string
   } else {
     for (const item of report.catalogCompatibility) lines.push(`  - ${item}`);
   }
-  lines.push(`denied natives: ${report.resolver.deniedNatives.join(',') || '(none)'}`);
-  lines.push(`deny mode: ${report.resolver.deniedNativesMode}`);
-  lines.push(`preference signals: ${(report.resolver.preferenceSignals ?? []).join(' | ') || '(none)'}`);
-  lines.push(`downgrade reasons: ${(report.resolver.downgradeReasons ?? []).join(' | ') || '(none)'}`);
-  lines.push(`--tools: ${report.resolver.tools}`);
+  lines.push(`denied natives: ${report.toolContract.deniedNativeTools.join(',') || '(none)'}`);
+  lines.push(`deny mode: ${report.toolContract.deniedNativesMode}`);
+  lines.push(`preference signals: ${(report.toolContract.preferenceSignals ?? []).join(' | ') || '(none)'}`);
+  lines.push(`downgrade reasons: ${(report.toolContract.downgradeReasons ?? []).join(' | ') || '(none)'}`);
+  lines.push(`--tools: ${report.toolContract.toolsFlag}`);
+  lines.push('resolved tool contract:');
+  lines.push(formatResolvedToolContract(report.toolContract));
   if (report.resolver.warnings.length > 0) {
     lines.push('warnings:');
     for (const warning of report.resolver.warnings) lines.push(`  - ${warning}`);
