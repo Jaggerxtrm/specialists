@@ -7,6 +7,7 @@ description: >
   mistakes.
 version: 1.4
 synced_at: fc9168e2
+disable-model-invocation: true
 ---
 
 # Specialist Author Guide
