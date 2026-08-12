@@ -98,7 +98,6 @@ jobs:
     if: needs.changes.outputs.package_payload == 'true'
     permissions:
       contents: read
-      actions: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -137,7 +136,7 @@ jobs:
           EXPECTED_SOURCE_COMMIT="$GITHUB_SHA" npm run release:attest -- --validate /tmp/sp-test.tgz /tmp/release-attestation.json
           test -s /tmp/release-attestation.json
       - name: Persist release attestation
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release-attestation-${{ github.sha }}
           path: /tmp/release-attestation.json
