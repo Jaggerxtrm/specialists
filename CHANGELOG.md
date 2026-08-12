@@ -12,8 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Exact citation evidence now uses a verified local fallback pinned to `@earendil-works/pi-coding-agent@0.84.1` (upstream git commit `53fa77ccd8a279eb87e92294ef3687b03ff80112`). Because raw Pi `read` output does not number each content line, executor, reviewer, and obligations-scanner guidance now permits exact `file:line` claims only when a line-number-emitting tool or local helper has deterministically verified the current file. Raw reads may still cite a file, symbol, section, or excerpt. No upstream Pi change is required for this fallback.
+- **Release parity and attestation (3.21.3).** Corrected package surface excludes retired Serena assets and records source commit, tarball checksum, catalog/rule/tool-contract fingerprints, pinned Pi smoke identity, validation commands, and rollback scope. Compatibility claim remains Specialists-local; this does not certify Pi v0.84.1.
 
 - Retired the active Serena runtime integration (unitAI-e67up.8): Specialists no longer probes for `pi-serena-tools`, injects it into Pi argv, pre-spawns the `serena-pool` daemon, or sets `SERENA_MCP_PORT`. The Serena tool catalog and the `serena-cheatsheet` mandatory rule are removed; specialist definitions, skills, and docs route through native tools plus GitNexus. `execution.extensions.serena` remains parseable but is deprecated and ignored; passive `sp ps` process-health detection of foreign Serena processes is unchanged.
+
+## [v3.21.3] — 2026-08-12
+
+### Fixed
+
+- Restored source/package parity after Serena retirement and added reproducible release attestation.
 
 ## [v3.21.2] — 2026-07-28
 
