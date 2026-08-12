@@ -9,6 +9,7 @@ description: >
   duplicate the canonical skill's bead contracts, sleep table, rebuttal patterns, escalation
   matrix, or session-end handoff — refers to the canonical skill for those.
 version: 2.0
+disable-model-invocation: true
 ---
 
 # Using Specialists — Auto Mode (overlay)

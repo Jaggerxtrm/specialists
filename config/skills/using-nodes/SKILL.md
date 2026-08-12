@@ -4,6 +4,7 @@ description: >
   Use this skill for node-coordinator behavior. The coordinator is a CLI-native
   orchestrator that drives NodeSupervisor via `sp node` commands.
 version: 3.2
+disable-model-invocation: true
 ---
 
 # Using Nodes
