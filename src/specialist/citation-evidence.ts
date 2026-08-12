@@ -1,4 +1,5 @@
-import { readFile } from 'node:fs/promises';
+import { realpath, readFile } from 'node:fs/promises';
+import { isAbsolute, relative, resolve } from 'node:path';
 
 export interface CitationLine {
   line: number;
@@ -8,6 +9,7 @@ export interface CitationLine {
 export interface VerifiedCitationWindow {
   source: 'deterministic_file_read';
   path: string;
+  trustedRoot: string;
   offset: number;
   totalLines: number;
   lines: CitationLine[];
@@ -46,6 +48,7 @@ export interface VerifiedCitationWindowOptions {
   limit?: number;
   maxLines?: number;
   maxBytes?: number;
+  trustedRoot?: string;
 }
 
 function positiveInteger(value: number | undefined, fallback: number, name: string): number {
@@ -56,25 +59,37 @@ function positiveInteger(value: number | undefined, fallback: number, name: stri
   return resolved;
 }
 
-function safeCitationPath(path: string): string {
+async function safeCitationPath(path: string, trustedRoot = process.cwd()): Promise<string> {
   if (/[\u0000-\u001f\u007f]/u.test(path)) {
     throw new TypeError('path must not contain control characters');
   }
-  return path;
+  if (isAbsolute(path)) {
+    throw new TypeError('path must be relative to trusted root');
+  }
+  if (path.split(/[\\/]/u).includes('..')) {
+    throw new TypeError('path must remain within trusted root');
+  }
+  const canonicalRoot = await realpath(trustedRoot);
+  const canonicalPath = await realpath(resolve(canonicalRoot, path));
+  const pathFromRoot = relative(canonicalRoot, canonicalPath);
+  if (pathFromRoot === '..' || pathFromRoot.startsWith(`..${resolve('/').slice(0, 1)}`) || isAbsolute(pathFromRoot)) {
+    throw new TypeError('path must remain within trusted root');
+  }
+  return canonicalPath;
 }
 
 export async function readVerifiedCitationWindow(
   path: string,
   options: VerifiedCitationWindowOptions = {},
 ): Promise<VerifiedCitationWindow> {
-  safeCitationPath(path);
+  const resolvedPath = await safeCitationPath(path, options.trustedRoot);
   const offset = positiveInteger(options.offset, 1, 'offset');
   const limit = options.limit === undefined
     ? undefined
     : positiveInteger(options.limit, 1, 'limit');
   const maxLines = positiveInteger(options.maxLines, 2_000, 'maxLines');
   const maxBytes = positiveInteger(options.maxBytes, 50 * 1024, 'maxBytes');
-  const content = await readFile(path, 'utf8');
+  const content = await readFile(resolvedPath, 'utf8');
   const sourceLines = content.split('\n');
   const totalLines = sourceLines.length;
   const start = offset - 1;
@@ -110,6 +125,7 @@ export async function readVerifiedCitationWindow(
   return {
     source: 'deterministic_file_read',
     path,
+    trustedRoot: options.trustedRoot ?? process.cwd(),
     offset,
     totalLines,
     lines,
@@ -135,7 +151,7 @@ export async function verifyExactLineCitation(
     return { ok: false, reason: 'line_mismatch' };
   }
 
-  const currentContent = await readFile(safeCitationPath(evidence.path), 'utf8');
+  const currentContent = await readFile(await safeCitationPath(evidence.path, evidence.trustedRoot), 'utf8');
   const currentLine = currentContent.split('\n')[claim.line - 1];
   if (currentLine !== claim.text) {
     return { ok: false, reason: 'stale_snapshot' };
