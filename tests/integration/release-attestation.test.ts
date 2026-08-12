@@ -79,9 +79,11 @@ describe('package-payload artifact contract', () => {
   it('validates attestation before upload and pins artifact refusal/configuration', async () => {
     const workflow = await readFile('.github/workflows/package-payload.yml', 'utf8');
     const validation = workflow.indexOf('EXPECTED_SOURCE_COMMIT=');
-    const upload = workflow.indexOf('uses: actions/upload-artifact@v4');
+    const upload = workflow.indexOf('uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02');
     expect(validation).toBeGreaterThan(-1);
     expect(upload).toBeGreaterThan(validation);
+    expect(workflow).toContain('permissions:\n  contents: read');
+    expect(workflow).not.toContain('actions: write');
     expect(workflow).toContain('path: /tmp/release-attestation.json');
     expect(workflow).toContain('if-no-files-found: error');
     expect(workflow).toContain('retention-days: 90');
