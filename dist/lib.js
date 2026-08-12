@@ -18284,7 +18284,8 @@ function projectLaunchOutcome(outcome) {
   };
 }
 // src/specialist/citation-evidence.ts
-import { readFile as readFile2 } from "node:fs/promises";
+import { realpath, readFile as readFile2 } from "node:fs/promises";
+import { isAbsolute as isAbsolute3, relative as relative2, resolve as resolve5 } from "node:path";
 function positiveInteger(value, fallback, name) {
   const resolved = value ?? fallback;
   if (!Number.isInteger(resolved) || resolved < 1) {
@@ -18292,19 +18293,31 @@ function positiveInteger(value, fallback, name) {
   }
   return resolved;
 }
-function safeCitationPath(path) {
+async function safeCitationPath(path, trustedRoot = process.cwd()) {
   if (/[\u0000-\u001f\u007f]/u.test(path)) {
     throw new TypeError("path must not contain control characters");
   }
-  return path;
+  if (isAbsolute3(path)) {
+    throw new TypeError("path must be relative to trusted root");
+  }
+  if (path.split(/[\\/]/u).includes("..")) {
+    throw new TypeError("path must remain within trusted root");
+  }
+  const canonicalRoot = await realpath(trustedRoot);
+  const canonicalPath = await realpath(resolve5(canonicalRoot, path));
+  const pathFromRoot = relative2(canonicalRoot, canonicalPath);
+  if (pathFromRoot === ".." || pathFromRoot.startsWith(`..${resolve5("/").slice(0, 1)}`) || isAbsolute3(pathFromRoot)) {
+    throw new TypeError("path must remain within trusted root");
+  }
+  return canonicalPath;
 }
 async function readVerifiedCitationWindow(path, options = {}) {
-  safeCitationPath(path);
+  const resolvedPath = await safeCitationPath(path, options.trustedRoot);
   const offset = positiveInteger(options.offset, 1, "offset");
   const limit = options.limit === undefined ? undefined : positiveInteger(options.limit, 1, "limit");
   const maxLines = positiveInteger(options.maxLines, 2000, "maxLines");
   const maxBytes = positiveInteger(options.maxBytes, 50 * 1024, "maxBytes");
-  const content = await readFile2(path, "utf8");
+  const content = await readFile2(resolvedPath, "utf8");
   const sourceLines = content.split(`
 `);
   const totalLines = sourceLines.length;
@@ -18335,6 +18348,7 @@ async function readVerifiedCitationWindow(path, options = {}) {
   return {
     source: "deterministic_file_read",
     path,
+    trustedRoot: options.trustedRoot ?? process.cwd(),
     offset,
     totalLines,
     lines,
@@ -18354,7 +18368,7 @@ async function verifyExactLineCitation(evidence, claim) {
   if (verifiedLine.text !== claim.text) {
     return { ok: false, reason: "line_mismatch" };
   }
-  const currentContent = await readFile2(safeCitationPath(evidence.path), "utf8");
+  const currentContent = await readFile2(await safeCitationPath(evidence.path, evidence.trustedRoot), "utf8");
   const currentLine = currentContent.split(`
 `)[claim.line - 1];
   if (currentLine !== claim.text) {

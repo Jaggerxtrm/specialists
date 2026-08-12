@@ -5,6 +5,7 @@ export interface CitationLine {
 export interface VerifiedCitationWindow {
     source: 'deterministic_file_read';
     path: string;
+    trustedRoot: string;
     offset: number;
     totalLines: number;
     lines: CitationLine[];
@@ -38,6 +39,7 @@ export interface VerifiedCitationWindowOptions {
     limit?: number;
     maxLines?: number;
     maxBytes?: number;
+    trustedRoot?: string;
 }
 export declare function readVerifiedCitationWindow(path: string, options?: VerifiedCitationWindowOptions): Promise<VerifiedCitationWindow>;
 export declare function verifyExactLineCitation(evidence: VerifiedCitationWindow | RawPiReadEvidence, claim: ExactLineClaim): Promise<ExactLineCitationResult>;
