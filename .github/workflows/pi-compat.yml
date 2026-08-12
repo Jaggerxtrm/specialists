@@ -3,8 +3,7 @@ name: pi-compat
 permissions:
   contents: read
 
-# Detects when a newer @mariozechner/pi-coding-agent breaks our spawn flags.
-# We unpinned the Dockerfile to @latest, so this is the canary.
+# Detects when reviewed @mariozechner/pi-coding-agent version breaks our spawn flags.
 #
 # Trigger: weekly cron, PRs that touch the spawn surface, manual dispatch.
 
@@ -20,22 +19,22 @@ on:
   workflow_dispatch:
     inputs:
       pi_version:
-        description: 'pi-coding-agent version to test (default: latest)'
-        default: 'latest'
+        description: 'pi-coding-agent version to test (default: 0.64.0)'
+        default: '0.64.0'
         required: false
 
 jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
       - name: Resolve pi version
         id: pi
         run: |
-          PI_VERSION="${{ inputs.pi_version || 'latest' }}"
+          PI_VERSION="${{ inputs.pi_version || '0.64.0' }}"
           echo "version=$PI_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Install pi
@@ -93,7 +92,7 @@ jobs:
           fi
           echo "pi accepted our spawn args (auth/provider error is fine, args parse is fine)."
 
-      - name: Build image with latest pi
+      - name: Build image with reviewed pi
         run: |
           docker build --build-arg "PI_VERSION=${{ steps.pi.outputs.version }}" -t specialists-service:ci .
 
