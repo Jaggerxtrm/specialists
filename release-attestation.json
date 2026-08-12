@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "scope": "Specialists-local; does not certify Pi v0.84.1 compatibility.",
+  "package": {
+    "name": "@jaggerxtrm/specialists",
+    "version": "3.21.3",
+    "source_commit": "8afc4ecf9fd87e231d2415de16b338a1cb76ade2",
+    "git_head": "8afc4ecf9fd87e231d2415de16b338a1cb76ade2",
+    "tarball": "jaggerxtrm-specialists-3.21.3.tgz",
+    "sha256": "384eed39746e7b47acef93e30df4d68816628e8671cfc0f89afed95f566f7315"
+  },
+  "pi_runtime": {
+    "version_or_range": "not-run"
+  },
+  "fingerprints": {
+    "catalog_sha256": "e066268fddde238c5ad727166ea1e2b1b33f98008c1ebdd5336ea522e891d860",
+    "mandatory_rules_sha256": "7236ce51baf681c5895e3de469d83c502f06f618bc53ff6f2771ce256ef9c386",
+    "resolved_tool_contract_fixture_sha256": "0adb7ca1c3260a6f41eac28a4bb1331518c7e8f062bcd36417fafd616d444644"
+  },
+  "validation_commands": [
+    "bun install --frozen-lockfile",
+    "bun run build",
+    "npm pack --dry-run --json",
+    "npm pack --json",
+    "tar -tzf <tarball> | grep -i serena (must return no matches)",
+    "npm install --global --prefix=\"$prefix\" <tarball>",
+    "sp --version && sp doctor --check-drift && sp list --compact"
+  ],
+  "rollback": "Unpublish only within npm 72-hour policy when permitted; otherwise deprecate compromised version and publish corrected patch. Restore prior known-good tag."
+}
