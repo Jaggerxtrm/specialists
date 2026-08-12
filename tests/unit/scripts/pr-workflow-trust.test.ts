@@ -189,6 +189,13 @@ describe('pull_request workflow trust boundary', () => {
     }
   });
 
+  it('requires immutable SHA refs in package-payload actions', () => {
+    const source = readFileSync(join(WORKFLOW_DIRECTORY, 'package-payload.yml'), 'utf8');
+    const actionRefs = [...source.matchAll(/^\s+-?\s*uses:\s+([^\s#]+)$/gm)].map((match) => match[1]);
+    expect(actionRefs.length).toBeGreaterThan(0);
+    expect(actionRefs.every((ref) => /@[0-9a-f]{40}$/.test(ref))).toBe(true);
+  });
+
   it('rejects runner indirection that can select CI_RUNNER', () => {
     const workflow = fixtureWith((source) => source.replace('ubuntu-latest', '${{ vars.CI_RUNNER }}'));
     expect(findTrustViolations(workflow)).toContain('fixture/check: pull_request runner cannot be resolved safely');
