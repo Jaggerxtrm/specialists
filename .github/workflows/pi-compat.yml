@@ -33,8 +33,10 @@ jobs:
 
       - name: Resolve pi version
         id: pi
+        env:
+          INPUT_PI_VERSION: ${{ inputs.pi_version || '0.64.0' }}
         run: |
-          PI_VERSION="${{ inputs.pi_version || '0.64.0' }}"
+          PI_VERSION="$INPUT_PI_VERSION"
           echo "version=$PI_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Install pi

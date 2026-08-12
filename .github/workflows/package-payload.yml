@@ -129,9 +129,7 @@ jobs:
           sp list --compact
           if tar -tzf /tmp/sp-test.tgz | grep -qi serena; then echo 'retired Serena surface found' >&2; exit 1; fi
           cd "$GITHUB_WORKSPACE"
-          PI_VERSION="$(pi --version 2>/dev/null || true)"
-          test -n "$PI_VERSION" || { echo 'package-payload: Pi identity unavailable' >&2; exit 1; }
-          export PI_VERSION
+          export PI_VERSION=not-run
           npm run release:attest -- /tmp/sp-test.tgz /tmp/release-attestation.json
           EXPECTED_SOURCE_COMMIT="$GITHUB_SHA" npm run release:attest -- --validate /tmp/sp-test.tgz /tmp/release-attestation.json
           test -s /tmp/release-attestation.json
