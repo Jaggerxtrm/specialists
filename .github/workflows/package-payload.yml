@@ -122,3 +122,6 @@ jobs:
           sp prune-stale-defaults --dry-run
           sp clean --dry-run
           sp list --compact
+          if tar -tzf /tmp/sp-test.tgz | grep -qi serena; then echo 'retired Serena surface found' >&2; exit 1; fi
+          PI_VERSION="$(pi --version 2>/dev/null || echo unavailable)" npm run release:attest -- /tmp/sp-test.tgz /tmp/release-attestation.json
+          test -s /tmp/release-attestation.json

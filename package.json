@@ -1,6 +1,6 @@
 {
   "name": "@jaggerxtrm/specialists",
-  "version": "3.21.2",
+  "version": "3.21.3",
   "description": "OmniSpecialist \u2014 7-tool MCP orchestration layer powered by the Specialist System. Discover and execute .specialist.yaml files across project/user/system scopes via pi.",
   "repository": {
     "type": "git",
@@ -60,6 +60,7 @@
     "test:supervisor": "bun --bun vitest run tests/unit/specialist/supervisor.test.ts --no-file-parallelism",
     "benchmark:executor": "node scripts/run-executor-benchmark.mjs",
     "generate:contract": "node scripts/generate-asset-contract.mjs",
+    "release:attest": "node scripts/generate-release-attestation.mjs",
     "changelog": "node scripts/changelog-update.mjs",
     "changelog:check": "node scripts/changelog-update.mjs --check",
     "preversion": "bun run changelog"
