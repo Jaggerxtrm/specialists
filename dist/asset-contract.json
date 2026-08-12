@@ -180,6 +180,9 @@
       "path": "config/mandatory-rules/diagnose-loop.md"
     },
     {
+      "path": "config/mandatory-rules/exact-citation-contract.md"
+    },
+    {
       "path": "config/mandatory-rules/executor-delivery.md"
     },
     {

@@ -28,6 +28,19 @@ export {
   validateLaunchOutcome,
   projectLaunchOutcome,
 } from './specialist/launch-outcome.js';
+
+export {
+  readVerifiedCitationWindow,
+  verifyExactLineCitation,
+} from './specialist/citation-evidence.js';
+export type {
+  CitationLine,
+  VerifiedCitationWindow,
+  VerifiedCitationWindowOptions,
+  RawPiReadEvidence,
+  ExactLineClaim,
+  ExactLineCitationResult,
+} from './specialist/citation-evidence.js';
 export type {
   LaunchOutcome,
   LaunchOutcomeProjection,

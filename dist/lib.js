@@ -18283,9 +18283,95 @@ function projectLaunchOutcome(outcome) {
     }))
   };
 }
+// src/specialist/citation-evidence.ts
+import { readFile as readFile2 } from "node:fs/promises";
+function positiveInteger(value, fallback, name) {
+  const resolved = value ?? fallback;
+  if (!Number.isInteger(resolved) || resolved < 1) {
+    throw new RangeError(`${name} must be a positive integer`);
+  }
+  return resolved;
+}
+function safeCitationPath(path) {
+  if (/[\u0000-\u001f\u007f]/u.test(path)) {
+    throw new TypeError("path must not contain control characters");
+  }
+  return path;
+}
+async function readVerifiedCitationWindow(path, options = {}) {
+  safeCitationPath(path);
+  const offset = positiveInteger(options.offset, 1, "offset");
+  const limit = options.limit === undefined ? undefined : positiveInteger(options.limit, 1, "limit");
+  const maxLines = positiveInteger(options.maxLines, 2000, "maxLines");
+  const maxBytes = positiveInteger(options.maxBytes, 50 * 1024, "maxBytes");
+  const content = await readFile2(path, "utf8");
+  const sourceLines = content.split(`
+`);
+  const totalLines = sourceLines.length;
+  const start = offset - 1;
+  if (start >= totalLines) {
+    throw new RangeError(`Offset ${offset} is beyond end of file (${totalLines} lines total)`);
+  }
+  const requestedEnd = limit === undefined ? totalLines : Math.min(start + limit, totalLines);
+  const requestedLines = sourceLines.slice(start, requestedEnd);
+  const lines = [];
+  let bytes = 0;
+  for (const [index, text] of requestedLines.entries()) {
+    if (lines.length >= maxLines)
+      break;
+    const separatorBytes = lines.length === 0 ? 0 : 1;
+    const candidateBytes = bytes + separatorBytes + Buffer.byteLength(text, "utf8");
+    if (candidateBytes > maxBytes)
+      break;
+    bytes = candidateBytes;
+    lines.push({ line: offset + index, text });
+  }
+  if (requestedLines.length > 0 && lines.length === 0) {
+    throw new RangeError(`Line ${offset} exceeds the ${maxBytes}-byte verification limit`);
+  }
+  const truncated = lines.length < requestedLines.length;
+  const consumedThrough = start + lines.length;
+  const complete = consumedThrough >= totalLines;
+  return {
+    source: "deterministic_file_read",
+    path,
+    offset,
+    totalLines,
+    lines,
+    complete,
+    truncated,
+    ...complete ? {} : { nextOffset: consumedThrough + 1 }
+  };
+}
+async function verifyExactLineCitation(evidence, claim) {
+  if (evidence.source === "raw_pi_read") {
+    return { ok: false, reason: "raw_pi_read_unverified" };
+  }
+  const verifiedLine = evidence.lines.find((entry) => entry.line === claim.line);
+  if (!verifiedLine) {
+    return { ok: false, reason: "line_outside_verified_window" };
+  }
+  if (verifiedLine.text !== claim.text) {
+    return { ok: false, reason: "line_mismatch" };
+  }
+  const currentContent = await readFile2(safeCitationPath(evidence.path), "utf8");
+  const currentLine = currentContent.split(`
+`)[claim.line - 1];
+  if (currentLine !== claim.text) {
+    return { ok: false, reason: "stale_snapshot" };
+  }
+  return {
+    ok: true,
+    citation: `${evidence.path}:${claim.line}`,
+    line: claim.line,
+    text: claim.text
+  };
+}
 export {
+  verifyExactLineCitation,
   validateLaunchOutcome,
   runScriptSpecialist as runScript,
+  readVerifiedCitationWindow,
   projectLaunchOutcome,
   parseLaunchOutcome,
   SpecialistLoader,

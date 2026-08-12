@@ -34,6 +34,7 @@
         "code-quality-defaults",
         "git-workflow-safe",
         "gitnexus-required",
+        "exact-citation-contract",
         "per-turn-handoff-schema",
         "bead-id-verbatim"
       ]
