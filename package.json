@@ -28,6 +28,7 @@
     "dist/types/",
     "dist/asset-contract.json",
     "bin/install.js",
+    "scripts/generate-release-attestation.mjs",
     "config/specialists/",
     "config/mandatory-rules/",
     "config/skills/",

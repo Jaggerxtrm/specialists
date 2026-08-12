@@ -11,6 +11,7 @@ on:
       - config/**
       - dist/**
       - scripts/assert-package-payload.sh
+      - scripts/generate-release-attestation.mjs
       - .github/workflows/package-payload.yml
 
 jobs:
@@ -35,6 +36,7 @@ jobs:
               - config/**
               - dist/**
               - scripts/assert-package-payload.sh
+              - scripts/generate-release-attestation.mjs
               - .github/workflows/package-payload.yml
 
   payload-contract:
@@ -83,6 +85,7 @@ jobs:
             config/catalog/index.json \
             config/catalog/native.json \
             config/catalog/gitnexus.json \
+            scripts/generate-release-attestation.mjs \
             dist/asset-contract.json \
             LICENSE; then
             echo 'package-payload: CONTRACT FAILURE — asserted asset missing from successfully-built payload' >&2
@@ -123,5 +126,6 @@ jobs:
           sp clean --dry-run
           sp list --compact
           if tar -tzf /tmp/sp-test.tgz | grep -qi serena; then echo 'retired Serena surface found' >&2; exit 1; fi
+          cd "$GITHUB_WORKSPACE"
           PI_VERSION="$(pi --version 2>/dev/null || echo unavailable)" npm run release:attest -- /tmp/sp-test.tgz /tmp/release-attestation.json
           test -s /tmp/release-attestation.json
