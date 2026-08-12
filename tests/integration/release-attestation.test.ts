@@ -78,12 +78,14 @@ describe('release attestation validation refusals', () => {
 describe('v3.21.3 release candidate metadata', () => {
   it('pins release version and avoids attestation self-reference', async () => {
     const metadata = JSON.parse(await readFile('release-attestation.json', 'utf8'));
-    const { stdout } = await run('git', ['rev-parse', 'HEAD']);
-    expect(stdout.trim()).toMatch(/^d1d2eb4a/);
+    const { stdout: tagStdout } = await run('git', ['rev-parse', 'v3.21.3^']);
+    const { stdout: headStdout } = await run('git', ['rev-parse', 'HEAD']);
+    expect(tagStdout.trim()).toMatch(/^8afc4ecf/);
     expect(metadata.package.name).toBe('@jaggerxtrm/specialists');
     expect(metadata.package.version).toBe('3.21.3');
     expect(metadata.package.source_commit).toBe(metadata.package.git_head);
-    expect(metadata.package.source_commit).not.toBe(stdout.trim());
+    expect(metadata.package.source_commit).toBe(tagStdout.trim());
+    expect(metadata.package.source_commit).not.toBe(headStdout.trim());
     expect(metadata.package.tarball).toBe('jaggerxtrm-specialists-3.21.3.tgz');
     expect(metadata.pi_runtime.version_or_range).toBe('not-run');
     expect(metadata.scope).toContain('does not certify Pi');
