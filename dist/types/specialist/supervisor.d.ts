@@ -8,6 +8,21 @@ type ActivePiSession = {
     kill(reason?: Error): void;
 };
 import type { StallDetectionConfig } from './loader.js';
+export interface MandatoryRulesInjectionProjection {
+    sets_loaded: string[];
+    rules_count: number;
+    inline_rules_count: number;
+    globals_disabled: boolean;
+    token_estimate: number;
+    budget_limit: number;
+    candidate_tokens: number;
+    injected_tokens: number;
+    injected_section_ids: string[];
+    evicted_section_ids: string[];
+    payload_digest: string;
+    outcome: 'full' | 'degraded' | 'impossible';
+}
+export declare function projectMandatoryRulesInjection(data: Partial<MandatoryRulesInjectionProjection>): MandatoryRulesInjectionProjection;
 export declare const STALL_DETECTION_DEFAULTS: Required<StallDetectionConfig>;
 export type SupervisorJobStatus = 'starting' | 'running' | 'waiting' | 'done' | 'error' | 'cancelled';
 export interface SupervisorStatus {
@@ -64,13 +79,7 @@ export interface SupervisorStatus {
             gitnexus_tokens: number;
             total_tokens: number;
         };
-        mandatory_rules_injection?: {
-            sets_loaded: string[];
-            rules_count: number;
-            inline_rules_count: number;
-            globals_disabled: boolean;
-            token_estimate: number;
-        };
+        mandatory_rules_injection?: MandatoryRulesInjectionProjection;
         skills?: {
             count: number;
             activated: string[];

@@ -1,7 +1,9 @@
 // src/specialist/runner.ts
 import { writeJobFileOutput } from './job-file-output.js';
+import { createHash } from 'node:crypto';
 import { renderTemplate } from './templateEngine.js';
 import { buildBeadBoundaryInstruction, renderTaskPrompt } from './task-prompt.js';
+import { MandatoryRulesBudgetError } from './mandatory-rules.js';
 import {
   PiAgentSession,
   SessionKilledError,
@@ -1078,30 +1080,51 @@ export class SpecialistRunner {
     // Task-side assembly is shared verbatim with `sp render-task` (unitAI-6639v.4).
     // Reviewer diff context is execution-only, so it enters through the hook rather
     // than the pure seam — it must still land before the hash, as it always has.
-    const rendered = renderTaskPrompt({
-      specialist: spec.specialist,
-      cwd: runCwd,
-      beadId: options.inputBeadId,
-      bead,
-      completedBlockers,
-      fallbackPrompt: () => this.resolvePromptWithBeadContext(options, runCwd, beadsClient),
-      preScriptOutput,
-      variables: promptVariables,
-      reusedFromJobId: options.reusedFromJobId,
-      worktreeOwnerJobId: options.worktreeOwnerJobId,
-      gitnexusSummary: gitnexusSummary || undefined,
-      worktreeBoundary: options.worktreeBoundary,
-      appendExecutionContext: metadata.name === 'reviewer'
-        ? (task, cwd, variables) => {
-            try {
-              return `${task}${buildReviewerDiffInstruction(buildReviewerDiffContext(cwd, variables))}`;
-            } catch (error) {
-              console.warn(`[specialist runner] Reviewer diff context unavailable: ${String(error)}`);
-              return task;
+    let rendered;
+    try {
+      rendered = renderTaskPrompt({
+        specialist: spec.specialist,
+        cwd: runCwd,
+        beadId: options.inputBeadId,
+        bead,
+        completedBlockers,
+        fallbackPrompt: () => this.resolvePromptWithBeadContext(options, runCwd, beadsClient),
+        preScriptOutput,
+        variables: promptVariables,
+        reusedFromJobId: options.reusedFromJobId,
+        worktreeOwnerJobId: options.worktreeOwnerJobId,
+        gitnexusSummary: gitnexusSummary || undefined,
+        worktreeBoundary: options.worktreeBoundary,
+        appendExecutionContext: metadata.name === 'reviewer'
+          ? (task, cwd, variables) => {
+              try {
+                return `${task}${buildReviewerDiffInstruction(buildReviewerDiffContext(cwd, variables))}`;
+              } catch (error) {
+                console.warn(`[specialist runner] Reviewer diff context unavailable: ${String(error)}`);
+                return task;
+              }
             }
-          }
-        : undefined,
-    });
+          : undefined,
+      });
+    } catch (error) {
+      if (error instanceof MandatoryRulesBudgetError) {
+        const data = {
+          budget_limit: error.budgetLimit,
+          candidate_tokens: error.candidateTokens,
+          injected_tokens: error.injectedTokens,
+          injected_section_ids: error.injectedSectionIds,
+          evicted_section_ids: error.evictedSectionIds,
+          payload_digest: createHash('sha256').update('').digest('hex'),
+          outcome: error.outcome,
+        };
+        onEvent?.('meta', {
+          source: 'mandatory_rules_injection',
+          data,
+          summary: JSON.stringify({ kind: 'meta', source: 'mandatory_rules_injection', data }),
+        });
+      }
+      throw error;
+    }
 
     const {
       beadContextOwn,
@@ -1282,7 +1305,14 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
             rules_count: mandatoryRulesInjection.ruleCount,
             inline_rules_count: mandatoryRulesInjection.inlineRulesCount,
             globals_disabled: mandatoryRulesInjection.globalsDisabled,
-            token_estimate: estimateInjectedTokens(mandatoryRulesBlock),
+            token_estimate: mandatoryRulesInjection.injectedTokens,
+            budget_limit: mandatoryRulesInjection.budgetLimit,
+            candidate_tokens: mandatoryRulesInjection.candidateTokens,
+            injected_tokens: mandatoryRulesInjection.injectedTokens,
+            injected_section_ids: mandatoryRulesInjection.injectedSectionIds,
+            evicted_section_ids: mandatoryRulesInjection.evictedSectionIds,
+            payload_digest: mandatoryRulesInjection.payloadDigest,
+            outcome: mandatoryRulesInjection.outcome,
           },
         }
       : null;

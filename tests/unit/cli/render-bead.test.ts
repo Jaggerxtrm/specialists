@@ -88,6 +88,15 @@ describe('sp render-bead', () => {
     const out = await render(BEAD.id);
     expect(out.mandatory_rules).not.toBeNull();
     expect(out.mandatory_rules.rules_count).toBeGreaterThan(0);
+    expect(out.mandatory_rules).toMatchObject({
+      budget_limit: 2000,
+      candidate_tokens: expect.any(Number),
+      injected_tokens: expect.any(Number),
+      injected_section_ids: expect.any(Array),
+      evicted_section_ids: expect.any(Array),
+      payload_digest: expect.stringMatching(/^[0-9a-f]{64}$/),
+      outcome: 'full',
+    });
     expect(out.components.some((c: { kind: string }) => c.kind === 'mandatory_rule')).toBe(true);
   });
 

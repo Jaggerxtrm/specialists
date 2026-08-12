@@ -3,6 +3,7 @@ import type { SpecialistLoader } from './loader.js';
 import type { HookEmitter } from './hooks.js';
 import { type CircuitBreaker } from '../utils/circuitBreaker.js';
 import type { RuntimeOriginV1 } from './runtime-origin.js';
+import { type ResolvedToolContract } from './resolved-tool-contract.js';
 export interface RunOptions {
     name: string;
     prompt: string;
@@ -111,7 +112,7 @@ export declare function validateBeforeRun(spec: {
             required_tools?: string[];
         };
     };
-}, permissionLevel: string): void;
+}, permissionLevel: string, resolvedToolContract?: ResolvedToolContract): void;
 export declare class SpecialistRunner {
     private deps;
     private sessionFactory;

@@ -1,13 +1,12 @@
 import { basename, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { renderTemplate } from './templateEngine.js';
-import { buildMandatoryRulesInjection } from './mandatory-rules.js';
+import { MandatoryRulesBudgetError, buildMandatoryRulesInjection } from './mandatory-rules.js';
 import { buildBeadContext, type BeadRecord } from './beads.js';
 import { measurePayloadComponent, type PayloadComponentMeasurement } from './payload-measure.js';
 import type { Specialist } from './schema.js';
 
-/** MANDATORY_RULES are dropped above this budget rather than truncated (sp run contract). */
-const MANDATORY_RULES_TOKEN_LIMIT = 2000;
+export const MANDATORY_RULES_TOKEN_LIMIT = 2000;
 const SKILL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export type Surface = 'pi' | 'claude' | 'codex';
@@ -193,17 +192,13 @@ export function renderTaskPrompt(input: TaskPromptInput): TaskPromptResult {
   let mandatoryRules: ReturnType<typeof buildMandatoryRulesInjection> | null = null;
   let mandatoryRulesError: string | null = null;
   try {
-    mandatoryRules = buildMandatoryRulesInjection({ cwd, specialist });
-    mandatoryRulesBlock = mandatoryRules.block;
-    if (!bare && mandatoryRulesBlock.trim()) {
-      const rulesTokens = Math.ceil(mandatoryRulesBlock.length / 4);
-      if (rulesTokens <= MANDATORY_RULES_TOKEN_LIMIT) {
-        renderedTask = `${renderedTask}\n\n${mandatoryRulesBlock}`;
-      } else {
-        console.warn(`[specialist runner] Skipping MANDATORY_RULES injection: rules block too large (${rulesTokens} tokens, limit ${MANDATORY_RULES_TOKEN_LIMIT})`);
-      }
+    if (!bare) {
+      mandatoryRules = buildMandatoryRulesInjection({ cwd, specialist }, MANDATORY_RULES_TOKEN_LIMIT);
+      mandatoryRulesBlock = mandatoryRules.block;
+      if (mandatoryRulesBlock.trim()) renderedTask = `${renderedTask}\n\n${mandatoryRulesBlock}`;
     }
   } catch (error) {
+    if (error instanceof MandatoryRulesBudgetError) throw error;
     mandatoryRulesError = String(error);
     console.warn(`[specialist runner] Skipping MANDATORY_RULES injection: ${mandatoryRulesError}`);
   }

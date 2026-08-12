@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { STATIC_WORKFLOW_RULES_BLOCK } from './memory-retrieval.js';
 import { resolveCanonicalAssetDir } from './canonical-asset-resolver.js';
@@ -29,6 +30,8 @@ interface MandatoryRulesIndex {
 export interface MandatoryRulesSection {
   setId: string;
   block: string;
+  priority: 'must_keep' | 'important' | 'optional';
+  ruleCount: number;
 }
 
 export interface MandatoryRulesInjection {
@@ -38,6 +41,93 @@ export interface MandatoryRulesInjection {
   ruleCount: number;
   inlineRulesCount: number;
   globalsDisabled: boolean;
+  budgetLimit: number;
+  candidateTokens: number;
+  injectedTokens: number;
+  injectedSectionIds: string[];
+  evictedSectionIds: string[];
+  payloadDigest: string;
+  outcome: 'full' | 'degraded';
+}
+
+export type MandatoryRulesBudgetResult = Pick<
+  MandatoryRulesInjection,
+  | 'block'
+  | 'sections'
+  | 'budgetLimit'
+  | 'candidateTokens'
+  | 'injectedTokens'
+  | 'injectedSectionIds'
+  | 'evictedSectionIds'
+  | 'payloadDigest'
+  | 'outcome'
+>;
+
+export class MandatoryRulesBudgetError extends Error {
+  readonly outcome = 'impossible' as const;
+
+  constructor(
+    readonly budgetLimit: number,
+    readonly candidateTokens: number,
+    readonly mustKeepTokens: number,
+    readonly injectedSectionIds: string[],
+    readonly evictedSectionIds: string[],
+  ) {
+    super(`Mandatory rules MUST_KEEP floor requires ${mustKeepTokens} tokens, exceeding budget ${budgetLimit}`);
+    this.name = 'MandatoryRulesBudgetError';
+  }
+
+  readonly injectedTokens = 0;
+}
+
+function formatSectionsBlock(sections: MandatoryRulesSection[]): string {
+  return sections.length > 0 ? `## MANDATORY_RULES\n${sections.map(section => section.block).join('\n\n')}` : '';
+}
+
+function estimateTokens(text: string): number {
+  return text ? Math.max(1, Math.ceil(text.length / 4)) : 0;
+}
+
+export function compileMandatoryRulesBudget(
+  candidateSections: MandatoryRulesSection[],
+  budgetLimit: number,
+): MandatoryRulesBudgetResult {
+  const sections = candidateSections.filter(section => section.block.trim() && section.ruleCount > 0);
+  const candidateTokens = estimateTokens(formatSectionsBlock(sections));
+  const mustKeep = sections.filter(section => section.priority === 'must_keep');
+  const floorTokens = estimateTokens(formatSectionsBlock(mustKeep));
+  if (floorTokens > budgetLimit) {
+    throw new MandatoryRulesBudgetError(
+      budgetLimit,
+      candidateTokens,
+      floorTokens,
+      [],
+      sections.map(section => section.setId),
+    );
+  }
+
+  const retained = new Set(mustKeep);
+  for (const priority of ['important', 'optional'] as const) {
+    for (const section of sections.filter(item => item.priority === priority)) {
+      const proposed = sections.filter(item => retained.has(item) || item === section);
+      if (estimateTokens(formatSectionsBlock(proposed)) <= budgetLimit) retained.add(section);
+    }
+  }
+
+  const injected = sections.filter(section => retained.has(section));
+  const block = formatSectionsBlock(injected);
+  const evicted = sections.filter(section => !retained.has(section));
+  return {
+    block,
+    sections: injected,
+    budgetLimit,
+    candidateTokens,
+    injectedTokens: estimateTokens(block),
+    injectedSectionIds: injected.map(section => section.setId),
+    evictedSectionIds: evicted.map(section => section.setId),
+    payloadDigest: createHash('sha256').update(block).digest('hex'),
+    outcome: evicted.length === 0 ? 'full' : 'degraded',
+  };
 }
 
 function readJsonFile<T>(filePath: string): T {
@@ -207,18 +297,23 @@ function readMandatoryRuleSet(cwd: string, id: string): MandatoryRuleSet | null 
   };
 }
 
-function formatMandatoryRulesBlock(sets: MandatoryRuleSet[], inlineRules: MandatoryRule[] = []): { block: string; sections: MandatoryRulesSection[] } {
+function formatMandatoryRulesBlock(
+  sets: Array<MandatoryRuleSet & { priority: MandatoryRulesSection['priority'] }>,
+  inlineRules: MandatoryRule[] = [],
+): { block: string; sections: MandatoryRulesSection[] } {
   if (sets.length === 0 && inlineRules.length === 0) return { block: '', sections: [] };
 
   const sections = [
     ...sets.map(set => {
       const rules = set.rules.map(rule => `- [${rule.level}] ${rule.text}`).join('\n');
-      return { setId: set.id, block: `### ${set.id}\n${rules}` };
+      return { setId: set.id, priority: set.priority, ruleCount: set.rules.length, block: `### ${set.id}\n${rules}` };
     }),
     ...(inlineRules.length > 0
       ? [
           {
             setId: 'specialist-inline-rules',
+            priority: 'must_keep' as const,
+            ruleCount: inlineRules.length,
             block: `### specialist-inline-rules\n${inlineRules.map((rule, index) => `- [${rule.level}] ${rule.text}${rule.id ? ` (id: ${rule.id})` : ` (id: inline-${index + 1})`}`).join('\n')}`,
           },
         ]
@@ -250,6 +345,7 @@ function collectMandatoryRuleSets(cwd: string, setIds: string[]): MandatoryRuleS
 
 export function buildMandatoryRulesInjection(
   specialistConfig: { cwd?: string; specialist?: { mandatory_rules?: SpecialistMandatoryRulesConfig } },
+  budgetLimit = Number.POSITIVE_INFINITY,
 ): MandatoryRulesInjection {
   const cwd = specialistConfig.cwd ?? process.cwd();
   const index = loadMandatoryRulesIndex(cwd);
@@ -268,15 +364,27 @@ export function buildMandatoryRulesInjection(
     : [{
         id: 'workflow-quick-rules',
         rules: [{ id: 'workflow-quick-rules-1', level: 'required', text: STATIC_WORKFLOW_RULES_BLOCK.trim().replace(/^##\s+Beads Workflow Quick Rules\n/, '') }],
+        priority: 'must_keep' as const,
       }];
 
-  const formatted = formatMandatoryRulesBlock([...globals, ...sets], inlineRules);
+  const requiredIds = new Set(index?.required_template_sets ?? []);
+  const defaultIds = new Set(index?.default_template_sets ?? []);
+  const prioritizedSets = sets.map(set => ({
+    ...set,
+    priority: requiredIds.has(set.id)
+      ? 'must_keep' as const
+      : defaultIds.has(set.id)
+        ? 'important' as const
+        : 'optional' as const,
+  }));
+  const formatted = formatMandatoryRulesBlock([...globals, ...prioritizedSets], inlineRules);
+  const compiled = compileMandatoryRulesBudget(formatted.sections, budgetLimit);
+  const injectedSetIds = new Set(compiled.injectedSectionIds);
   return {
-    block: formatted.block,
-    sections: formatted.sections,
-    setsLoaded: [...globals.map((set) => set.id), ...sets.map((set) => set.id)],
-    ruleCount: [...globals, ...sets].reduce((count, set) => count + set.rules.length, 0) + inlineRules.length,
-    inlineRulesCount: inlineRules.length,
+    ...compiled,
+    setsLoaded: [...globals, ...prioritizedSets].filter(set => injectedSetIds.has(set.id)).map(set => set.id),
+    ruleCount: compiled.sections.reduce((count, section) => count + section.ruleCount, 0),
+    inlineRulesCount: injectedSetIds.has('specialist-inline-rules') ? inlineRules.length : 0,
     globalsDisabled,
   };
 }

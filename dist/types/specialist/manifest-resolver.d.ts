@@ -2,6 +2,7 @@ export type ToolTier = 'READ_ONLY' | 'LOW' | 'MEDIUM' | 'HIGH';
 export type ToolCatalogName = 'native' | 'gitnexus';
 export type ExtensionHealth = 'not_installed' | 'disabled' | 'loaded_healthy' | 'loaded_unhealthy' | 'unknown';
 export type DeniedNativesMode = 'soft' | 'hard';
+export type EffectiveExtensionStatus = 'available' | 'disabled' | 'not_installed' | 'loaded_unhealthy' | 'unknown' | 'catalog_incompatible';
 export interface ToolCatalog {
     catalog: ToolCatalogName;
     precedence: number;
@@ -22,6 +23,11 @@ export interface ExtensionState {
     health: ExtensionHealth;
     enabled?: boolean;
     catalogCompatible?: boolean;
+}
+export interface EffectiveExtensionState {
+    status: EffectiveExtensionStatus;
+    includeTools: boolean;
+    canEnforceHardDeny: boolean;
 }
 export interface ResolverInput {
     tier: ToolTier;
@@ -50,6 +56,7 @@ export interface ResolverResult {
     warnings: readonly string[];
     attribution: readonly ToolLayerAttribution[];
 }
+export declare function resolveEffectiveExtensionState(state: ExtensionState | undefined): EffectiveExtensionState;
 export declare function resolveManifestTools(input: ResolverInput): ResolverResult;
 export declare const LEGACY_PERMISSION_TOOL_STRINGS: Record<ToolTier, string>;
 //# sourceMappingURL=manifest-resolver.d.ts.map

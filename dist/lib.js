@@ -6945,7 +6945,7 @@ var require_public_api = __commonJS((exports) => {
 
 // src/specialist/script-runner.ts
 import { spawn as spawn2 } from "node:child_process";
-import { createHash as createHash2, randomUUID } from "node:crypto";
+import { createHash as createHash3, randomUUID } from "node:crypto";
 import { existsSync as existsSync7, readFileSync as readFileSync6 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
 import { isAbsolute as isAbsolute2, join as join4, relative, resolve as resolve4 } from "node:path";
@@ -6998,7 +6998,7 @@ function resolveCanonicalAssetDir(relativePath) {
 }
 
 // src/specialist/manifest-resolver.ts
-var HEALTHY = ["loaded_healthy"];
+var GITNEXUS_HARD_DENY_TOOLS = new Set(["grep", "find", "ls"]);
 var GITNEXUS_BASE_TIER = "READ_ONLY";
 function uniqueOrdered(values) {
   const seen = new Set;
@@ -7029,42 +7029,51 @@ function mergeTierPolicy(input) {
     denied_natives_mode: overridePolicy?.denied_natives_mode ?? tierPolicy?.denied_natives_mode ?? catalogPolicy?.denied_natives_mode ?? "soft"
   };
 }
-function shouldIncludeExtensionTools(name, input) {
-  if (input.specialistExclusions?.disabledExtensions?.includes(name))
-    return false;
-  const state = input.extensionState?.[name];
-  if (!state)
-    return true;
-  if (state.enabled === false)
-    return false;
-  return state.health !== "not_installed" && state.health !== "disabled";
-}
 function getTierTools(catalogs, name, tier) {
   const catalog = getCatalog(catalogs, name);
   return catalog?.source_tiers[tier] ?? [];
 }
-function canEnforceHardDeny(state) {
-  if (!state)
-    return true;
-  if (!HEALTHY.includes(state.health))
-    return false;
-  return state.catalogCompatible !== false;
+function getEffectiveDeniedTools(tools) {
+  return tools.filter((tool) => tool !== "read");
+}
+function resolveEffectiveExtensionState(state) {
+  if (!state) {
+    return { status: "available", includeTools: true, canEnforceHardDeny: true };
+  }
+  if (state.enabled === false || state.health === "disabled") {
+    return { status: "disabled", includeTools: false, canEnforceHardDeny: false };
+  }
+  if (state.health === "not_installed") {
+    return { status: "not_installed", includeTools: false, canEnforceHardDeny: false };
+  }
+  if (state.health === "loaded_unhealthy") {
+    return { status: "loaded_unhealthy", includeTools: false, canEnforceHardDeny: false };
+  }
+  if (state.health === "unknown") {
+    return { status: "unknown", includeTools: false, canEnforceHardDeny: false };
+  }
+  if (state.catalogCompatible === false) {
+    return { status: "catalog_incompatible", includeTools: false, canEnforceHardDeny: false };
+  }
+  return { status: "available", includeTools: true, canEnforceHardDeny: true };
 }
 function resolveManifestTools(input) {
   const policy = mergeTierPolicy(input);
   const warnings = [];
   const attribution = [];
   const downgradeReasons = [];
-  const effectiveDenied = new Set(policy.denied_natives_when_extension ?? []);
+  const effectiveDenied = new Set(getEffectiveDeniedTools(policy.denied_natives_when_extension ?? []));
+  const hardDeniedTools = new Set(Array.from(effectiveDenied).filter((tool) => GITNEXUS_HARD_DENY_TOOLS.has(tool)));
   const deniedNatives = [];
   const nativeTools = getTierTools(input.catalogs, "native", input.tier);
   const gitnexusBase = getTierTools(input.catalogs, "gitnexus", GITNEXUS_BASE_TIER);
   const gitnexusExtras = input.tier === "MEDIUM" || input.tier === "HIGH" ? getTierTools(input.catalogs, "gitnexus", input.tier).filter((tool) => !gitnexusBase.includes(tool)) : [];
-  const gitnexusState = input.extensionState?.gitnexus;
-  const healthyGitnexus = canEnforceHardDeny(gitnexusState);
-  const hardDenyAllowed = policy.denied_natives_mode === "hard" && healthyGitnexus;
+  const requestedGitnexusTools = uniqueOrdered([...gitnexusBase, ...gitnexusExtras]);
+  const gitnexusState = input.specialistExclusions?.disabledExtensions?.includes("gitnexus") ? { ...input.extensionState?.gitnexus, enabled: false, health: "disabled" } : input.extensionState?.gitnexus;
+  const effectiveGitnexusState = resolveEffectiveExtensionState(gitnexusState);
+  const hardDenyAllowed = policy.denied_natives_mode === "hard" && effectiveGitnexusState.canEnforceHardDeny;
   const finalNativeTools = nativeTools.filter((tool) => {
-    if (!effectiveDenied.has(tool))
+    if (!hardDeniedTools.has(tool))
       return true;
     if (!hardDenyAllowed)
       return true;
@@ -7073,16 +7082,16 @@ function resolveManifestTools(input) {
   });
   const toolsList = uniqueOrdered([
     ...finalNativeTools,
-    ...input.specialistExclusions?.disabledExtensions?.includes("gitnexus") ? [] : gitnexusBase,
-    ...input.specialistExclusions?.disabledExtensions?.includes("gitnexus") ? [] : gitnexusExtras
+    ...effectiveGitnexusState.includeTools ? requestedGitnexusTools : []
   ]);
-  if (!shouldIncludeExtensionTools("gitnexus", input))
-    warnings.push("gitnexus tools excluded by extension state");
+  if (!effectiveGitnexusState.includeTools && requestedGitnexusTools.length > 0) {
+    warnings.push(`gitnexus tools excluded by extension state: ${effectiveGitnexusState.status}`);
+  }
   if ((input.specialistExclusions?.disabledExtensions ?? []).length > 0) {
     warnings.push(`specialist exclusions: ${(input.specialistExclusions?.disabledExtensions ?? []).join(", ")}`);
     attribution.push({ layer: "specialist_exclusion", source: "specialist.json", tools: [] });
   }
-  attribution.push({ layer: "catalog", source: "tool catalogs", tools: nativeTools });
+  attribution.push({ layer: "catalog", source: "tool catalogs", tools: uniqueOrdered([...nativeTools, ...requestedGitnexusTools]) });
   if (input.catalogDefaultOverrides?.[input.tier]) {
     attribution.push({
       layer: "catalog_default",
@@ -7104,16 +7113,9 @@ function resolveManifestTools(input) {
       tools: input.specialistOverride.denied_natives_when_extension ?? []
     });
   }
-  if (!hardDenyAllowed && policy.denied_natives_mode === "hard" && effectiveDenied.size > 0) {
-    const restoredNatives = nativeTools.filter((tool) => effectiveDenied.has(tool));
-    const reasonParts = [gitnexusState].filter((state) => Boolean(state)).flatMap((state) => {
-      if (!HEALTHY.includes(state.health))
-        return [state.health];
-      if (state.catalogCompatible === false)
-        return ["catalog_incompatible"];
-      return [];
-    });
-    const reason = reasonParts.length > 0 ? reasonParts.join(",") : "unknown";
+  if (!hardDenyAllowed && policy.denied_natives_mode === "hard" && hardDeniedTools.size > 0) {
+    const restoredNatives = nativeTools.filter((tool) => hardDeniedTools.has(tool));
+    const reason = effectiveGitnexusState.status;
     warnings.push(`hard deny restored native fallback: ${reason}`);
     downgradeReasons.push(`restored native fallback for ${restoredNatives.join(",") || "(none)"} due to ${reason}`);
     attribution.push({ layer: "runtime_health", source: "fallback", tools: restoredNatives });
@@ -7129,6 +7131,95 @@ function resolveManifestTools(input) {
     warnings,
     attribution
   };
+}
+
+// src/specialist/resolved-tool-contract.ts
+function uniqueOrdered2(values) {
+  const seen = new Set;
+  const ordered = [];
+  for (const value of values) {
+    if (seen.has(value))
+      continue;
+    seen.add(value);
+    ordered.push(value);
+  }
+  return ordered;
+}
+function getCatalog2(catalogs, name) {
+  return catalogs.find((catalog) => catalog.catalog === name);
+}
+function getRequestedExtensionTools(catalogs, name, tier) {
+  const catalog = getCatalog2(catalogs, name);
+  if (!catalog)
+    return [];
+  return uniqueOrdered2([
+    ...catalog.source_tiers.READ_ONLY ?? [],
+    ...catalog.source_tiers[tier] ?? []
+  ]);
+}
+function getEffectiveExtensionStatus(input, name) {
+  const state = input.specialistExclusions?.disabledExtensions?.includes(name) ? { ...input.extensionState?.[name], enabled: false, health: "disabled" } : input.extensionState?.[name];
+  return resolveEffectiveExtensionState(state).status;
+}
+function formatList(values) {
+  return values.length > 0 ? values.join(", ") : "(none)";
+}
+function buildResolvedToolContract(input) {
+  const resolver = resolveManifestTools(input);
+  const nativeCatalog = getCatalog2(input.catalogs, "native");
+  const tierNativeTools = new Set(nativeCatalog?.source_tiers[input.tier] ?? []);
+  const nativeTools = resolver.toolsList.filter((tool) => tierNativeTools.has(tool));
+  const extensionTools = resolver.toolsList.filter((tool) => !tierNativeTools.has(tool));
+  const extensions = Object.fromEntries(input.catalogs.filter((catalog) => catalog.catalog !== "native").map((catalog) => {
+    const activeTools = resolver.toolsList.filter((tool) => getRequestedExtensionTools(input.catalogs, catalog.catalog, input.tier).includes(tool));
+    return [
+      catalog.catalog,
+      {
+        status: getEffectiveExtensionStatus(input, catalog.catalog),
+        packageName: input.extensionPackages?.[catalog.catalog]?.packageName,
+        packagePath: input.extensionPackages?.[catalog.catalog]?.packagePath,
+        activeTools
+      }
+    ];
+  }));
+  return {
+    effectiveTier: input.tier,
+    toolsFlag: resolver.tools,
+    toolsList: resolver.toolsList,
+    nativeTools,
+    extensionTools,
+    deniedNativeTools: resolver.deniedNatives,
+    deniedNativesMode: resolver.deniedNativesMode,
+    preferenceSignals: resolver.preferenceSignals,
+    downgradeReasons: resolver.downgradeReasons,
+    warnings: resolver.warnings,
+    extensions
+  };
+}
+function formatResolvedToolContract(contract) {
+  const lines = [
+    "## Resolved Tool Contract",
+    `- effective tier: ${contract.effectiveTier}`,
+    `- --tools: ${contract.toolsFlag || "(none)"}`,
+    `- actual native tools: ${formatList(contract.nativeTools)}`,
+    `- active extension tools: ${formatList(contract.extensionTools)}`,
+    `- denied native tools: ${formatList(contract.deniedNativeTools)}`,
+    `- deny mode: ${contract.deniedNativesMode}`,
+    "- extension state:"
+  ];
+  const extensionEntries = Object.entries(contract.extensions);
+  if (extensionEntries.length === 0) {
+    lines.push("  - (none)");
+  } else {
+    for (const [name, extension] of extensionEntries) {
+      lines.push(`  - ${name}: ${extension.status}; active tools: ${formatList(extension.activeTools)}`);
+    }
+  }
+  lines.push(`- preference signals: ${formatList(contract.preferenceSignals)}`);
+  lines.push(`- downgrade reasons: ${formatList(contract.downgradeReasons)}`);
+  lines.push(`- warnings: ${formatList(contract.warnings)}`);
+  return lines.join(`
+`);
 }
 
 // ../../../node_modules/zod/v3/helpers/util.js
@@ -10994,6 +11085,18 @@ var TEST_COMMAND_PATTERNS = [
   /(?:^|\s)pytest(?:\s|$)/i
 ];
 var cachedToolCatalogIndex;
+function toRuntimeToolCatalogs(catalogIndex) {
+  return catalogIndex.catalogs.map((catalog) => ({
+    catalog: catalog.catalog,
+    precedence: catalog.precedence,
+    source_tiers: {
+      READ_ONLY: catalog.source_tiers.READ_ONLY ?? [],
+      LOW: catalog.source_tiers.LOW ?? [],
+      MEDIUM: catalog.source_tiers.MEDIUM ?? [],
+      HIGH: catalog.source_tiers.HIGH ?? []
+    }
+  }));
+}
 function loadSharedToolCatalogIndex() {
   if (cachedToolCatalogIndex)
     return cachedToolCatalogIndex;
@@ -11014,14 +11117,60 @@ function loadSharedToolCatalogIndex() {
     }
   }
 }
-function probeExtensionHealth(packageName) {
-  const globalDir = resolveGlobalNodeModulesDir();
-  if (globalDir && existsSync2(join(globalDir, packageName, "package.json"))) {
-    return "loaded_healthy";
+function readPackageVersion(packageJsonPath) {
+  try {
+    const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+    return typeof pkg.version === "string" ? pkg.version : undefined;
+  } catch {
+    return;
   }
-  return "not_installed";
 }
-function resolvePermissionTools(options) {
+function resolveGitnexusRuntime(options) {
+  const gitnexusCatalog = options.catalogIndex.catalogs.find((catalog) => catalog.catalog === "gitnexus");
+  const packageName = gitnexusCatalog?.package ?? "pi-gitnexus";
+  if ((options.excludeExtensions ?? []).includes(packageName)) {
+    return {
+      packageName,
+      extensionState: { enabled: false, health: "disabled", catalogCompatible: true }
+    };
+  }
+  const globalDir = resolveGlobalNodeModulesDir();
+  if (!globalDir) {
+    return {
+      packageName,
+      extensionState: { enabled: true, health: "not_installed", catalogCompatible: false }
+    };
+  }
+  const packagePath = join(globalDir, packageName);
+  const packageJsonPath = join(packagePath, "package.json");
+  if (!existsSync2(packageJsonPath)) {
+    return {
+      packageName,
+      extensionState: { enabled: true, health: "not_installed", catalogCompatible: false }
+    };
+  }
+  const installedVersion = readPackageVersion(packageJsonPath);
+  if (!installedVersion) {
+    return {
+      packageName,
+      packagePath,
+      extensionState: { enabled: true, health: "loaded_unhealthy", catalogCompatible: false }
+    };
+  }
+  if (gitnexusCatalog && installedVersion !== gitnexusCatalog.version) {
+    return {
+      packageName,
+      packagePath,
+      extensionState: { enabled: true, health: "loaded_unhealthy", catalogCompatible: false }
+    };
+  }
+  return {
+    packageName,
+    packagePath,
+    extensionState: { enabled: true, health: "loaded_healthy", catalogCompatible: true }
+  };
+}
+function resolveRuntimeToolContract(options) {
   const catalogIndex = loadSharedToolCatalogIndex();
   if (!catalogIndex)
     return;
@@ -11029,15 +11178,28 @@ function resolvePermissionTools(options) {
   if (tier !== "READ_ONLY" && tier !== "LOW" && tier !== "MEDIUM" && tier !== "HIGH")
     return;
   const specialistOverride = options.specialistPermissions?.[tier];
-  return resolveManifestTools({
+  const gitnexusRuntime = resolveGitnexusRuntime({
+    catalogIndex,
+    excludeExtensions: options.excludeExtensions
+  });
+  const runtimeCatalogs = toRuntimeToolCatalogs(catalogIndex);
+  return buildResolvedToolContract({
     tier,
-    catalogs: catalogIndex.catalogs,
+    catalogs: runtimeCatalogs,
     catalogDefaultOverrides: catalogIndex.default_overrides,
+    manifestPolicy: options.specialistPermissions ? { permissions: options.specialistPermissions } : undefined,
     specialistOverride,
+    specialistExclusions: (options.excludeExtensions ?? []).includes(gitnexusRuntime.packageName) ? { disabledExtensions: ["gitnexus"] } : undefined,
     extensionState: {
-      gitnexus: { enabled: true, health: probeExtensionHealth("pi-gitnexus") }
+      gitnexus: gitnexusRuntime.extensionState
+    },
+    extensionPackages: {
+      gitnexus: {
+        packageName: gitnexusRuntime.packageName,
+        packagePath: gitnexusRuntime.packagePath
+      }
     }
-  }).tools || undefined;
+  });
 }
 function resolveGlobalNodeModulesDir() {
   const candidates = [
@@ -11389,13 +11551,14 @@ class PiAgentSession {
       "--no-themes",
       ...extraArgs
     ];
-    const toolsFlag = resolvePermissionTools({
+    const resolvedToolContract = this.options.resolvedToolContract ?? resolveRuntimeToolContract({
       level: this.options.permissionLevel,
       specialistName: this.options.specialistName,
-      specialistPermissions: this.options.specialistPermissions
+      specialistPermissions: this.options.specialistPermissions,
+      excludeExtensions: this.options.excludeExtensions
     });
-    if (toolsFlag)
-      args.push("--tools", toolsFlag);
+    if (resolvedToolContract?.toolsFlag)
+      args.push("--tools", resolvedToolContract.toolsFlag);
     if (this.options.thinkingLevel) {
       args.push("--thinking", this.options.thinkingLevel);
     }
@@ -11418,15 +11581,9 @@ class PiAgentSession {
     const nvidiaNimPath = join(homedir(), ".pi", "agent", "git", "github.com", "xRyul", "pi-nvidia-nim");
     if (existsSync2(nvidiaNimPath))
       args.push("-e", nvidiaNimPath);
-    const npmGlobalDir = resolveGlobalNodeModulesDir();
-    const excludedExtensions = new Set(this.options.excludeExtensions ?? []);
-    if (npmGlobalDir) {
-      const gitnexusPackageName = "pi-gitnexus";
-      if (!excludedExtensions.has(gitnexusPackageName)) {
-        const gitnexusPath = join(npmGlobalDir, gitnexusPackageName);
-        if (existsSync2(gitnexusPath))
-          args.push("-e", gitnexusPath);
-      }
+    const gitnexusContract = resolvedToolContract?.extensions.gitnexus;
+    if (gitnexusContract?.status === "available" && gitnexusContract.packagePath && existsSync2(gitnexusContract.packagePath)) {
+      args.push("-e", gitnexusContract.packagePath);
     }
     if (this.options.systemPrompt) {
       const systemPromptFlag = this.options.systemPromptMode === "replace" ? "--system-prompt" : "--append-system-prompt";
@@ -11956,6 +12113,7 @@ class PiAgentSession {
 
 // src/specialist/mandatory-rules.ts
 import { existsSync as existsSync5, readFileSync as readFileSync4 } from "node:fs";
+import { createHash as createHash2 } from "node:crypto";
 import { resolve as resolve2 } from "node:path";
 
 // src/specialist/observability-sqlite.ts
@@ -15212,6 +15370,64 @@ var STATIC_WORKFLOW_RULES_BLOCK = `
 `.trim();
 
 // src/specialist/mandatory-rules.ts
+class MandatoryRulesBudgetError extends Error {
+  budgetLimit;
+  candidateTokens;
+  mustKeepTokens;
+  injectedSectionIds;
+  evictedSectionIds;
+  outcome = "impossible";
+  constructor(budgetLimit, candidateTokens, mustKeepTokens, injectedSectionIds, evictedSectionIds) {
+    super(`Mandatory rules MUST_KEEP floor requires ${mustKeepTokens} tokens, exceeding budget ${budgetLimit}`);
+    this.budgetLimit = budgetLimit;
+    this.candidateTokens = candidateTokens;
+    this.mustKeepTokens = mustKeepTokens;
+    this.injectedSectionIds = injectedSectionIds;
+    this.evictedSectionIds = evictedSectionIds;
+    this.name = "MandatoryRulesBudgetError";
+  }
+  injectedTokens = 0;
+}
+function formatSectionsBlock(sections) {
+  return sections.length > 0 ? `## MANDATORY_RULES
+${sections.map((section) => section.block).join(`
+
+`)}` : "";
+}
+function estimateTokens(text) {
+  return text ? Math.max(1, Math.ceil(text.length / 4)) : 0;
+}
+function compileMandatoryRulesBudget(candidateSections, budgetLimit) {
+  const sections = candidateSections.filter((section) => section.block.trim() && section.ruleCount > 0);
+  const candidateTokens = estimateTokens(formatSectionsBlock(sections));
+  const mustKeep = sections.filter((section) => section.priority === "must_keep");
+  const floorTokens = estimateTokens(formatSectionsBlock(mustKeep));
+  if (floorTokens > budgetLimit) {
+    throw new MandatoryRulesBudgetError(budgetLimit, candidateTokens, floorTokens, [], sections.map((section) => section.setId));
+  }
+  const retained = new Set(mustKeep);
+  for (const priority of ["important", "optional"]) {
+    for (const section of sections.filter((item) => item.priority === priority)) {
+      const proposed = sections.filter((item) => retained.has(item) || item === section);
+      if (estimateTokens(formatSectionsBlock(proposed)) <= budgetLimit)
+        retained.add(section);
+    }
+  }
+  const injected = sections.filter((section) => retained.has(section));
+  const block = formatSectionsBlock(injected);
+  const evicted = sections.filter((section) => !retained.has(section));
+  return {
+    block,
+    sections: injected,
+    budgetLimit,
+    candidateTokens,
+    injectedTokens: estimateTokens(block),
+    injectedSectionIds: injected.map((section) => section.setId),
+    evictedSectionIds: evicted.map((section) => section.setId),
+    payloadDigest: createHash2("sha256").update(block).digest("hex"),
+    outcome: evicted.length === 0 ? "full" : "degraded"
+  };
+}
 function readJsonFile(filePath) {
   return JSON.parse(readFileSync4(filePath, "utf8"));
 }
@@ -15365,12 +15581,14 @@ function formatMandatoryRulesBlock(sets, inlineRules = []) {
     ...sets.map((set) => {
       const rules = set.rules.map((rule) => `- [${rule.level}] ${rule.text}`).join(`
 `);
-      return { setId: set.id, block: `### ${set.id}
+      return { setId: set.id, priority: set.priority, ruleCount: set.rules.length, block: `### ${set.id}
 ${rules}` };
     }),
     ...inlineRules.length > 0 ? [
       {
         setId: "specialist-inline-rules",
+        priority: "must_keep",
+        ruleCount: inlineRules.length,
         block: `### specialist-inline-rules
 ${inlineRules.map((rule, index) => `- [${rule.level}] ${rule.text}${rule.id ? ` (id: ${rule.id})` : ` (id: inline-${index + 1})`}`).join(`
 `)}`
@@ -15398,7 +15616,7 @@ function collectMandatoryRuleSets(cwd, setIds) {
   }
   return sets;
 }
-function buildMandatoryRulesInjection(specialistConfig) {
+function buildMandatoryRulesInjection(specialistConfig, budgetLimit = Number.POSITIVE_INFINITY) {
   const cwd = specialistConfig.cwd ?? process.cwd();
   const index = loadMandatoryRulesIndex(cwd);
   const mandatoryRules = specialistConfig.specialist?.mandatory_rules;
@@ -15412,15 +15630,23 @@ function buildMandatoryRulesInjection(specialistConfig) {
   const globalsDisabled = mandatoryRules?.disable_default_globals ?? false;
   const globals = globalsDisabled ? [] : [{
     id: "workflow-quick-rules",
-    rules: [{ id: "workflow-quick-rules-1", level: "required", text: STATIC_WORKFLOW_RULES_BLOCK.trim().replace(/^##\s+Beads Workflow Quick Rules\n/, "") }]
+    rules: [{ id: "workflow-quick-rules-1", level: "required", text: STATIC_WORKFLOW_RULES_BLOCK.trim().replace(/^##\s+Beads Workflow Quick Rules\n/, "") }],
+    priority: "must_keep"
   }];
-  const formatted = formatMandatoryRulesBlock([...globals, ...sets], inlineRules);
+  const requiredIds = new Set(index?.required_template_sets ?? []);
+  const defaultIds = new Set(index?.default_template_sets ?? []);
+  const prioritizedSets = sets.map((set) => ({
+    ...set,
+    priority: requiredIds.has(set.id) ? "must_keep" : defaultIds.has(set.id) ? "important" : "optional"
+  }));
+  const formatted = formatMandatoryRulesBlock([...globals, ...prioritizedSets], inlineRules);
+  const compiled = compileMandatoryRulesBudget(formatted.sections, budgetLimit);
+  const injectedSetIds = new Set(compiled.injectedSectionIds);
   return {
-    block: formatted.block,
-    sections: formatted.sections,
-    setsLoaded: [...globals.map((set) => set.id), ...sets.map((set) => set.id)],
-    ruleCount: [...globals, ...sets].reduce((count, set) => count + set.rules.length, 0) + inlineRules.length,
-    inlineRulesCount: inlineRules.length,
+    ...compiled,
+    setsLoaded: [...globals, ...prioritizedSets].filter((set) => injectedSetIds.has(set.id)).map((set) => set.id),
+    ruleCount: compiled.sections.reduce((count, section) => count + section.ruleCount, 0),
+    inlineRulesCount: injectedSetIds.has("specialist-inline-rules") ? inlineRules.length : 0,
     globalsDisabled
   };
 }
@@ -15591,7 +15817,7 @@ function isToolAvailable(tool, permissionLevel) {
     return true;
   return gatedLevels.includes(normalized);
 }
-function validateBeforeRun(spec, permissionLevel) {
+function validateBeforeRun(spec, permissionLevel, resolvedToolContract) {
   const errors = [];
   const warnings = [];
   for (const p of spec.specialist.skills?.paths ?? []) {
@@ -15629,6 +15855,10 @@ function validateBeforeRun(spec, permissionLevel) {
   for (const tool of spec.specialist.capabilities?.required_tools ?? []) {
     if (!isToolAvailable(tool, permissionLevel)) {
       errors.push(`  ✗ capabilities.required_tools: tool "${tool}" requires higher permission than "${permissionLevel}"`);
+      continue;
+    }
+    if (resolvedToolContract && !resolvedToolContract.toolsList.some((availableTool) => availableTool.toLowerCase() === tool.toLowerCase())) {
+      errors.push(`  ✗ capabilities.required_tools: tool "${tool}" missing from resolved runtime contract (${resolvedToolContract.toolsFlag || "(none)"})`);
     }
   }
   if (warnings.length > 0) {
@@ -15978,7 +16208,7 @@ function computeSkillSources(spec, baseDir) {
   for (const { path, source } of entries) {
     try {
       const content = readFileSync6(path);
-      const sha256 = createHash2("sha256").update(content).digest("hex");
+      const sha256 = createHash3("sha256").update(content).digest("hex");
       sources.push({ path, sha256, source });
     } catch {
       sources.push({ path, sha256: "unreadable", source });
@@ -16337,8 +16567,21 @@ async function runScriptSpecialist(input, options) {
     compatGuard(spec, trust);
     const skillPaths = trust.allowSkills ? collectSkillPaths(spec, baseDir) : [];
     const skillSources = trust.allowSkills ? computeSkillSources(spec, baseDir) : undefined;
+    const permissionLevel = spec.specialist.execution.permission_required;
+    const specialistName = spec.specialist.metadata?.name ?? resolvedSpecialist;
+    const specialistPermissions = spec.specialist.permissions;
+    const excludeExtensions = [
+      spec.specialist.execution.extensions?.gitnexus === false ? "pi-gitnexus" : undefined
+    ].filter((value) => Boolean(value));
+    const resolvedToolContract = resolveRuntimeToolContract({
+      level: permissionLevel,
+      specialistName,
+      specialistPermissions,
+      excludeExtensions
+    });
+    const resolvedToolContractBlock = resolvedToolContract ? formatResolvedToolContract(resolvedToolContract) : "";
     const localScripts = getLocalScripts(spec);
-    validateBeforeRun(buildValidationSpec(spec, localScripts), spec.specialist.execution.permission_required);
+    validateBeforeRun(buildValidationSpec(spec, localScripts), permissionLevel, resolvedToolContract);
     const executableScripts = trust.allowLocalScripts ? localScripts : [];
     const preScripts = executableScripts.filter((script) => script.phase === "pre");
     const postScripts = executableScripts.filter((script) => script.phase === "post");
@@ -16371,7 +16614,8 @@ async function runScriptSpecialist(input, options) {
       cwd: baseDir,
       bead_id: "",
       pre_script_output: preScriptOutput,
-      ...input.variables ?? {}
+      ...input.variables ?? {},
+      ...resolvedToolContractBlock ? { resolved_tool_contract: resolvedToolContractBlock } : {}
     };
     let prompt = applyOutputContract(renderTaskTemplate(template, variables), spec);
     if (!spec.specialist.execution.bare) {
@@ -16480,7 +16724,7 @@ ${mandatoryRulesBlock}`;
       const systemPromptMode = spec.specialist.prompt.system_prompt_mode;
       let attempt;
       try {
-        attempt = await runSingleAttempt(prompt, model, input.thinking_level ?? spec.specialist.execution.thinking_level, timeoutMs, assistantTextLimitBytes, options, spec, systemPrompt, systemPromptMode, skillPaths, shouldParseJson ? expectedKeys : [], appendTimelineEvent);
+        attempt = await runSingleAttempt(prompt, model, input.thinking_level ?? spec.specialist.execution.thinking_level, timeoutMs, assistantTextLimitBytes, options, spec, systemPrompt, systemPromptMode, skillPaths, shouldParseJson ? expectedKeys : [], resolvedToolContract, appendTimelineEvent);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         persistTerminalOnce({
@@ -16607,7 +16851,7 @@ function collectModelCandidates(input, spec, options) {
   const candidates = [input.model_override, ...executionChain, options.fallbackModel].filter((value) => typeof value === "string" && value.length > 0);
   return [...new Set(candidates)];
 }
-function appendExtensionArgs(args, spec) {
+function appendExtensionArgs(args, spec, resolvedToolContract) {
   const permissionLevel = spec.specialist.execution.permission_required.toUpperCase();
   const piExtDir = join4(homedir3(), ".pi", "agent", "extensions");
   if (permissionLevel !== "READ_ONLY") {
@@ -16621,26 +16865,20 @@ function appendExtensionArgs(args, spec) {
   const cavemanPath = join4(piExtDir, "caveman");
   if (existsSync7(cavemanPath))
     args.push("-e", cavemanPath);
-  const npmGlobalDir = resolveGlobalNodeModulesDir();
-  const excludedExtensions = new Set([
-    spec.specialist.execution.extensions?.gitnexus === false ? "pi-gitnexus" : undefined
-  ].filter((value) => Boolean(value)));
-  if (!npmGlobalDir)
-    return;
-  if (!excludedExtensions.has("pi-gitnexus")) {
-    const gitnexusPath = join4(npmGlobalDir, "pi-gitnexus");
-    if (existsSync7(gitnexusPath))
-      args.push("-e", gitnexusPath);
+  const gitnexusContract = resolvedToolContract?.extensions.gitnexus;
+  if (gitnexusContract?.status === "available" && gitnexusContract.packagePath && existsSync7(gitnexusContract.packagePath)) {
+    args.push("-e", gitnexusContract.packagePath);
   }
 }
-async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assistantTextLimitBytes, options, spec, systemPrompt, systemPromptMode, skillPaths = [], requiredJsonKeys = [], appendTimelineEvent) {
+async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assistantTextLimitBytes, options, spec, systemPrompt, systemPromptMode, skillPaths = [], requiredJsonKeys = [], resolvedToolContract, appendTimelineEvent) {
   if (options.surface === "script" && spec.specialist.execution.permission_required !== "READ_ONLY") {
     const session = await PiAgentSession.create({
       model,
       systemPrompt,
       systemPromptMode,
       permissionLevel: spec.specialist.execution.permission_required,
-      specialistName: spec.specialist.metadata.name,
+      specialistName: spec.specialist.metadata?.name,
+      specialistPermissions: spec.specialist.permissions,
       skillPaths,
       thinkingLevel,
       cwd: options.projectDir ?? process.cwd(),
@@ -16648,6 +16886,7 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
       excludeExtensions: [
         spec.specialist.execution.extensions?.gitnexus === false ? "pi-gitnexus" : undefined
       ].filter((value) => Boolean(value)),
+      resolvedToolContract,
       onToken: (delta) => {
         recordAssistantDelta(delta);
         appendTimelineEvent?.({ t: Date.now(), type: "text", char_count: delta.length });
@@ -16770,7 +17009,7 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
   }
   return await new Promise((resolve5, reject) => {
     const args = ["--mode", "json", "--no-session", "--no-extensions", "--no-skills", "--offline", "--no-context-files", "--no-prompt-templates", "--no-themes"];
-    const toolsFlag = resolvePermissionTools({ level: spec.specialist.execution.permission_required });
+    const toolsFlag = resolvedToolContract?.toolsFlag;
     if (toolsFlag)
       args.push("--tools", toolsFlag);
     for (const skillPath of skillPaths)
@@ -16780,7 +17019,7 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
       args.push("--thinking", thinkingLevel);
     if (systemPrompt)
       args.push(systemPromptMode === "append" ? "--append-system-prompt" : "--system-prompt", systemPrompt);
-    appendExtensionArgs(args, spec);
+    appendExtensionArgs(args, spec, resolvedToolContract);
     const pi = spawn2("pi", args, { stdio: ["pipe", "pipe", "pipe"], cwd: options.projectDir ?? process.cwd() });
     options.onChild?.(pi);
     pi.stdin?.on("error", () => {});
@@ -17019,6 +17258,16 @@ var MandatoryRulesSchema = objectType({
   disable_default_globals: booleanType().default(false),
   inline_rules: arrayType(MandatoryRuleSchema).default([])
 }).passthrough().optional();
+var SpecialistPermissionTierSchema = objectType({
+  denied_natives_when_extension: arrayType(stringType()).optional(),
+  denied_natives_mode: enumType(["soft", "hard"]).optional()
+}).passthrough();
+var SpecialistPermissionsSchema = objectType({
+  READ_ONLY: SpecialistPermissionTierSchema.optional(),
+  LOW: SpecialistPermissionTierSchema.optional(),
+  MEDIUM: SpecialistPermissionTierSchema.optional(),
+  HIGH: SpecialistPermissionTierSchema.optional()
+}).partial();
 var StallDetectionSchema = objectType({
   running_silence_warn_ms: numberType().optional(),
   running_silence_error_ms: numberType().optional(),
@@ -17036,6 +17285,7 @@ var SpecialistSchema = objectType({
     validation: ValidationSchema,
     stall_detection: StallDetectionSchema,
     mandatory_rules: MandatoryRulesSchema,
+    permissions: SpecialistPermissionsSchema.optional(),
     output_file: stringType().optional(),
     notes_mode: enumType(["full-trail", "final-only"]).default("full-trail"),
     beads_integration: enumType(["auto", "always", "never"]).default("auto"),

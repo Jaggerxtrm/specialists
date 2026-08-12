@@ -5,6 +5,7 @@ export declare class StallTimeoutError extends Error {
     constructor(timeoutMs: number);
 }
 import { type ManifestPolicy } from '../specialist/manifest-resolver.js';
+import { type ResolvedToolContract } from '../specialist/resolved-tool-contract.js';
 export interface AgentSessionMeta {
     backend: string;
     model: string;
@@ -94,6 +95,8 @@ export interface PiSessionOptions {
     env?: Record<string, string>;
     /** npm extension package names to skip when assembling pi -e args */
     excludeExtensions?: string[];
+    /** Shared resolver-backed runtime contract computed before launch. */
+    resolvedToolContract?: ResolvedToolContract;
     /** Called with each text token as it arrives */
     onToken?: (delta: string) => void;
     /** Called with each thinking token */
@@ -132,10 +135,17 @@ export interface PiSessionOptions {
     /** Extended stall timeout used while known test commands run via bash tool */
     testCommandStallTimeoutMs?: number;
 }
+export declare function resolveRuntimeToolContract(options: {
+    level?: string;
+    specialistName?: string;
+    specialistPermissions?: ManifestPolicy['permissions'];
+    excludeExtensions?: readonly string[];
+}): ResolvedToolContract | undefined;
 export declare function resolvePermissionTools(options: {
     level?: string;
     specialistName?: string;
     specialistPermissions?: ManifestPolicy['permissions'];
+    excludeExtensions?: readonly string[];
 }): string | undefined;
 export declare function resolveGlobalNodeModulesDir(): string | undefined;
 export declare function validateWriteToolPathAgainstBoundary(toolName: string, toolArgs: Record<string, unknown> | undefined, worktreeBoundary: string | undefined): string | undefined;

@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { SpecialistRunner } from '../../../src/specialist/runner.js';
 import { HookEmitter } from '../../../src/specialist/hooks.js';
 import { CircuitBreaker } from '../../../src/utils/circuitBreaker.js';
@@ -234,6 +235,94 @@ describe('SpecialistRunner', () => {
         '### beta\n- [warn] beta rule is longer'.length,
       ]);
       expect(mandatoryRuleComponents.reduce((sum, component) => sum + component.bytes, 0)).toBe(payloadSummary.payload_breakdown.totals.bytes - payloadSummary.payload_breakdown.components.filter(component => component.kind !== 'mandatory_rule').reduce((sum, component) => sum + component.bytes, 0));
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('reports only final injected mandatory sections with exact budget telemetry and digest', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'mandatory-rule-budget-'));
+    try {
+      mkdirSync(join(cwd, 'config', 'mandatory-rules'), { recursive: true });
+      writeFileSync(join(cwd, 'config', 'mandatory-rules', 'floor.md'), '---\nrules:\n  - id: floor-1\n    level: error\n    text: stay safe\n---\n');
+      writeFileSync(join(cwd, 'config', 'mandatory-rules', 'oversized.md'), `---\nrules:\n  - id: optional-1\n    level: info\n    text: ${'x'.repeat(9000)}\n---\n`);
+      writeFileSync(join(cwd, 'config', 'mandatory-rules', 'index.json'), JSON.stringify({
+        required_template_sets: ['floor'],
+        default_template_sets: ['oversized'],
+      }));
+
+      const events: Array<{ type: string; details: Record<string, unknown> }> = [];
+      const runner = new SpecialistRunner({
+        loader: makeLoader({}, 'never', {}, { mandatory_rules: { disable_default_globals: true } }),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+      });
+
+      await runner.run({ name: 'test-spec', prompt: 'do thing', workingDirectory: cwd }, undefined, (type, details) => {
+        events.push({ type, details });
+      });
+
+      const prompt = mockSession.prompt.mock.calls.at(-1)?.[0] as string;
+      const injectedBlock = '## MANDATORY_RULES\n### floor\n- [error] stay safe';
+      expect(prompt).toContain(injectedBlock);
+      expect(prompt).not.toContain('### oversized');
+
+      const metaEvent = events.find((event) => event.type === 'meta' && event.details.source === 'mandatory_rules_injection');
+      expect(metaEvent).toBeDefined();
+      expect(metaEvent?.details.data).toMatchObject({
+        budget_limit: 2000,
+        outcome: 'degraded',
+        injected_section_ids: ['floor'],
+        evicted_section_ids: ['oversized'],
+        injected_tokens: Math.ceil(injectedBlock.length / 4),
+        payload_digest: createHash('sha256').update(injectedBlock).digest('hex'),
+      });
+
+      const payloadEvent = events.find((event) => event.type === 'payload_breakdown');
+      const payload = JSON.parse(payloadEvent?.details.summary as string) as {
+        payload_breakdown: { components: Array<{ kind: string; name: string }> };
+      };
+      expect(payload.payload_breakdown.components.filter((item) => item.kind === 'mandatory_rule').map((item) => item.name)).toEqual(['floor']);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('does not start a session when the MUST_KEEP floor exceeds the budget', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'mandatory-rule-impossible-'));
+    const sessionFactory = vi.fn().mockResolvedValue(mockSession);
+    const events: Array<{ type: string; details: Record<string, unknown> }> = [];
+    try {
+      mkdirSync(join(cwd, 'config', 'mandatory-rules'), { recursive: true });
+      writeFileSync(join(cwd, 'config', 'mandatory-rules', 'floor.md'), `---\nrules:\n  - id: floor-1\n    level: error\n    text: ${'x'.repeat(9000)}\n---\n`);
+      writeFileSync(join(cwd, 'config', 'mandatory-rules', 'index.json'), JSON.stringify({ required_template_sets: ['floor'] }));
+      const runner = new SpecialistRunner({
+        loader: makeLoader({}, 'never', {}, { mandatory_rules: { disable_default_globals: true } }),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory,
+      });
+
+      await expect(runner.run({ name: 'test-spec', prompt: 'do thing', workingDirectory: cwd }, undefined, (type, details) => {
+        events.push({ type, details });
+      })).rejects.toMatchObject({
+        outcome: 'impossible',
+        budgetLimit: 2000,
+        injectedSectionIds: [],
+        evictedSectionIds: ['floor'],
+      });
+      expect(sessionFactory).not.toHaveBeenCalled();
+      expect(mockSession.start).not.toHaveBeenCalled();
+      const impossible = events.find((event) => event.type === 'meta' && event.details.source === 'mandatory_rules_injection');
+      expect(impossible?.details.data).toMatchObject({
+        budget_limit: 2000,
+        outcome: 'impossible',
+        injected_tokens: 0,
+        injected_section_ids: [],
+        evicted_section_ids: ['floor'],
+        payload_digest: createHash('sha256').update('').digest('hex'),
+      });
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
