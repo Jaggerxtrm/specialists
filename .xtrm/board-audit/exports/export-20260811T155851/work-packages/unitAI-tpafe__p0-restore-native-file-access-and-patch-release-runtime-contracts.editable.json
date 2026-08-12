@@ -1,0 +1,1008 @@
+{
+  "content_sha256": "9555917477e33748042b46c542629d0aef69ffd3672e22f181aba679daacabe8",
+  "desired_issues": {
+    "unitAI-tpafe": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-08-10T13:56:58Z",
+      "created_by": "you@example.com",
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "description": "## PROBLEM\nThe Serena retirement commit 7053236f removed the active Serena catalog and references but left config/catalog/index.json denying native read, grep, find, and ls at every tier when GitNexus is healthy. The current manifest resolver therefore strips native file access from GitNexus-backed specialists. Explorer, overthinker, and seconder resolve to GitNexus-only; reviewer loses native file tools; obligations-scanner is a soft-deny exception; executor remains usable through bash. This is a runtime contract regression.\n\nThe published @jaggerxtrm/specialists 3.21.2 tarball predates the retirement and still contains Serena artifacts while the current source retains the same version. The mandatory-rule budget path can skip the whole block above 2000 estimated tokens while runner telemetry records the sections as injected. Pi read output contains content without line numbers, so file:line evidence is model-counted.\n\n## SUCCESS\nPatch releases restore native read for read-only file inspection while retaining grep/find/ls denial where GitNexus is healthy. Specialist prompts describe the tools actually available. Mandatory rules fit the budget through deterministic section selection and telemetry reports only the payload actually sent. Published package contents, version metadata, and source agree. File citation behavior is either line-numbered by the supported read contract or explicitly guarded and verified. No active Serena runtime integration returns.\n\n## SCOPE\nCover config/catalog/index.json; manifest resolution and extension-health behavior; affected specialist definitions and prompts; unit and integration tests; task-prompt mandatory-rule budgeting; runner payload and observability metadata; package/build/release metadata; npm pack and installed-tarball smoke tests; and coordination with the Pi read-tool contract.\n\n## NON_GOALS\nDo not reintroduce Serena. Do not redesign GitNexus. Do not change soft-deny semantics except to document and test them. Do not rewrite unrelated specialist prompts. Do not reconstruct unavailable historical Hiryuen telemetry. Do not redesign Beads or Dolt persistence.\n\n## CONSTRAINTS\nShip backward-compatible patch releases. Keep grep/find/ls as the preferred denied search natives when GitNexus is healthy, but preserve native read. Treat release artifacts as runtime contracts. Avoid claims based only on stale graph indexes. Record exact telemetry payloads. Use typed Beads dependencies and keep external Pi work explicitly coordinated.\n\n## VALIDATION\n- [ ] Resolver matrix covers healthy and unhealthy GitNexus and hard and soft deny modes.\n- [ ] Prompt audit covers all specialist definitions, including special cases.\n- [ ] Over-budget mandatory-rule tests prove deterministic retention and exact telemetry.\n- [ ] Focused tests, full supported test/build/lint gates, and package smoke tests pass.\n- [ ] Packed artifact contains no retired Serena runtime surface and matches source/version.\n- [ ] Citation behavior has a reproducible line-number or verification test.\n- [ ] Release checklist records patch version, changelog, artifact, and rollback evidence.\n\n## OUTPUT\nA sequence of reviewed implementation PRs, batched validation work, one or more patch releases, package parity evidence, and a residual-risk handoff.\n\n## REFERENCES\n- Retirement commit: 7053236fc\n- Current catalog: config/catalog/index.json\n- Resolver: src/specialist/manifest-resolver.ts\n- Extension health: src/pi/session.ts\n- Prompt contracts: config/specialists/*.specialist.json\n- Mandatory rules: src/specialist/task-prompt.ts and src/specialist/runner.ts\n- Package baseline: @jaggerxtrm/specialists@3.21.2\n- Local audit date: 2026-08-10",
+      "id": "unitAI-tpafe",
+      "issue_type": "epic",
+      "owner": "you@example.com",
+      "priority": 0,
+      "status": "open",
+      "title": "P0: restore native file access and patch-release runtime contracts",
+      "updated_at": "2026-08-10T13:56:58Z"
+    },
+    "unitAI-tpafe.1": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-08-10T13:58:02Z",
+      "created_by": "you@example.com",
+      "dependencies": [
+        {
+          "created_at": "2026-08-10T15:58:01Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe",
+          "issue_id": "unitAI-tpafe.1",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 2,
+      "description": "## PROBLEM\nconfig/catalog/index.json denies read, grep, find, and ls at all four tier defaults. The current resolver merges denial lists and hard-enforces them when GitNexus is healthy. This removes native read from specialists that require direct file inspection.\n\n## SUCCESS\nThe catalog preserves hard denial of grep, find, and ls when the GitNexus replacement is healthy, while native read remains available. The resolver matrix proves the intended behavior for READ_ONLY and other tiers under healthy and unhealthy GitNexus. No Serena package or runtime path is required.\n\n## SCOPE\nUpdate config/catalog/index.json and the manifest-resolver/session tests that lock the current behavior. Cover explorer, overthinker, seconder, reviewer, obligations-scanner, executor, and bare as relevant special cases. Confirm mergeTierPolicy union behavior remains explicit.\n\n## NON_GOALS\nDo not remove GitNexus preference. Do not change soft-deny semantics. Do not add a new extension replacement. Do not modify unrelated tier permissions.\n\n## CONSTRAINTS\nUse the smallest compatible catalog change. Keep native bash/edit/write behavior unchanged. Preserve the existing hard-deny gate for search tools. Include regression assertions for read surviving and grep/find/ls remaining denied.\n\n## VALIDATION\n- [ ] Focused manifest-resolver tests pass.\n- [ ] Healthy/unhealthy GitNexus resolver matrix passes.\n- [ ] Resolved tool output is checked for every affected specialist.\n- [ ] No Serena references are introduced.\n- [ ] Full relevant TypeScript test and build gates pass.\n\n## OUTPUT\nA reviewed implementation PR with updated tests and before/after resolved-tool evidence.\n\n## REFERENCES\nRetirement commit 7053236fc; config/catalog/index.json; src/specialist/manifest-resolver.ts; src/pi/session.ts; local audit 2026-08-10.",
+      "id": "unitAI-tpafe.1",
+      "issue_type": "task",
+      "owner": "you@example.com",
+      "priority": 0,
+      "status": "open",
+      "title": "Fix catalog native read denial for GitNexus-backed specialists",
+      "updated_at": "2026-08-10T13:58:02Z"
+    },
+    "unitAI-tpafe.2": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-08-10T13:58:02Z",
+      "created_by": "you@example.com",
+      "dependencies": [
+        {
+          "created_at": "2026-08-10T15:58:02Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe",
+          "issue_id": "unitAI-tpafe.2",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 2,
+      "description": "## PROBLEM\nSeveral specialist prompts advertise native tools that policy can remove. explorer contains a Fallback Approach — Bash/Grep section and a read-only bash/grep/find/ls line that do not describe its resolved harness. overthinker also states that only read, bash, grep, find, and ls are allowed. The prompt contract and runtime contract can therefore diverge silently.\n\n## SUCCESS\nEvery specialist prompt names tools that the resolved manifest can provide for its declared policy, including special cases such as obligations-scanner soft deny and bare GitNexus disabled. Stale Serena instructions remain absent. When a hard policy strips a tool explicitly named by a specialist prompt, launch diagnostics produce an actionable warning or the prompt is corrected so the mismatch cannot remain silent.\n\n## SCOPE\nAudit and update config/specialists/*.specialist.json, starting with explorer and overthinker and including all sibling prompts with the same claim. Add or update resolver/launch diagnostic tests. Document exceptions only where the runtime behavior is intentional.\n\n## NON_GOALS\nDo not rewrite specialist role guidance unrelated to tool availability. Do not restore Serena. Do not make prompts depend on bash for READ_ONLY roles. Do not weaken policy to satisfy stale prose.\n\n## CONSTRAINTS\nUse resolved manifests as the source of truth. Keep GitNexus preferred for search and impact queries. Preserve obligations-scanner soft-deny behavior unless a separate design decision is recorded. Keep prompt changes backward-compatible for existing specialist roles.\n\n## VALIDATION\n- [ ] Repository-wide prompt audit identifies all native-tool claims.\n- [ ] Explorer and overthinker stale fallback text is removed or made accurate.\n- [ ] Special-case specialists have explicit tests.\n- [ ] Launch mismatch diagnostics are tested, or the accepted no-warning design is documented with evidence.\n- [ ] Focused and full relevant tests pass.\n\n## OUTPUT\nA reviewed prompt/diagnostic PR with an audit table and resolved-manifest evidence.\n\n## REFERENCES\nconfig/specialists/explorer.specialist.json; config/specialists/overthinker.specialist.json; src/specialist/manifest-resolver.ts; src/pi/session.ts; local audit 2026-08-10.",
+      "id": "unitAI-tpafe.2",
+      "issue_type": "task",
+      "owner": "you@example.com",
+      "priority": 0,
+      "status": "open",
+      "title": "Reconcile specialist prompt tool contracts and launch diagnostics",
+      "updated_at": "2026-08-10T13:58:02Z"
+    },
+    "unitAI-tpafe.3": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-08-10T13:58:02Z",
+      "created_by": "you@example.com",
+      "dependencies": [
+        {
+          "created_at": "2026-08-10T15:58:02Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe",
+          "issue_id": "unitAI-tpafe.3",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 2,
+      "description": "## PROBLEM\nsrc/specialist/task-prompt.ts skips the complete MANDATORY_RULES block when the estimated payload exceeds the 2000-token budget. The published 3.21.2 executor template set reconstructs at about 2226 estimated tokens because it still includes serena-cheatsheet. src/specialist/runner.ts records mandatory-rule sections unconditionally after the skip decision, so telemetry can report sections and tokens that were not sent.\n\n## SUCCESS\nMandatory rules use deterministic per-section budget handling. The implementation retains the highest-priority safety and workflow contracts under the limit and reports exactly the sections and token estimate actually injected. An over-budget fixture never drops every rule and never reports unsent sections as injected. The current source and packed artifact have the same rule set.\n\n## SCOPE\nUpdate src/specialist/task-prompt.ts and src/specialist/runner.ts plus mandatory-rule, runner, and observability tests. Define and test section priority/eviction behavior, the 2000-token boundary, empty and oversized individual sections, ordering, metadata, and payload components.\n\n## NON_GOALS\nDo not silently raise the budget without evidence. Do not restore serena-cheatsheet. Do not redesign all mandatory-rule content. Do not alter unrelated telemetry event schemas.\n\n## CONSTRAINTS\nPreserve mandatory-rule ordering where retained. Record only data actually sent to the model. Keep the cap explicit and configurable only through an intentional contract change. Preserve bead-id-verbatim and git-workflow-safe coverage when the priority policy requires them.\n\n## VALIDATION\n- [ ] Over-budget unit fixture proves per-section eviction.\n- [ ] Boundary tests cover exactly-at-limit and one-token-over-limit cases.\n- [ ] Runner telemetry equals the injected sections and token estimate.\n- [ ] Executor scenario preserves critical bead and git workflow rules.\n- [ ] Full relevant tests, type checks, and build pass.\n\n## OUTPUT\nA reviewed runtime/telemetry PR with deterministic budget policy and fixture evidence.\n\n## REFERENCES\nsrc/specialist/task-prompt.ts; src/specialist/runner.ts; config/mandatory-rules/index.json; config/mandatory-rules; package 3.21.2 tarball audit; local audit 2026-08-10.",
+      "id": "unitAI-tpafe.3",
+      "issue_type": "task",
+      "owner": "you@example.com",
+      "priority": 0,
+      "status": "open",
+      "title": "Make mandatory-rule budget eviction and telemetry reflect actual injection",
+      "updated_at": "2026-08-10T13:58:02Z"
+    },
+    "unitAI-tpafe.4": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-08-10T13:58:03Z",
+      "created_by": "you@example.com",
+      "dependencies": [
+        {
+          "created_at": "2026-08-10T15:58:24Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe.3",
+          "issue_id": "unitAI-tpafe.4",
+          "metadata": "{}",
+          "type": "blocks"
+        },
+        {
+          "created_at": "2026-08-10T15:58:02Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe",
+          "issue_id": "unitAI-tpafe.4",
+          "metadata": "{}",
+          "type": "parent-child"
+        },
+        {
+          "created_at": "2026-08-10T15:58:23Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe.1",
+          "issue_id": "unitAI-tpafe.4",
+          "metadata": "{}",
+          "type": "blocks"
+        },
+        {
+          "created_at": "2026-08-10T15:58:23Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe.2",
+          "issue_id": "unitAI-tpafe.4",
+          "metadata": "{}",
+          "type": "blocks"
+        }
+      ],
+      "dependency_count": 3,
+      "dependent_count": 1,
+      "description": "## PROBLEM\nThe published @jaggerxtrm/specialists@3.21.2 tarball has gitHead c1e660ab, predates Serena retirement 7053236f, and contains config/catalog/serena.json, serena-cheatsheet.md, and old Serena runtime surfaces. Current source still reports version 3.21.2. npm installation therefore does not match origin/master at the same version.\n\n## SUCCESS\nThe next patch version is built from the corrected source and has one-to-one parity with the release commit. Packed and installed smoke tests prove that the published artifact contains no retired active Serena surface, contains the corrected catalog/prompts/rules, and resolves the intended native tools. Package metadata, CHANGELOG, git tag, and artifact version agree.\n\n## SCOPE\nInspect package.json, build and package inclusion rules, release scripts, generated artifacts, CHANGELOG, and CI release configuration. Remove stale Serena files from the packed output through source/package corrections. Bump the current version using the repository release policy, producing the next patch version after 3.21.2 unless a newer release has landed. Prepare the patch publication evidence.\n\n## NON_GOALS\nDo not publish a major release. Do not reintroduce Serena. Do not delete unrelated historical documentation outside the package surface. Do not bypass release or provenance checks.\n\n## CONSTRAINTS\nUse npm pack or the repository equivalent before publication. Verify tarball contents and installed behavior in a temporary prefix. Keep source and artifact gitHead traceable. Define rollback or yanking procedure before publication.\n\n## VALIDATION\n- [ ] Version, gitHead, tag, and CHANGELOG agree.\n- [ ] npm pack dry-run and tarball inspection pass.\n- [ ] Temporary-prefix install smoke passes.\n- [ ] Packed output has no active Serena catalog, mandatory rule, or runtime integration.\n- [ ] Corrected resolver and prompt behavior is present in the tarball.\n- [ ] Release checks and provenance evidence are recorded.\n\n## OUTPUT\nA release-ready patch PR and publication handoff for the next 3.21.x patch.\n\n## REFERENCES\n@jaggerxtrm/specialists@3.21.2; package.json; release configuration; retirement commit 7053236fc; local tarball audit 2026-08-10.",
+      "id": "unitAI-tpafe.4",
+      "issue_type": "task",
+      "owner": "you@example.com",
+      "priority": 0,
+      "status": "open",
+      "title": "Restore package source/tarball/version parity for the patch release",
+      "updated_at": "2026-08-10T13:58:03Z"
+    },
+    "unitAI-tpafe.5": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-08-10T13:58:03Z",
+      "created_by": "you@example.com",
+      "dependencies": [
+        {
+          "created_at": "2026-08-10T15:58:02Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe",
+          "issue_id": "unitAI-tpafe.5",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 1,
+      "description": "## PROBLEM\nThe installed Pi read tool returns raw file content without line-number decoration. Specialists and downstream bead conventions treat file:line evidence as reliable, but line numbers are model-counted unless the specialist performs an explicit recount or uses another numbered-read path.\n\n## SUCCESS\nThe supported read contract provides reliable line-number evidence, or Specialists enforce a documented verification path before emitting file:line claims. The chosen contract is tested against blank lines, offsets, limits, and end-of-file boundaries. Incorrect citations are not presented as tool-reported facts.\n\n## SCOPE\nCoordinate with the Pi repository/maintainers for line-number output or a stable numbered-read API. In Specialists, add the minimum compatibility prompt/tooling/test guard required while upstream support is pending. Record ownership, upstream issue/PR, version constraint, and fallback behavior.\n\n## NON_GOALS\nDo not fork Pi wholesale. Do not alter unrelated read semantics. Do not claim historical Hiryuen citation examples as locally reproduced evidence.\n\n## CONSTRAINTS\nTreat Pi as an external dependency. If upstream support cannot land in this patch train, use an explicit recount/verification fallback and state its reliability limits. Keep citations tied to the actual read API contract.\n\n## VALIDATION\n- [ ] Upstream contract or issue is linked and versioned.\n- [ ] Specialists test numbered or explicitly verified reads.\n- [ ] Blank-line and offset cases are covered.\n- [ ] Prompt guidance does not claim that raw read output contains line numbers.\n- [ ] Release notes state the supported citation behavior.\n\n## OUTPUT\nAn upstream coordination record plus a Specialists compatibility/test PR or documented release-blocking decision.\n\n## REFERENCES\nPi read tool implementation in the installed @mariozechner/pi-coding-agent package; local audit 2026-08-10.",
+      "id": "unitAI-tpafe.5",
+      "issue_type": "task",
+      "owner": "you@example.com",
+      "priority": 0,
+      "status": "open",
+      "title": "Coordinate Pi read line-number support and specialist citation safeguards",
+      "updated_at": "2026-08-10T13:58:03Z"
+    },
+    "unitAI-tpafe.6": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-08-10T13:58:03Z",
+      "created_by": "you@example.com",
+      "dependencies": [
+        {
+          "created_at": "2026-08-10T15:58:24Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe.3",
+          "issue_id": "unitAI-tpafe.6",
+          "metadata": "{}",
+          "type": "validates"
+        },
+        {
+          "created_at": "2026-08-10T15:58:24Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe.1",
+          "issue_id": "unitAI-tpafe.6",
+          "metadata": "{}",
+          "type": "validates"
+        },
+        {
+          "created_at": "2026-08-10T15:58:24Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe.2",
+          "issue_id": "unitAI-tpafe.6",
+          "metadata": "{}",
+          "type": "validates"
+        },
+        {
+          "created_at": "2026-08-10T15:58:24Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe.4",
+          "issue_id": "unitAI-tpafe.6",
+          "metadata": "{}",
+          "type": "validates"
+        },
+        {
+          "created_at": "2026-08-10T15:58:25Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe.5",
+          "issue_id": "unitAI-tpafe.6",
+          "metadata": "{}",
+          "type": "validates"
+        },
+        {
+          "created_at": "2026-08-10T15:58:03Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe",
+          "issue_id": "unitAI-tpafe.6",
+          "metadata": "{}",
+          "type": "parent-child"
+        }
+      ],
+      "dependency_count": 0,
+      "dependent_count": 1,
+      "description": "## PROBLEM\nThe regression was test-locked: existing tests assert that native read is absent. The runtime, prompt, budget, telemetry, and citation contracts require one batched validation plan that proves the fix across source and installed behavior.\n\n## SUCCESS\nAutomated tests fail for the old GitNexus-only behavior, pass for the corrected resolver and prompt contracts, prove mandatory-rule retention and exact telemetry, and exercise citation safeguards. The test plan covers unit, integration, CLI/runtime smoke, and observability assertions without relying on unavailable historical databases.\n\n## SCOPE\nAdd or update manifest-resolver and session tests; specialist prompt audit fixtures; task-prompt and runner payload/telemetry tests; installed configuration resolution smoke; and a minimal read/citation fixture. Define exact commands and expected outputs for focused tests, full supported tests, typecheck, lint, build, and smoke runs.\n\n## NON_GOALS\nDo not mark the unavailable Hiryuen_Project observability.db as locally verified. Do not duplicate implementation logic in tests. Do not add a broad end-to-end suite without a deterministic fixture.\n\n## CONSTRAINTS\nUse the repository test runner and existing fixtures. Include both healthy and unhealthy GitNexus states, hard and soft denial, over-budget and under-budget rules, blank lines, offsets, and package-installed execution. Record pre-existing failures separately.\n\n## VALIDATION\n- [ ] Focused manifest-resolver tests assert read survives and grep/find/ls remain denied.\n- [ ] Prompt audit tests cover affected siblings and special cases.\n- [ ] Mandatory-rule tests assert retained sections and exact actual-injection telemetry.\n- [ ] Package smoke tests inspect and execute the packed artifact.\n- [ ] Citation fixture verifies line evidence behavior.\n- [ ] Full relevant gate results are recorded with failure classification.\n\n## OUTPUT\nA batched test PR or validation bead closure record with reproducible commands and artifacts.\n\n## REFERENCES\ntests/unit/specialist/manifest-resolver.test.ts; tests/unit/specialist/serena-retirement.test.ts; src/specialist/task-prompt.ts; src/specialist/runner.ts; local audit 2026-08-10.",
+      "id": "unitAI-tpafe.6",
+      "issue_type": "task",
+      "owner": "you@example.com",
+      "priority": 0,
+      "status": "open",
+      "title": "Test: runtime, prompt, mandatory-rule, telemetry, and citation contracts",
+      "updated_at": "2026-08-10T13:58:03Z"
+    },
+    "unitAI-tpafe.7": {
+      "_type": "issue",
+      "comment_count": 0,
+      "created_at": "2026-08-10T13:58:04Z",
+      "created_by": "you@example.com",
+      "dependencies": [
+        {
+          "created_at": "2026-08-10T15:58:25Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe.2",
+          "issue_id": "unitAI-tpafe.7",
+          "metadata": "{}",
+          "type": "blocks"
+        },
+        {
+          "created_at": "2026-08-10T15:58:26Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe.5",
+          "issue_id": "unitAI-tpafe.7",
+          "metadata": "{}",
+          "type": "blocks"
+        },
+        {
+          "created_at": "2026-08-10T15:58:26Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe.6",
+          "issue_id": "unitAI-tpafe.7",
+          "metadata": "{}",
+          "type": "blocks"
+        },
+        {
+          "created_at": "2026-08-10T15:58:25Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe.4",
+          "issue_id": "unitAI-tpafe.7",
+          "metadata": "{}",
+          "type": "blocks"
+        },
+        {
+          "created_at": "2026-08-10T15:58:25Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe.3",
+          "issue_id": "unitAI-tpafe.7",
+          "metadata": "{}",
+          "type": "blocks"
+        },
+        {
+          "created_at": "2026-08-10T15:58:03Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe",
+          "issue_id": "unitAI-tpafe.7",
+          "metadata": "{}",
+          "type": "parent-child"
+        },
+        {
+          "created_at": "2026-08-10T15:58:25Z",
+          "created_by": "you@example.com",
+          "depends_on_id": "unitAI-tpafe.1",
+          "issue_id": "unitAI-tpafe.7",
+          "metadata": "{}",
+          "type": "blocks"
+        }
+      ],
+      "dependency_count": 6,
+      "dependent_count": 0,
+      "description": "## PROBLEM\nThe current published 3.21.2 artifact is not source-parity safe, and the native-read regression affects specialist runtime behavior. Implementation alone will leave existing npm installations broken until a corrected patch is published.\n\n## SUCCESS\nAfter all implementation and validation gates pass, publish the next patch release under the repository release policy. The release has matching source, version, tag, CHANGELOG, gitHead, npm tarball, and installed runtime behavior. The release handoff records exact artifacts, checksums where supported, publication time, rollback, and post-release verification.\n\n## SCOPE\nCoordinate the ordered PRs, release candidate build, npm pack/install smoke, version/tag/changelog checks, publication, and post-publication install/resolution smoke. Split into additional patch releases only if the repository policy requires independent safe rollout.\n\n## NON_GOALS\nDo not force-push or rewrite history. Do not publish from a dirty worktree. Do not bypass CI, provenance, or approval gates. Do not close this gate on source tests alone.\n\n## CONSTRAINTS\nThis task is release-gated by implementation and validation children. Use a clean release commit. Verify the package from the exact release tag. Record rollback instructions before publication.\n\n## VALIDATION\n- [ ] All blocking implementation children are complete.\n- [ ] Batched validation child is complete.\n- [ ] Release candidate package smoke passes.\n- [ ] Published package installs in a temporary prefix.\n- [ ] Installed resolver and prompt behavior match the source contract.\n- [ ] Post-release checks and release evidence are attached.\n\n## OUTPUT\nPublished patch release(s), release checklist, post-release verification, and explicit residual-risk report.\n\n## REFERENCES\nEpic unitAI-tpafe; @jaggerxtrm/specialists@3.21.2; local audit 2026-08-10.",
+      "id": "unitAI-tpafe.7",
+      "issue_type": "task",
+      "owner": "you@example.com",
+      "priority": 0,
+      "status": "open",
+      "title": "Release: publish the corrected specialists patch train",
+      "updated_at": "2026-08-10T13:58:04Z"
+    }
+  },
+  "diagnostics": {
+    "dangling_relations": [],
+    "derived_dotted_parent_links": [],
+    "multiple_parent_nodes": []
+  },
+  "external_relations": [],
+  "hierarchy": {
+    "children": [
+      {
+        "children": [],
+        "id": "unitAI-tpafe.1"
+      },
+      {
+        "children": [],
+        "id": "unitAI-tpafe.2"
+      },
+      {
+        "children": [],
+        "id": "unitAI-tpafe.3"
+      },
+      {
+        "children": [],
+        "id": "unitAI-tpafe.4"
+      },
+      {
+        "children": [],
+        "id": "unitAI-tpafe.5"
+      },
+      {
+        "children": [],
+        "id": "unitAI-tpafe.6"
+      },
+      {
+        "children": [],
+        "id": "unitAI-tpafe.7"
+      }
+    ],
+    "id": "unitAI-tpafe"
+  },
+  "issues": {
+    "unitAI-tpafe": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-10T13:56:58Z",
+        "created_by": "you@example.com",
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nThe Serena retirement commit 7053236f removed the active Serena catalog and references but left config/catalog/index.json denying native read, grep, find, and ls at every tier when GitNexus is healthy. The current manifest resolver therefore strips native file access from GitNexus-backed specialists. Explorer, overthinker, and seconder resolve to GitNexus-only; reviewer loses native file tools; obligations-scanner is a soft-deny exception; executor remains usable through bash. This is a runtime contract regression.\n\nThe published @jaggerxtrm/specialists 3.21.2 tarball predates the retirement and still contains Serena artifacts while the current source retains the same version. The mandatory-rule budget path can skip the whole block above 2000 estimated tokens while runner telemetry records the sections as injected. Pi read output contains content without line numbers, so file:line evidence is model-counted.\n\n## SUCCESS\nPatch releases restore native read for read-only file inspection while retaining grep/find/ls denial where GitNexus is healthy. Specialist prompts describe the tools actually available. Mandatory rules fit the budget through deterministic section selection and telemetry reports only the payload actually sent. Published package contents, version metadata, and source agree. File citation behavior is either line-numbered by the supported read contract or explicitly guarded and verified. No active Serena runtime integration returns.\n\n## SCOPE\nCover config/catalog/index.json; manifest resolution and extension-health behavior; affected specialist definitions and prompts; unit and integration tests; task-prompt mandatory-rule budgeting; runner payload and observability metadata; package/build/release metadata; npm pack and installed-tarball smoke tests; and coordination with the Pi read-tool contract.\n\n## NON_GOALS\nDo not reintroduce Serena. Do not redesign GitNexus. Do not change soft-deny semantics except to document and test them. Do not rewrite unrelated specialist prompts. Do not reconstruct unavailable historical Hiryuen telemetry. Do not redesign Beads or Dolt persistence.\n\n## CONSTRAINTS\nShip backward-compatible patch releases. Keep grep/find/ls as the preferred denied search natives when GitNexus is healthy, but preserve native read. Treat release artifacts as runtime contracts. Avoid claims based only on stale graph indexes. Record exact telemetry payloads. Use typed Beads dependencies and keep external Pi work explicitly coordinated.\n\n## VALIDATION\n- [ ] Resolver matrix covers healthy and unhealthy GitNexus and hard and soft deny modes.\n- [ ] Prompt audit covers all specialist definitions, including special cases.\n- [ ] Over-budget mandatory-rule tests prove deterministic retention and exact telemetry.\n- [ ] Focused tests, full supported test/build/lint gates, and package smoke tests pass.\n- [ ] Packed artifact contains no retired Serena runtime surface and matches source/version.\n- [ ] Citation behavior has a reproducible line-number or verification test.\n- [ ] Release checklist records patch version, changelog, artifact, and rollback evidence.\n\n## OUTPUT\nA sequence of reviewed implementation PRs, batched validation work, one or more patch releases, package parity evidence, and a residual-risk handoff.\n\n## REFERENCES\n- Retirement commit: 7053236fc\n- Current catalog: config/catalog/index.json\n- Resolver: src/specialist/manifest-resolver.ts\n- Extension health: src/pi/session.ts\n- Prompt contracts: config/specialists/*.specialist.json\n- Mandatory rules: src/specialist/task-prompt.ts and src/specialist/runner.ts\n- Package baseline: @jaggerxtrm/specialists@3.21.2\n- Local audit date: 2026-08-10",
+        "id": "unitAI-tpafe",
+        "issue_type": "epic",
+        "owner": "you@example.com",
+        "priority": 0,
+        "status": "open",
+        "title": "P0: restore native file access and patch-release runtime contracts",
+        "updated_at": "2026-08-10T13:56:58Z"
+      }
+    },
+    "unitAI-tpafe.1": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-10T13:58:02Z",
+        "created_by": "you@example.com",
+        "dependencies": [
+          {
+            "created_at": "2026-08-10T15:58:01Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe",
+            "issue_id": "unitAI-tpafe.1",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 2,
+        "description": "## PROBLEM\nconfig/catalog/index.json denies read, grep, find, and ls at all four tier defaults. The current resolver merges denial lists and hard-enforces them when GitNexus is healthy. This removes native read from specialists that require direct file inspection.\n\n## SUCCESS\nThe catalog preserves hard denial of grep, find, and ls when the GitNexus replacement is healthy, while native read remains available. The resolver matrix proves the intended behavior for READ_ONLY and other tiers under healthy and unhealthy GitNexus. No Serena package or runtime path is required.\n\n## SCOPE\nUpdate config/catalog/index.json and the manifest-resolver/session tests that lock the current behavior. Cover explorer, overthinker, seconder, reviewer, obligations-scanner, executor, and bare as relevant special cases. Confirm mergeTierPolicy union behavior remains explicit.\n\n## NON_GOALS\nDo not remove GitNexus preference. Do not change soft-deny semantics. Do not add a new extension replacement. Do not modify unrelated tier permissions.\n\n## CONSTRAINTS\nUse the smallest compatible catalog change. Keep native bash/edit/write behavior unchanged. Preserve the existing hard-deny gate for search tools. Include regression assertions for read surviving and grep/find/ls remaining denied.\n\n## VALIDATION\n- [ ] Focused manifest-resolver tests pass.\n- [ ] Healthy/unhealthy GitNexus resolver matrix passes.\n- [ ] Resolved tool output is checked for every affected specialist.\n- [ ] No Serena references are introduced.\n- [ ] Full relevant TypeScript test and build gates pass.\n\n## OUTPUT\nA reviewed implementation PR with updated tests and before/after resolved-tool evidence.\n\n## REFERENCES\nRetirement commit 7053236fc; config/catalog/index.json; src/specialist/manifest-resolver.ts; src/pi/session.ts; local audit 2026-08-10.",
+        "id": "unitAI-tpafe.1",
+        "issue_type": "task",
+        "owner": "you@example.com",
+        "priority": 0,
+        "status": "open",
+        "title": "Fix catalog native read denial for GitNexus-backed specialists",
+        "updated_at": "2026-08-10T13:58:02Z"
+      }
+    },
+    "unitAI-tpafe.2": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-10T13:58:02Z",
+        "created_by": "you@example.com",
+        "dependencies": [
+          {
+            "created_at": "2026-08-10T15:58:02Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe",
+            "issue_id": "unitAI-tpafe.2",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 2,
+        "description": "## PROBLEM\nSeveral specialist prompts advertise native tools that policy can remove. explorer contains a Fallback Approach — Bash/Grep section and a read-only bash/grep/find/ls line that do not describe its resolved harness. overthinker also states that only read, bash, grep, find, and ls are allowed. The prompt contract and runtime contract can therefore diverge silently.\n\n## SUCCESS\nEvery specialist prompt names tools that the resolved manifest can provide for its declared policy, including special cases such as obligations-scanner soft deny and bare GitNexus disabled. Stale Serena instructions remain absent. When a hard policy strips a tool explicitly named by a specialist prompt, launch diagnostics produce an actionable warning or the prompt is corrected so the mismatch cannot remain silent.\n\n## SCOPE\nAudit and update config/specialists/*.specialist.json, starting with explorer and overthinker and including all sibling prompts with the same claim. Add or update resolver/launch diagnostic tests. Document exceptions only where the runtime behavior is intentional.\n\n## NON_GOALS\nDo not rewrite specialist role guidance unrelated to tool availability. Do not restore Serena. Do not make prompts depend on bash for READ_ONLY roles. Do not weaken policy to satisfy stale prose.\n\n## CONSTRAINTS\nUse resolved manifests as the source of truth. Keep GitNexus preferred for search and impact queries. Preserve obligations-scanner soft-deny behavior unless a separate design decision is recorded. Keep prompt changes backward-compatible for existing specialist roles.\n\n## VALIDATION\n- [ ] Repository-wide prompt audit identifies all native-tool claims.\n- [ ] Explorer and overthinker stale fallback text is removed or made accurate.\n- [ ] Special-case specialists have explicit tests.\n- [ ] Launch mismatch diagnostics are tested, or the accepted no-warning design is documented with evidence.\n- [ ] Focused and full relevant tests pass.\n\n## OUTPUT\nA reviewed prompt/diagnostic PR with an audit table and resolved-manifest evidence.\n\n## REFERENCES\nconfig/specialists/explorer.specialist.json; config/specialists/overthinker.specialist.json; src/specialist/manifest-resolver.ts; src/pi/session.ts; local audit 2026-08-10.",
+        "id": "unitAI-tpafe.2",
+        "issue_type": "task",
+        "owner": "you@example.com",
+        "priority": 0,
+        "status": "open",
+        "title": "Reconcile specialist prompt tool contracts and launch diagnostics",
+        "updated_at": "2026-08-10T13:58:02Z"
+      }
+    },
+    "unitAI-tpafe.3": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-10T13:58:02Z",
+        "created_by": "you@example.com",
+        "dependencies": [
+          {
+            "created_at": "2026-08-10T15:58:02Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe",
+            "issue_id": "unitAI-tpafe.3",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 2,
+        "description": "## PROBLEM\nsrc/specialist/task-prompt.ts skips the complete MANDATORY_RULES block when the estimated payload exceeds the 2000-token budget. The published 3.21.2 executor template set reconstructs at about 2226 estimated tokens because it still includes serena-cheatsheet. src/specialist/runner.ts records mandatory-rule sections unconditionally after the skip decision, so telemetry can report sections and tokens that were not sent.\n\n## SUCCESS\nMandatory rules use deterministic per-section budget handling. The implementation retains the highest-priority safety and workflow contracts under the limit and reports exactly the sections and token estimate actually injected. An over-budget fixture never drops every rule and never reports unsent sections as injected. The current source and packed artifact have the same rule set.\n\n## SCOPE\nUpdate src/specialist/task-prompt.ts and src/specialist/runner.ts plus mandatory-rule, runner, and observability tests. Define and test section priority/eviction behavior, the 2000-token boundary, empty and oversized individual sections, ordering, metadata, and payload components.\n\n## NON_GOALS\nDo not silently raise the budget without evidence. Do not restore serena-cheatsheet. Do not redesign all mandatory-rule content. Do not alter unrelated telemetry event schemas.\n\n## CONSTRAINTS\nPreserve mandatory-rule ordering where retained. Record only data actually sent to the model. Keep the cap explicit and configurable only through an intentional contract change. Preserve bead-id-verbatim and git-workflow-safe coverage when the priority policy requires them.\n\n## VALIDATION\n- [ ] Over-budget unit fixture proves per-section eviction.\n- [ ] Boundary tests cover exactly-at-limit and one-token-over-limit cases.\n- [ ] Runner telemetry equals the injected sections and token estimate.\n- [ ] Executor scenario preserves critical bead and git workflow rules.\n- [ ] Full relevant tests, type checks, and build pass.\n\n## OUTPUT\nA reviewed runtime/telemetry PR with deterministic budget policy and fixture evidence.\n\n## REFERENCES\nsrc/specialist/task-prompt.ts; src/specialist/runner.ts; config/mandatory-rules/index.json; config/mandatory-rules; package 3.21.2 tarball audit; local audit 2026-08-10.",
+        "id": "unitAI-tpafe.3",
+        "issue_type": "task",
+        "owner": "you@example.com",
+        "priority": 0,
+        "status": "open",
+        "title": "Make mandatory-rule budget eviction and telemetry reflect actual injection",
+        "updated_at": "2026-08-10T13:58:02Z"
+      }
+    },
+    "unitAI-tpafe.4": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-10T13:58:03Z",
+        "created_by": "you@example.com",
+        "dependencies": [
+          {
+            "created_at": "2026-08-10T15:58:24Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe.3",
+            "issue_id": "unitAI-tpafe.4",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-08-10T15:58:02Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe",
+            "issue_id": "unitAI-tpafe.4",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-08-10T15:58:23Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe.1",
+            "issue_id": "unitAI-tpafe.4",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-08-10T15:58:23Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe.2",
+            "issue_id": "unitAI-tpafe.4",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 3,
+        "dependent_count": 1,
+        "description": "## PROBLEM\nThe published @jaggerxtrm/specialists@3.21.2 tarball has gitHead c1e660ab, predates Serena retirement 7053236f, and contains config/catalog/serena.json, serena-cheatsheet.md, and old Serena runtime surfaces. Current source still reports version 3.21.2. npm installation therefore does not match origin/master at the same version.\n\n## SUCCESS\nThe next patch version is built from the corrected source and has one-to-one parity with the release commit. Packed and installed smoke tests prove that the published artifact contains no retired active Serena surface, contains the corrected catalog/prompts/rules, and resolves the intended native tools. Package metadata, CHANGELOG, git tag, and artifact version agree.\n\n## SCOPE\nInspect package.json, build and package inclusion rules, release scripts, generated artifacts, CHANGELOG, and CI release configuration. Remove stale Serena files from the packed output through source/package corrections. Bump the current version using the repository release policy, producing the next patch version after 3.21.2 unless a newer release has landed. Prepare the patch publication evidence.\n\n## NON_GOALS\nDo not publish a major release. Do not reintroduce Serena. Do not delete unrelated historical documentation outside the package surface. Do not bypass release or provenance checks.\n\n## CONSTRAINTS\nUse npm pack or the repository equivalent before publication. Verify tarball contents and installed behavior in a temporary prefix. Keep source and artifact gitHead traceable. Define rollback or yanking procedure before publication.\n\n## VALIDATION\n- [ ] Version, gitHead, tag, and CHANGELOG agree.\n- [ ] npm pack dry-run and tarball inspection pass.\n- [ ] Temporary-prefix install smoke passes.\n- [ ] Packed output has no active Serena catalog, mandatory rule, or runtime integration.\n- [ ] Corrected resolver and prompt behavior is present in the tarball.\n- [ ] Release checks and provenance evidence are recorded.\n\n## OUTPUT\nA release-ready patch PR and publication handoff for the next 3.21.x patch.\n\n## REFERENCES\n@jaggerxtrm/specialists@3.21.2; package.json; release configuration; retirement commit 7053236fc; local tarball audit 2026-08-10.",
+        "id": "unitAI-tpafe.4",
+        "issue_type": "task",
+        "owner": "you@example.com",
+        "priority": 0,
+        "status": "open",
+        "title": "Restore package source/tarball/version parity for the patch release",
+        "updated_at": "2026-08-10T13:58:03Z"
+      }
+    },
+    "unitAI-tpafe.5": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-10T13:58:03Z",
+        "created_by": "you@example.com",
+        "dependencies": [
+          {
+            "created_at": "2026-08-10T15:58:02Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe",
+            "issue_id": "unitAI-tpafe.5",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 1,
+        "description": "## PROBLEM\nThe installed Pi read tool returns raw file content without line-number decoration. Specialists and downstream bead conventions treat file:line evidence as reliable, but line numbers are model-counted unless the specialist performs an explicit recount or uses another numbered-read path.\n\n## SUCCESS\nThe supported read contract provides reliable line-number evidence, or Specialists enforce a documented verification path before emitting file:line claims. The chosen contract is tested against blank lines, offsets, limits, and end-of-file boundaries. Incorrect citations are not presented as tool-reported facts.\n\n## SCOPE\nCoordinate with the Pi repository/maintainers for line-number output or a stable numbered-read API. In Specialists, add the minimum compatibility prompt/tooling/test guard required while upstream support is pending. Record ownership, upstream issue/PR, version constraint, and fallback behavior.\n\n## NON_GOALS\nDo not fork Pi wholesale. Do not alter unrelated read semantics. Do not claim historical Hiryuen citation examples as locally reproduced evidence.\n\n## CONSTRAINTS\nTreat Pi as an external dependency. If upstream support cannot land in this patch train, use an explicit recount/verification fallback and state its reliability limits. Keep citations tied to the actual read API contract.\n\n## VALIDATION\n- [ ] Upstream contract or issue is linked and versioned.\n- [ ] Specialists test numbered or explicitly verified reads.\n- [ ] Blank-line and offset cases are covered.\n- [ ] Prompt guidance does not claim that raw read output contains line numbers.\n- [ ] Release notes state the supported citation behavior.\n\n## OUTPUT\nAn upstream coordination record plus a Specialists compatibility/test PR or documented release-blocking decision.\n\n## REFERENCES\nPi read tool implementation in the installed @mariozechner/pi-coding-agent package; local audit 2026-08-10.",
+        "id": "unitAI-tpafe.5",
+        "issue_type": "task",
+        "owner": "you@example.com",
+        "priority": 0,
+        "status": "open",
+        "title": "Coordinate Pi read line-number support and specialist citation safeguards",
+        "updated_at": "2026-08-10T13:58:03Z"
+      }
+    },
+    "unitAI-tpafe.6": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-10T13:58:03Z",
+        "created_by": "you@example.com",
+        "dependencies": [
+          {
+            "created_at": "2026-08-10T15:58:24Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe.3",
+            "issue_id": "unitAI-tpafe.6",
+            "metadata": "{}",
+            "type": "validates"
+          },
+          {
+            "created_at": "2026-08-10T15:58:24Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe.1",
+            "issue_id": "unitAI-tpafe.6",
+            "metadata": "{}",
+            "type": "validates"
+          },
+          {
+            "created_at": "2026-08-10T15:58:24Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe.2",
+            "issue_id": "unitAI-tpafe.6",
+            "metadata": "{}",
+            "type": "validates"
+          },
+          {
+            "created_at": "2026-08-10T15:58:24Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe.4",
+            "issue_id": "unitAI-tpafe.6",
+            "metadata": "{}",
+            "type": "validates"
+          },
+          {
+            "created_at": "2026-08-10T15:58:25Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe.5",
+            "issue_id": "unitAI-tpafe.6",
+            "metadata": "{}",
+            "type": "validates"
+          },
+          {
+            "created_at": "2026-08-10T15:58:03Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe",
+            "issue_id": "unitAI-tpafe.6",
+            "metadata": "{}",
+            "type": "parent-child"
+          }
+        ],
+        "dependency_count": 0,
+        "dependent_count": 1,
+        "description": "## PROBLEM\nThe regression was test-locked: existing tests assert that native read is absent. The runtime, prompt, budget, telemetry, and citation contracts require one batched validation plan that proves the fix across source and installed behavior.\n\n## SUCCESS\nAutomated tests fail for the old GitNexus-only behavior, pass for the corrected resolver and prompt contracts, prove mandatory-rule retention and exact telemetry, and exercise citation safeguards. The test plan covers unit, integration, CLI/runtime smoke, and observability assertions without relying on unavailable historical databases.\n\n## SCOPE\nAdd or update manifest-resolver and session tests; specialist prompt audit fixtures; task-prompt and runner payload/telemetry tests; installed configuration resolution smoke; and a minimal read/citation fixture. Define exact commands and expected outputs for focused tests, full supported tests, typecheck, lint, build, and smoke runs.\n\n## NON_GOALS\nDo not mark the unavailable Hiryuen_Project observability.db as locally verified. Do not duplicate implementation logic in tests. Do not add a broad end-to-end suite without a deterministic fixture.\n\n## CONSTRAINTS\nUse the repository test runner and existing fixtures. Include both healthy and unhealthy GitNexus states, hard and soft denial, over-budget and under-budget rules, blank lines, offsets, and package-installed execution. Record pre-existing failures separately.\n\n## VALIDATION\n- [ ] Focused manifest-resolver tests assert read survives and grep/find/ls remain denied.\n- [ ] Prompt audit tests cover affected siblings and special cases.\n- [ ] Mandatory-rule tests assert retained sections and exact actual-injection telemetry.\n- [ ] Package smoke tests inspect and execute the packed artifact.\n- [ ] Citation fixture verifies line evidence behavior.\n- [ ] Full relevant gate results are recorded with failure classification.\n\n## OUTPUT\nA batched test PR or validation bead closure record with reproducible commands and artifacts.\n\n## REFERENCES\ntests/unit/specialist/manifest-resolver.test.ts; tests/unit/specialist/serena-retirement.test.ts; src/specialist/task-prompt.ts; src/specialist/runner.ts; local audit 2026-08-10.",
+        "id": "unitAI-tpafe.6",
+        "issue_type": "task",
+        "owner": "you@example.com",
+        "priority": 0,
+        "status": "open",
+        "title": "Test: runtime, prompt, mandatory-rule, telemetry, and citation contracts",
+        "updated_at": "2026-08-10T13:58:03Z"
+      }
+    },
+    "unitAI-tpafe.7": {
+      "selection_state": "selected",
+      "source": {
+        "_type": "issue",
+        "comment_count": 0,
+        "created_at": "2026-08-10T13:58:04Z",
+        "created_by": "you@example.com",
+        "dependencies": [
+          {
+            "created_at": "2026-08-10T15:58:25Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe.2",
+            "issue_id": "unitAI-tpafe.7",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-08-10T15:58:26Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe.5",
+            "issue_id": "unitAI-tpafe.7",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-08-10T15:58:26Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe.6",
+            "issue_id": "unitAI-tpafe.7",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-08-10T15:58:25Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe.4",
+            "issue_id": "unitAI-tpafe.7",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-08-10T15:58:25Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe.3",
+            "issue_id": "unitAI-tpafe.7",
+            "metadata": "{}",
+            "type": "blocks"
+          },
+          {
+            "created_at": "2026-08-10T15:58:03Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe",
+            "issue_id": "unitAI-tpafe.7",
+            "metadata": "{}",
+            "type": "parent-child"
+          },
+          {
+            "created_at": "2026-08-10T15:58:25Z",
+            "created_by": "you@example.com",
+            "depends_on_id": "unitAI-tpafe.1",
+            "issue_id": "unitAI-tpafe.7",
+            "metadata": "{}",
+            "type": "blocks"
+          }
+        ],
+        "dependency_count": 6,
+        "dependent_count": 0,
+        "description": "## PROBLEM\nThe current published 3.21.2 artifact is not source-parity safe, and the native-read regression affects specialist runtime behavior. Implementation alone will leave existing npm installations broken until a corrected patch is published.\n\n## SUCCESS\nAfter all implementation and validation gates pass, publish the next patch release under the repository release policy. The release has matching source, version, tag, CHANGELOG, gitHead, npm tarball, and installed runtime behavior. The release handoff records exact artifacts, checksums where supported, publication time, rollback, and post-release verification.\n\n## SCOPE\nCoordinate the ordered PRs, release candidate build, npm pack/install smoke, version/tag/changelog checks, publication, and post-publication install/resolution smoke. Split into additional patch releases only if the repository policy requires independent safe rollout.\n\n## NON_GOALS\nDo not force-push or rewrite history. Do not publish from a dirty worktree. Do not bypass CI, provenance, or approval gates. Do not close this gate on source tests alone.\n\n## CONSTRAINTS\nThis task is release-gated by implementation and validation children. Use a clean release commit. Verify the package from the exact release tag. Record rollback instructions before publication.\n\n## VALIDATION\n- [ ] All blocking implementation children are complete.\n- [ ] Batched validation child is complete.\n- [ ] Release candidate package smoke passes.\n- [ ] Published package installs in a temporary prefix.\n- [ ] Installed resolver and prompt behavior match the source contract.\n- [ ] Post-release checks and release evidence are attached.\n\n## OUTPUT\nPublished patch release(s), release checklist, post-release verification, and explicit residual-risk report.\n\n## REFERENCES\nEpic unitAI-tpafe; @jaggerxtrm/specialists@3.21.2; local audit 2026-08-10.",
+        "id": "unitAI-tpafe.7",
+        "issue_type": "task",
+        "owner": "you@example.com",
+        "priority": 0,
+        "status": "open",
+        "title": "Release: publish the corrected specialists patch train",
+        "updated_at": "2026-08-10T13:58:04Z"
+      }
+    }
+  },
+  "new_comments": {},
+  "relations": [
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:01Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe",
+        "issue_id": "unitAI-tpafe.1",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-tpafe.1",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:02Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe",
+        "issue_id": "unitAI-tpafe.2",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-tpafe.2",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:02Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe",
+        "issue_id": "unitAI-tpafe.3",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-tpafe.3",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:23Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe.1",
+        "issue_id": "unitAI-tpafe.4",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-tpafe.4",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe.1",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:23Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe.2",
+        "issue_id": "unitAI-tpafe.4",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-tpafe.4",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe.2",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:24Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe.3",
+        "issue_id": "unitAI-tpafe.4",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-tpafe.4",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe.3",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:02Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe",
+        "issue_id": "unitAI-tpafe.4",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-tpafe.4",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:02Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe",
+        "issue_id": "unitAI-tpafe.5",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-tpafe.5",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:03Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe",
+        "issue_id": "unitAI-tpafe.6",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-tpafe.6",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe",
+      "type": "parent-child"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:24Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe.1",
+        "issue_id": "unitAI-tpafe.6",
+        "metadata": "{}",
+        "type": "validates"
+      },
+      "source": "unitAI-tpafe.6",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe.1",
+      "type": "validates"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:24Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe.2",
+        "issue_id": "unitAI-tpafe.6",
+        "metadata": "{}",
+        "type": "validates"
+      },
+      "source": "unitAI-tpafe.6",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe.2",
+      "type": "validates"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:24Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe.3",
+        "issue_id": "unitAI-tpafe.6",
+        "metadata": "{}",
+        "type": "validates"
+      },
+      "source": "unitAI-tpafe.6",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe.3",
+      "type": "validates"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:24Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe.4",
+        "issue_id": "unitAI-tpafe.6",
+        "metadata": "{}",
+        "type": "validates"
+      },
+      "source": "unitAI-tpafe.6",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe.4",
+      "type": "validates"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:25Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe.5",
+        "issue_id": "unitAI-tpafe.6",
+        "metadata": "{}",
+        "type": "validates"
+      },
+      "source": "unitAI-tpafe.6",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe.5",
+      "type": "validates"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:25Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe.1",
+        "issue_id": "unitAI-tpafe.7",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-tpafe.7",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe.1",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:25Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe.2",
+        "issue_id": "unitAI-tpafe.7",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-tpafe.7",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe.2",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:25Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe.3",
+        "issue_id": "unitAI-tpafe.7",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-tpafe.7",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe.3",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:25Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe.4",
+        "issue_id": "unitAI-tpafe.7",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-tpafe.7",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe.4",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:26Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe.5",
+        "issue_id": "unitAI-tpafe.7",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-tpafe.7",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe.5",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:26Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe.6",
+        "issue_id": "unitAI-tpafe.7",
+        "metadata": "{}",
+        "type": "blocks"
+      },
+      "source": "unitAI-tpafe.7",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe.6",
+      "type": "blocks"
+    },
+    {
+      "raw": {
+        "created_at": "2026-08-10T15:58:03Z",
+        "created_by": "you@example.com",
+        "depends_on_id": "unitAI-tpafe",
+        "issue_id": "unitAI-tpafe.7",
+        "metadata": "{}",
+        "type": "parent-child"
+      },
+      "source": "unitAI-tpafe.7",
+      "source_field": "dependencies",
+      "target": "unitAI-tpafe",
+      "type": "parent-child"
+    }
+  ],
+  "repository": "xtrm-dev/specialists",
+  "root_id": "unitAI-tpafe",
+  "root_title": "P0: restore native file access and patch-release runtime contracts",
+  "roundtrip": {
+    "base_package_sha256": "9555917477e33748042b46c542629d0aef69ffd3672e22f181aba679daacabe8",
+    "base_record_sha256": {
+      "unitAI-tpafe": "b5248391dc2782d2e2b2aa386653f2c5333b1fa557515705e408f9b19f47b51a",
+      "unitAI-tpafe.1": "40e424d41edb8dd7dae646a4c4a45a2b5982ecc666cf3ed3de1c44ca2c4fec4a",
+      "unitAI-tpafe.2": "babb0302e1c05fa9851a48d7714aa0c5622d802e6cbdfc0da8a4413765932d52",
+      "unitAI-tpafe.3": "1b3fa0ad00f26deec122748d9250cf7541669d2361bab0da44357611f67382a4",
+      "unitAI-tpafe.4": "b3f03f403d026651d1cf2700edab5207363390baf60f70ca0406e1a7dac46d2e",
+      "unitAI-tpafe.5": "e8745778680b07d366d6fffe91a23277a141ad8b10658f72c5ab23cad17d7f62",
+      "unitAI-tpafe.6": "f8531d090cde0ff5c0e0cfa74f351d33fbc1627a5fecf1abef0b9419a00ed140",
+      "unitAI-tpafe.7": "c45e6e45117f926988a92f12d35c449fbb0ab45f0509c84b12beb3824ee0a2d6"
+    },
+    "edit_contract": "modify desired_issues and new_comments only; issues.*.source is immutable base state",
+    "prepared_at": "2026-08-11T13:58:57Z",
+    "schema_version": "xtrm.board-audit.roundtrip.v1"
+  },
+  "schema_version": "xtrm.board-audit.work-package.v1",
+  "scope": "bead"
+}

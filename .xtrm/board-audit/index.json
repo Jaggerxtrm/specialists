@@ -1,0 +1,16 @@
+{
+  "packages": {
+    "unitAI-tpafe": {
+      "base_package_sha256": "7ba0d9223d64c1b39ae73c0d3f332da925914020a406c8a58785273da437d24a",
+      "branch": "board-audit/unitAI-tpafe",
+      "editable": ".xtrm/board-audit/exports/export-20260812T062529/work-packages/unitAI-tpafe__p0-restore-native-file-access-runtime-contract-coherence-and-patch-release-parity.editable.json",
+      "export_dir": ".xtrm/board-audit/exports/export-20260812T062529",
+      "manifest": ".xtrm/board-audit/exports/export-20260812T062529/manifest.json",
+      "package": ".xtrm/board-audit/exports/export-20260812T062529/work-packages/unitAI-tpafe__p0-restore-native-file-access-runtime-contract-coherence-and-patch-release-parity.json",
+      "selected_record_count": 172,
+      "state": "prepared",
+      "updated_at": "2026-08-12T04:25:37Z"
+    }
+  },
+  "schema_version": "xtrm.board-audit.index.v1"
+}

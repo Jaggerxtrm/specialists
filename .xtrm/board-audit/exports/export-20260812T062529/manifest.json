@@ -1,0 +1,34 @@
+{
+  "bd_version": "bd version 1.1.0 (8e4e59d39: HEAD@8e4e59d39f34)",
+  "diagnostics": {
+    "derived_dotted_parent_links": [],
+    "unknown_parent_refs": [],
+    "unpackaged_selected_ids": []
+  },
+  "generated_at": "2026-08-12T04:25:36.692175+00:00",
+  "packages": [
+    {
+      "content_sha256": "7ba0d9223d64c1b39ae73c0d3f332da925914020a406c8a58785273da437d24a",
+      "context_only_issue_count": 0,
+      "file": "work-packages/unitAI-tpafe__p0-restore-native-file-access-runtime-contract-coherence-and-patch-release-parity.json",
+      "issue_count": 172,
+      "root_id": "unitAI-tpafe",
+      "selected_issue_count": 172,
+      "title": "P0: restore native file access, runtime contract coherence, and patch-release parity"
+    }
+  ],
+  "repository": "xtrm-dev/specialists",
+  "schema_version": "xtrm.board-audit.snapshot-manifest.v1",
+  "selection": {
+    "context_only_record_count": 0,
+    "requested_id": "unitAI-tpafe",
+    "scope": "bead",
+    "selected_record_count": 172
+  },
+  "source": {
+    "command": "bd export --all",
+    "raw_file": "raw-beads.jsonl",
+    "raw_record_count": 3378,
+    "raw_sha256": "7e182c9a4ca3721bf087e1259e4560b66d5dc3505d367fcdd971bbe95b724659"
+  }
+}
