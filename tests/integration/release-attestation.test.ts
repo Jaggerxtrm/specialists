@@ -75,6 +75,35 @@ describe('release attestation validation refusals', () => {
   });
 });
 
+describe('v3.21.3 release candidate metadata', () => {
+  it('pins release version and avoids attestation self-reference', async () => {
+    const metadata = JSON.parse(await readFile('release-attestation.json', 'utf8'));
+    const { stdout } = await run('git', ['rev-parse', 'HEAD']);
+    expect(stdout.trim()).toMatch(/^d1d2eb4a/);
+    expect(metadata.package.name).toBe('@jaggerxtrm/specialists');
+    expect(metadata.package.version).toBe('3.21.3');
+    expect(metadata.package.source_commit).toBe(metadata.package.git_head);
+    expect(metadata.package.source_commit).not.toBe(stdout.trim());
+    expect(metadata.package.tarball).toBe('jaggerxtrm-specialists-3.21.3.tgz');
+    expect(metadata.pi_runtime.version_or_range).toBe('not-run');
+    expect(metadata.scope).toContain('does not certify Pi');
+    expect(metadata.rollback).toContain('Restore prior known-good tag');
+  });
+
+  it('records required build, Serena exclusion, install, drift, and Pi checks', async () => {
+    const metadata = JSON.parse(await readFile('release-attestation.json', 'utf8'));
+    expect(metadata.validation_commands).toEqual(expect.arrayContaining([
+      'bun install --frozen-lockfile',
+      'bun run build',
+      'npm pack --dry-run --json',
+      'npm pack --json',
+      'tar -tzf <tarball> | grep -i serena (must return no matches)',
+      'npm install --global --prefix="$prefix" <tarball>',
+      'sp --version && sp doctor --check-drift && sp list --compact',
+    ]));
+  });
+});
+
 describe('package-payload artifact contract', () => {
   it('validates attestation before upload and pins artifact refusal/configuration', async () => {
     const workflow = await readFile('.github/workflows/package-payload.yml', 'utf8');
