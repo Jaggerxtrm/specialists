@@ -96,6 +96,9 @@ jobs:
   packed-smoke:
     needs: changes
     if: needs.changes.outputs.package_payload == 'true'
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -127,5 +130,17 @@ jobs:
           sp list --compact
           if tar -tzf /tmp/sp-test.tgz | grep -qi serena; then echo 'retired Serena surface found' >&2; exit 1; fi
           cd "$GITHUB_WORKSPACE"
-          PI_VERSION="$(pi --version 2>/dev/null || echo unavailable)" npm run release:attest -- /tmp/sp-test.tgz /tmp/release-attestation.json
+          PI_VERSION="$(pi --version 2>/dev/null || true)"
+          test -n "$PI_VERSION" || { echo 'package-payload: Pi identity unavailable' >&2; exit 1; }
+          export PI_VERSION
+          npm run release:attest -- /tmp/sp-test.tgz /tmp/release-attestation.json
+          EXPECTED_SOURCE_COMMIT="$GITHUB_SHA" npm run release:attest -- --validate /tmp/sp-test.tgz /tmp/release-attestation.json
           test -s /tmp/release-attestation.json
+      - name: Persist release attestation
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-attestation-${{ github.sha }}
+          path: /tmp/release-attestation.json
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false
