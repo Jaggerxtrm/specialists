@@ -38,6 +38,7 @@ export class StallTimeoutError extends Error {
 //   error                   — message-level error
 //
 import { createHash } from 'node:crypto';
+import { getReadLineNumbersExtensionPath } from './read-line-numbers-extension.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -783,6 +784,14 @@ export class PiAgentSession {
         args.push('-e', boundaryExtPath);
       }
     }
+
+    // Numbered `read` output — bundled fork of xtrm-dev/core's read-line-numbers
+    // Pi extension. Fires on tool_result only, no I/O, safe at every permission
+    // level. Pushed AFTER worktree-boundary so the boundary check (tool_call)
+    // always sees raw payloads even if Pi later adds a raw hook — argv-order
+    // invariant is behaviorally moot today but coded on purpose.
+    const readLineNumbersPath = getReadLineNumbersExtensionPath();
+    if (readLineNumbersPath) args.push('-e', readLineNumbersPath);
 
     const hookEnv = {
       ...process.env,

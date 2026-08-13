@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v3.21.3] — 2026-08-12
 
+### Added
+
+- Bundled `read-line-numbers` Pi extension (fork of `xtrm-dev/core@7f6cd7f7 packages/pi-extensions/extensions/read-line-numbers/`). Wired unconditionally into every headless specialist dispatch via `-e <path>` from `session.ts` and `script-runner.ts` (READ_ONLY and up). Model-facing `read` tool output is now prefixed with true source line numbers honoring `offset`, enabling accurate `file:line` self-citation without a separate helper. Ships at `config/pi-extensions/read-line-numbers/`.
+
 ### Changed
 
 - Exact citation evidence now uses a verified local fallback pinned to `@earendil-works/pi-coding-agent@0.84.1` (upstream git commit `53fa77ccd8a279eb87e92294ef3687b03ff80112`). Because raw Pi `read` output does not number each content line, executor, reviewer, and obligations-scanner guidance now permits exact `file:line` claims only when a line-number-emitting tool or local helper has deterministically verified the current file. Raw reads may still cite a file, symbol, section, or excerpt. No upstream Pi change is required for this fallback.

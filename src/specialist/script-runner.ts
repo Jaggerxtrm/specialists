@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { PiAgentSession, resolveRuntimeToolContract } from '../pi/session.js';
+import { getReadLineNumbersExtensionPath } from '../pi/read-line-numbers-extension.js';
 import { SpecialistLoader } from './loader.js';
 import { buildMandatoryRulesInjection } from './mandatory-rules.js';
 import { resolveModelChain } from './model-chain.js';
@@ -967,6 +968,9 @@ type AttemptFailureReason = 'assistant_text_too_large' | 'stderr_too_large' | 'm
 
 function appendExtensionArgs(args: string[], spec: Specialist, resolvedToolContract?: ResolvedToolContract): void {
   const permissionLevel = spec.specialist.execution.permission_required.toUpperCase();
+  // Always-on: numbered read output. Safe for every permission level.
+  const readLineNumbersPath = getReadLineNumbersExtensionPath();
+  if (readLineNumbersPath) args.push('-e', readLineNumbersPath);
   const piExtDir = join(homedir(), '.pi', 'agent', 'extensions');
   if (permissionLevel !== 'READ_ONLY') {
     const qualityGatesPath = join(piExtDir, 'quality-gates');

@@ -28,19 +28,19 @@
     },
     {
       "path": "config/skills/specialists-creator/SKILL.md",
-      "sha256": "636c6d90e55b9d14fed26f93d1e66296a0a48e706d1ce4c067ccebc2638b69bd"
+      "sha256": "59fe74927988a339ea3ba2b73ebf7fa06e57b73a1e07ef288c306177f99a14f7"
     },
     {
       "path": "config/skills/update-specialists/SKILL.md",
-      "sha256": "fdf8c680cf3e5dce80c9426f52b56c953f4f7f663c23a33a3378b2b6e4bab5a9"
+      "sha256": "dfaf2e3d4fd38989ccfbbb52054dbc66f80bbc82084b387b05cd0b6a5aa51e87"
     },
     {
       "path": "config/skills/using-kpi/SKILL.md",
-      "sha256": "dc22c51783b5bfb787c5bb10f46d3585151a33a3486e76ae38e3f43fb09f03bb"
+      "sha256": "42a8ba4c992b1d2991e7a65222e076f5f7f63b93fdff8e570f3d7296aacb5a79"
     },
     {
       "path": "config/skills/using-nodes/SKILL.md",
-      "sha256": "742e9d2ad512a05c86855b88ae65f9065370876d9e7c1b10db2b68958248bc7b"
+      "sha256": "a421597c787514e5442bfe4bdcd0ecf0ded1413a33a432eca40778c314195509"
     },
     {
       "path": "config/skills/using-script-specialists/SKILL.md",
@@ -48,7 +48,7 @@
     },
     {
       "path": "config/skills/using-specialists-auto/SKILL.md",
-      "sha256": "0668f03dc701d3895defc1e3f3973fa41976355db5a1c38278b6272c95f145c4"
+      "sha256": "7b63cb642f414a86b278f47dc9cc539a19c80d06f63093e2ab8e3ddadf6fb9b7"
     },
     {
       "path": "config/skills/using-specialists/references/bead-contracts.md",
