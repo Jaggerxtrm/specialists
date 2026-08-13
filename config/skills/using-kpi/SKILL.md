@@ -6,6 +6,7 @@ description: >-
   approximation with ~±5% accuracy.
 gemini-command: using-kpi
 version: 3.1.0
+disable-model-invocation: true
 ---
 
 # using-kpi

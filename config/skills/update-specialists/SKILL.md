@@ -7,6 +7,7 @@ description: >
   guided refresh of specialists/xtrm state.
 version: 2.1
 synced_at: 2026-05-05
+disable-model-invocation: true
 ---
 
 # update-specialists

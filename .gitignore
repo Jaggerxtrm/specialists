@@ -110,3 +110,9 @@ docs/devops/
 docs/plans/
 
 open-issues.json
+
+# Runtime skill links are machine-specific absolute symlinks into ~/.xtrm.
+# The blanket .agents/ rule above cannot exclude them because .agents/skills/beads
+# is intentionally tracked, so git descends into the directory regardless.
+.agents/skills/*
+!.agents/skills/beads/
