@@ -1,6 +1,15 @@
 // Forked from xtrm-dev/core@7f6cd7f7
 //   packages/pi-extensions/extensions/read-line-numbers/index.ts
-// Sync back when @jaggerxtrm/pi-extensions publishes >=0.12.
+//
+// SUNSET CONDITION — remove this vendored fork and switch the Specialists
+// loader (src/pi/read-line-numbers-extension.ts) to
+// `require.resolve('@jaggerxtrm/pi-extensions/read-line-numbers')` once
+// @jaggerxtrm/pi-extensions >=0.12 publishes containing the Core blank-line
+// numbering fix (interior blank lines carry their line number). Until that
+// republish lands, THIS file is the executing implementation for Specialist
+// chains and MUST stay in sync with the Core fix — including the interior
+// blank-line numbering below (mirrored ahead of Core's republish so specialist
+// output cites the right line right now).
 //
 // read-line-numbers — owns the model-facing transform of Pi's built-in `read`
 // tool: every source line is prefixed with its true line number, honoring the
@@ -30,9 +39,14 @@ function isSyntheticNotice(line) {
 }
 
 function numberLines(lines, startLine) {
-  return lines
-    .map((line, index) => (line === '' ? line : `${startLine + index} | ${line}`))
-    .join('\n');
+  // Number every line, including interior blanks — a citation like "line 42"
+  // must still resolve when line 42 is empty. A single trailing empty (produced
+  // by `'…\n'.split('\n')`) stays unnumbered so the terminating newline is
+  // preserved without inventing a phantom line.
+  const hasTrailingNewline = lines.length > 1 && lines[lines.length - 1] === '';
+  const body = hasTrailingNewline ? lines.slice(0, -1) : lines;
+  const numbered = body.map((line, index) => `${startLine + index} | ${line}`).join('\n');
+  return hasTrailingNewline ? numbered + '\n' : numbered;
 }
 
 /**
@@ -41,8 +55,10 @@ function numberLines(lines, startLine) {
  * - `startLine` is the 1-based number of the first line (Pi's `offset`, default 1).
  * - `truncated` mirrors `details.truncation.truncated`: when true, Pi appended a
  *   trailing `\n\n[Showing lines ...]` notice that stays verbatim.
- * - Empty lines pass through unnumbered; their index still advances the count,
- *   so a trailing newline leaves the final empty line unnumbered.
+ * - Interior blank lines ARE numbered (e.g. `3 | ` for a blank line at true
+ *   line 3) so citations resolve to the correct source line. A single trailing
+ *   empty produced by a trailing newline stays unnumbered — the terminator is
+ *   preserved without fabricating a phantom line beyond EOF.
  */
 export function numberReadText(text, startLine, truncated) {
   if (text.length === 0) return text;

@@ -94,6 +94,36 @@ describe('numberReadText (ported canonical suite)', () => {
     const input = "[Line 5 is 60KB, exceeds 50KB limit. Use bash: sed -n '5p' /a/b.txt | head -c 51200]";
     expect(mjs.numberReadText(input, 1, true)).toBe(input);
   });
+
+  // --- Blank-line semantics (mirrors Core lane A) --------------------------
+  // Interior blank lines MUST carry their line number so a model citation
+  // ("line 42 is blank") resolves to the true source line. A single trailing
+  // empty from a terminating newline stays unnumbered.
+
+  it('interior blank line is numbered', () => {
+    expect(mjs.numberReadText('foo\n\nbar', 1, false)).toBe('1 | foo\n2 | \n3 | bar');
+  });
+
+  it('leading blank line is numbered', () => {
+    expect(mjs.numberReadText('\nfoo\nbar', 1, false)).toBe('1 | \n2 | foo\n3 | bar');
+  });
+
+  it('consecutive interior blank lines are all numbered', () => {
+    expect(mjs.numberReadText('foo\n\n\n\nbar', 10, false)).toBe(
+      '10 | foo\n11 | \n12 | \n13 | \n14 | bar',
+    );
+  });
+
+  it('interior blank preserved before truncation notice, notice stays verbatim', () => {
+    const input = 'foo\n\nbar\n\n[Showing lines 1-3 of 5000. Use offset=4 to continue.]';
+    expect(mjs.numberReadText(input, 1, true)).toBe(
+      '1 | foo\n2 | \n3 | bar\n\n[Showing lines 1-3 of 5000. Use offset=4 to continue.]',
+    );
+  });
+
+  it('offset advances through blank lines so numbering matches the source', () => {
+    expect(mjs.numberReadText('foo\n\nbar\n', 137, false)).toBe('137 | foo\n138 | \n139 | bar\n');
+  });
 });
 
 describe('read-line-numbers extension hook', () => {
