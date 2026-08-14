@@ -65,7 +65,8 @@
     "release:attest": "node scripts/generate-release-attestation.mjs",
     "changelog": "node scripts/changelog-update.mjs",
     "changelog:check": "node scripts/changelog-update.mjs --check",
-    "preversion": "bun run changelog"
+    "preversion": "bun run changelog",
+    "version": "node scripts/changelog-update.mjs --tag v$npm_package_version && bun run build && git add CHANGELOG.md dist/"
   },
   "keywords": [
     "omnispecialist",

@@ -50,7 +50,6 @@ const quarantined = [
   'tests/unit/specialist/node-contract.consistency.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/specialist/node-coordinator-contract.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/specialist/node-supervisor-recovery.test.ts', // ISSUE: xtrm-wiy5n.4.11
-  'tests/unit/specialist/runner.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/specialist/script-runner.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/specialist/skill-paths.test.ts', // ISSUE: xtrm-wiy5n.4.11
   'tests/unit/specialist/supervisor-sigterm-append.test.ts', // ISSUE: xtrm-wiy5n.4.11

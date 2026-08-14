@@ -907,9 +907,9 @@ function selectAvailableModel(
 
 function classifyFallbackError(error: unknown): string {
   if (isAuthError(error)) return 'auth';
+  if (isRateLimitError(error)) return 'rate_limit';
 
   const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-  if (/rate.?limit|429|too many requests/.test(message)) return 'rate_limit';
   if (/timeout|timed out|etimedout|deadline/.test(message)) return 'timeout';
   if (isTransientError(error)) return 'transient';
   return 'unknown';
