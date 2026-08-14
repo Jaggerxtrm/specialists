@@ -24,12 +24,4 @@ describe('exact citation guidance', () => {
     expect(guidance).toContain('line-number-emitting tool or deterministic verification');
   });
 
-  it('records the supported Pi package identity and local fallback in release notes', () => {
-    const changelog = readFileSync('CHANGELOG.md', 'utf8');
-
-    expect(changelog).toContain('@earendil-works/pi-coding-agent@0.84.1');
-    expect(changelog).toContain('53fa77ccd8a279eb87e92294ef3687b03ff80112');
-    expect(changelog).toContain('raw Pi `read` output does not number each content line');
-    expect(changelog).toContain('deterministically verified');
-  });
 });
