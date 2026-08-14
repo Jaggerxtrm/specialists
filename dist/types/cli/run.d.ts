@@ -1,3 +1,4 @@
+import { constants as fsConstants, fstatSync, openSync, readSync, realpathSync, closeSync } from 'node:fs';
 /** Output mode for foreground runs.
  *  - 'human'  (default) formatted event summaries to stdout + final output
  *  - 'json'   pi-compatible NDJSON event stream to stdout, one event per line
@@ -76,19 +77,22 @@ interface BasePinResult {
     commitsBehind: number;
     override: boolean;
 }
-/**
- * @param coordinatorBase When the worktree's branch was based on a dispatching
- *   coordinator's integration branch (see provisionWorktree), that branch — not
- *   `origin/HEAD` — is this job's declared base. Pinning against `origin/HEAD`
- *   instead would report every coordinator-dispatched job as `stale_base` and
- *   refuse the dispatch. Explicit `--base-sha` / `--base-ref` still win: they
- *   are direct operator intent. Whether the coordinator branch is itself
- *   current with origin is coordinator judgement (the P1-04 ladder), not this
- *   guard's call.
- */
 export declare function resolveBasePin(args: RunArgs, worktreePath?: string, coordinatorBase?: string): BasePinResult | undefined;
-export declare function buildInjectedReviewerDiffVariables(cwd: string, maxFiles?: number): Record<string, string>;
-export declare function buildInjectedWriterDiffVariables(cwd: string, maxFiles?: number): Record<string, string>;
+type SnapshotReaderFs = {
+    openSync: typeof openSync;
+    fstatSync: typeof fstatSync;
+    readSync: typeof readSync;
+    closeSync: typeof closeSync;
+    realpathSync: typeof realpathSync;
+    constants: Pick<typeof fsConstants, 'O_RDONLY' | 'O_NOFOLLOW'>;
+};
+export declare function readSafeSnapshotFile(cwd: string, file: string, maxBytes: number, fsApi?: SnapshotReaderFs): {
+    ok: boolean;
+    output: string;
+};
+export declare function buildInjectedReviewerDiffVariables(cwd: string, maxFiles?: number, explicitBaseSha?: string): Record<string, string>;
+export declare function buildInjectedWriterDiffVariables(cwd: string, maxFiles?: number, explicitBaseSha?: string): Record<string, string>;
+export declare function buildInjectedObligationsDiffVariables(cwd: string, maxFiles?: number, explicitBaseSha?: string): Record<string, string>;
 export declare function run(): Promise<void>;
 export {};
 //# sourceMappingURL=run.d.ts.map

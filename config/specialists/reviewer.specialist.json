@@ -32,6 +32,7 @@
         "reviewer-verdict-format",
         "code-quality-defaults",
         "gitnexus-required",
+        "exact-citation-contract",
         "per-turn-handoff-schema",
         "bead-id-verbatim"
       ]

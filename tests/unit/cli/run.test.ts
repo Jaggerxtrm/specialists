@@ -5,7 +5,7 @@ import * as crypto from 'node:crypto';
 import * as childProcess from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import * as tmuxUtils from '../../../src/cli/tmux-utils.js';
 import * as worktree from '../../../src/specialist/worktree.js';
 
@@ -15,7 +15,7 @@ import { SpecialistRunner } from '../../../src/specialist/runner.js';
 import { Supervisor } from '../../../src/specialist/supervisor.js';
 import { initSchema } from '../../../src/specialist/observability-sqlite.js';
 import { resolveObservabilityDbLocation } from '../../../src/specialist/observability-db.js';
-import { buildInjectedReviewerDiffVariables, buildInjectedWriterDiffVariables, buildTmuxLiveFeedCommand, resolveBasePin, run, startEventTailer, type RunArgs } from '../../../src/cli/run.js';
+import { buildInjectedObligationsDiffVariables, buildInjectedReviewerDiffVariables, buildInjectedWriterDiffVariables, buildTmuxLiveFeedCommand, readSafeSnapshotFile, resolveBasePin, run, startEventTailer, type RunArgs } from '../../../src/cli/run.js';
 
 function makeRunArgs(overrides: Partial<RunArgs> = {}): RunArgs {
   return {
@@ -368,11 +368,495 @@ describe('run CLI', () => {
 
     const variables = buildInjectedReviewerDiffVariables(repoDir);
 
-    expect(variables).toEqual(expect.objectContaining({
-      reviewer_diff_source: expect.stringContaining('branch-vs-base diff'),
-      reviewer_diff_files: 'src/cli/run.ts',
-    }));
+    expect(variables.reviewer_diff_source).toContain('branch-vs-base diff');
+    expect(variables.reviewer_diff_files).toBe('src/cli/run.ts');
+    expect(variables.reviewer_diff_hunks).toContain('Hunk evidence completeness: complete');
+    expect(variables.reviewer_diff_hunks).toContain('src/cli/run.ts — hunks: complete');
     expect(variables.reviewer_diff_files).not.toContain('.xtrm/SKILL.md');
+  });
+
+  it('builds obligations_diff from same injected diff source without requiring shell reconstruction', () => {
+    const remoteDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    childProcess.execSync('git init --bare', { cwd: remoteDir });
+    childProcess.execSync('git init -b main', { cwd: repoDir });
+    childProcess.execSync('git config user.email test@example.com', { cwd: repoDir });
+    childProcess.execSync('git config user.name Test User', { cwd: repoDir });
+    childProcess.execSync('mkdir -p src .xtrm', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/src/scan.ts`, 'base\n');
+    childProcess.execSync('git add src/scan.ts && git commit -m base', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git push -u origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git fetch origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main', { cwd: repoDir });
+    childProcess.execSync('git checkout -b feature', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/src/scan.ts`, 'base\n// TODO(unitAI-abc12): tracked\n');
+    childProcess.execSync('git add src/scan.ts && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    const variables = buildInjectedObligationsDiffVariables(repoDir);
+
+    expect(variables.obligations_diff).toContain('## Obligations Diff Evidence');
+    expect(variables.obligations_diff).toContain('branch-vs-base diff');
+    expect(variables.obligations_diff).toContain('added-marker inventory: COMPLETE');
+    expect(variables.obligations_diff).toContain('### Added marker inventory');
+    expect(variables.obligations_diff).toContain('src/scan.ts:2 TODO [production] [TRACKED unitAI-abc12] // TODO(unitAI-abc12): tracked');
+    expect(variables.obligations_diff).toContain('### Diff hunks');
+    expect(variables.obligations_diff).toContain('+// TODO(unitAI-abc12): tracked');
+  });
+
+  it('marks unstaged symlink snapshots incomplete without reading external marker content', () => {
+    const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    const externalDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    childProcess.execSync('git init -b main', { cwd: repoDir });
+    childProcess.execSync('git config user.email test@example.com', { cwd: repoDir });
+    childProcess.execSync('git config user.name Test User', { cwd: repoDir });
+    childProcess.execSync('mkdir -p src', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/src/scan.ts`, 'base\n');
+    childProcess.execSync('git add src/scan.ts && git commit -m base', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${externalDir}/secret.ts`, '// TODO(unitAI-secret): external secret\n');
+    fs.rmSync(`${repoDir}/src/scan.ts`);
+    fs.symlinkSync(relative(join(repoDir, 'src'), `${externalDir}/secret.ts`), `${repoDir}/src/scan.ts`);
+
+    const variables = buildInjectedObligationsDiffVariables(repoDir);
+
+    expect(variables.obligations_diff).toContain('source: injected diff context (unstaged diff)');
+    expect(variables.obligations_diff).toContain('added-marker inventory: INCOMPLETE');
+    expect(variables.obligations_diff).not.toContain('unitAI-secret');
+    expect(variables.obligations_diff).not.toContain('external secret');
+  });
+
+  it('marks oversized unstaged snapshots incomplete before reading marker content', () => {
+    const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    childProcess.execSync('git init -b main', { cwd: repoDir });
+    childProcess.execSync('git config user.email test@example.com', { cwd: repoDir });
+    childProcess.execSync('git config user.name Test User', { cwd: repoDir });
+    childProcess.execSync('mkdir -p src', { cwd: repoDir, shell: '/bin/bash' as never });
+    const oversizedPrefix = 'x'.repeat((8 * 1024 * 1024) + 1);
+    fs.writeFileSync(`${repoDir}/src/scan.ts`, `${oversizedPrefix}\n`);
+    childProcess.execSync('git add src/scan.ts && git commit -m base', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/src/scan.ts`, `${oversizedPrefix}\n// TODO(unitAI-oversized): should stay hidden\n`);
+
+    const variables = buildInjectedObligationsDiffVariables(repoDir);
+
+    expect(variables.obligations_diff).toContain('source: injected diff context (unstaged diff)');
+    expect(variables.obligations_diff).toContain('added-marker inventory: INCOMPLETE');
+    expect(variables.obligations_diff).not.toContain('unitAI-oversized');
+    expect(variables.obligations_diff).not.toContain('should stay hidden');
+  });
+
+  it('returns unavailable when O_NOFOLLOW is unsupported', () => {
+    const result = readSafeSnapshotFile('/repo', 'src/scan.ts', 1024, {
+      openSync: vi.fn(),
+      fstatSync: vi.fn(),
+      readSync: vi.fn(),
+      closeSync: vi.fn(),
+      realpathSync: { native: vi.fn() } as typeof fs.realpathSync,
+      constants: { O_RDONLY: 0, O_NOFOLLOW: undefined as unknown as number },
+    });
+
+    expect(result).toEqual({ ok: false, output: '' });
+  });
+
+  it('returns unavailable when candidate path lexically escapes worktree', () => {
+    const result = readSafeSnapshotFile('/repo', '../escape.ts', 1024, {
+      openSync: vi.fn(),
+      fstatSync: vi.fn(),
+      readSync: vi.fn(),
+      closeSync: vi.fn(),
+      realpathSync: { native: vi.fn((value: string) => value) } as typeof fs.realpathSync,
+      constants: { O_RDONLY: 0, O_NOFOLLOW: 1 },
+    });
+
+    expect(result).toEqual({ ok: false, output: '' });
+  });
+
+  it('returns unavailable when real parent path escapes worktree through symlink', () => {
+    const openSyncMock = vi.fn();
+    const result = readSafeSnapshotFile('/repo', 'linked/scan.ts', 1024, {
+      openSync: openSyncMock,
+      fstatSync: vi.fn(),
+      readSync: vi.fn(),
+      closeSync: vi.fn(),
+      realpathSync: {
+        native: vi.fn((value: string) => {
+          if (value === '/repo') return '/repo';
+          if (value === '/repo/linked') return '/tmp/escape';
+          return value;
+        }),
+      } as typeof fs.realpathSync,
+      constants: { O_RDONLY: 0, O_NOFOLLOW: 1 },
+    });
+
+    expect(result).toEqual({ ok: false, output: '' });
+    expect(openSyncMock).not.toHaveBeenCalled();
+  });
+
+  it('returns unavailable when opened descriptor is not regular file', () => {
+    const closeSyncMock = vi.fn();
+    const result = readSafeSnapshotFile('/repo', 'src/scan.ts', 1024, {
+      openSync: vi.fn(() => 11),
+      fstatSync: vi.fn(() => ({ isFile: () => false, size: 4 })) as typeof fs.fstatSync,
+      readSync: vi.fn(),
+      closeSync: closeSyncMock,
+      realpathSync: {
+        native: vi.fn((value: string) => {
+          if (value === '/repo') return '/repo';
+          if (value === '/repo/src') return '/repo/src';
+          return value;
+        }),
+      } as typeof fs.realpathSync,
+      constants: { O_RDONLY: 0, O_NOFOLLOW: 1 },
+    });
+
+    expect(result).toEqual({ ok: false, output: '' });
+    expect(closeSyncMock).toHaveBeenCalledWith(11);
+  });
+
+  it('reads descriptor-attested snapshot inside worktree', () => {
+    const closeSyncMock = vi.fn();
+    const readSyncMock = vi.fn((_fd, buffer: Buffer, offset: number, length: number) => {
+      buffer.write('safe', offset, length, 'utf8');
+      return 4;
+    });
+    const result = readSafeSnapshotFile('/repo', 'src/scan.ts', 1024, {
+      openSync: vi.fn(() => 11),
+      fstatSync: vi.fn(() => ({ isFile: () => true, size: 4 })) as typeof fs.fstatSync,
+      readSync: readSyncMock as typeof fs.readSync,
+      closeSync: closeSyncMock,
+      realpathSync: {
+        native: vi.fn((value: string) => {
+          if (value === '/repo') return '/repo';
+          if (value === '/repo/src') return '/repo/src';
+          if (value === '/proc/self/fd/11') return '/repo/src/scan.ts';
+          return value;
+        }),
+      } as typeof fs.realpathSync,
+      constants: { O_RDONLY: 0, O_NOFOLLOW: 1 },
+    });
+
+    expect(result).toEqual({ ok: true, output: 'safe' });
+    expect(readSyncMock).toHaveBeenCalledOnce();
+    expect(closeSyncMock).toHaveBeenCalledWith(11);
+  });
+
+  it('returns unavailable when opened descriptor resolves outside worktree', () => {
+    const openSyncMock = vi.fn(() => 11);
+    const fstatSyncMock = vi.fn(() => ({ isFile: () => true, size: 4 }));
+    const readSyncMock = vi.fn((_fd, buffer: Buffer) => {
+      buffer.write('safe');
+      return 4;
+    });
+    const closeSyncMock = vi.fn();
+    const realpathNativeMock = vi.fn((value: string) => {
+      if (value === '/repo') return '/repo';
+      if (value === '/repo/src') return '/repo/src';
+      if (value === '/proc/self/fd/11') return '/tmp/escape/scan.ts';
+      return value;
+    });
+
+    const result = readSafeSnapshotFile('/repo', 'src/scan.ts', 1024, {
+      openSync: openSyncMock,
+      fstatSync: fstatSyncMock as typeof fs.fstatSync,
+      readSync: readSyncMock as typeof fs.readSync,
+      closeSync: closeSyncMock,
+      realpathSync: { native: realpathNativeMock } as typeof fs.realpathSync,
+      constants: { O_RDONLY: 0, O_NOFOLLOW: 1 },
+    });
+
+    expect(result).toEqual({ ok: false, output: '' });
+    expect(readSyncMock).not.toHaveBeenCalled();
+    expect(closeSyncMock).toHaveBeenCalledWith(11);
+  });
+
+  it('returns unavailable when descriptor attestation is unavailable', () => {
+    const openSyncMock = vi.fn(() => 11);
+    const fstatSyncMock = vi.fn(() => ({ isFile: () => true, size: 4 }));
+    const readSyncMock = vi.fn((_fd, buffer: Buffer) => {
+      buffer.write('safe');
+      return 4;
+    });
+    const closeSyncMock = vi.fn(() => {
+      throw new Error('close failed');
+    });
+    const realpathNativeMock = vi.fn((value: string) => {
+      if (value === '/repo') return '/repo';
+      if (value === '/repo/src') return '/repo/src';
+      if (value === '/proc/self/fd/11') throw new Error('procfs unavailable');
+      return value;
+    });
+
+    const result = readSafeSnapshotFile('/repo', 'src/scan.ts', 1024, {
+      openSync: openSyncMock,
+      fstatSync: fstatSyncMock as typeof fs.fstatSync,
+      readSync: readSyncMock as typeof fs.readSync,
+      closeSync: closeSyncMock,
+      realpathSync: { native: realpathNativeMock } as typeof fs.realpathSync,
+      constants: { O_RDONLY: 0, O_NOFOLLOW: 1 },
+    });
+
+    expect(result).toEqual({ ok: false, output: '' });
+    expect(readSyncMock).not.toHaveBeenCalled();
+    expect(closeSyncMock).toHaveBeenCalledWith(11);
+  });
+
+  it('returns unavailable when closeSync fails after successful read', () => {
+    const openSyncMock = vi.fn(() => 11);
+    const fstatSyncMock = vi.fn(() => ({ isFile: () => true, size: 4 }));
+    const readSyncMock = vi.fn((_fd, buffer: Buffer) => {
+      buffer.write('safe');
+      return 4;
+    });
+    const closeSyncMock = vi.fn(() => {
+      throw new Error('close failed');
+    });
+    const realpathNativeMock = vi.fn((value: string) => {
+      if (value === '/repo') return '/repo';
+      if (value === '/repo/src') return '/repo/src';
+      if (value === '/proc/self/fd/11') return '/repo/src/scan.ts';
+      return value;
+    });
+
+    const result = readSafeSnapshotFile('/repo', 'src/scan.ts', 1024, {
+      openSync: openSyncMock,
+      fstatSync: fstatSyncMock as typeof fs.fstatSync,
+      readSync: readSyncMock as typeof fs.readSync,
+      closeSync: closeSyncMock,
+      realpathSync: { native: realpathNativeMock } as typeof fs.realpathSync,
+      constants: { O_RDONLY: 0, O_NOFOLLOW: 1 },
+    });
+
+    expect(result).toEqual({ ok: false, output: '' });
+    expect(closeSyncMock).toHaveBeenCalledWith(11);
+  });
+
+  it('tracks plain block-comment continuation lines', () => {
+    const remoteDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    childProcess.execSync('git init --bare', { cwd: remoteDir });
+    childProcess.execSync('git init -b main', { cwd: repoDir });
+    childProcess.execSync('git config user.email test@example.com', { cwd: repoDir });
+    childProcess.execSync('git config user.name Test User', { cwd: repoDir });
+    childProcess.execSync('mkdir -p src', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/README.md`, 'base\n');
+    childProcess.execSync('git add README.md && git commit -m base', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git push -u origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git fetch origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main', { cwd: repoDir });
+    childProcess.execSync('git checkout -b feature', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    fs.writeFileSync(
+      `${repoDir}/src/scan.ts`,
+      [
+        '/* TODO(unitAI-block-start): block start',
+        ' * HACK(unitAI-block-star): star continuation',
+        'FIXME(unitAI-plain): plain continuation',
+        'NOTE(release): closing line */',
+        '',
+      ].join('\n'),
+    );
+    childProcess.execSync('git add src && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    const variables = buildInjectedObligationsDiffVariables(repoDir);
+
+    expect(variables.obligations_diff).toContain('src/scan.ts:1 TODO [production] [TRACKED unitAI-block-start] /* TODO(unitAI-block-start): block start');
+    expect(variables.obligations_diff).toContain('src/scan.ts:2 HACK [production] [TRACKED unitAI-block-star] * HACK(unitAI-block-star): star continuation');
+    expect(variables.obligations_diff).toContain('src/scan.ts:3 FIXME [production] [TRACKED unitAI-plain] FIXME(unitAI-plain): plain continuation');
+    expect(variables.obligations_diff).toContain('src/scan.ts:4 NOTE(release) [production] [UNTRACKED] NOTE(release): closing line */');
+  });
+
+  it('ignores regex literal marker lookalikes and keeps real inline comments', () => {
+    const remoteDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    childProcess.execSync('git init --bare', { cwd: remoteDir });
+    childProcess.execSync('git init -b main', { cwd: repoDir });
+    childProcess.execSync('git config user.email test@example.com', { cwd: repoDir });
+    childProcess.execSync('git config user.name Test User', { cwd: repoDir });
+    childProcess.execSync('mkdir -p src', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/README.md`, 'base\n');
+    childProcess.execSync('git add README.md && git commit -m base', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git push -u origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git fetch origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main', { cwd: repoDir });
+    childProcess.execSync('git checkout -b feature', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    fs.writeFileSync(
+      `${repoDir}/src/scan.ts`,
+      [
+        'const regexSlash = /https?:\\/\\/TODO-in-regex/;',
+        'const regexBlock = /prefix\\/\\*FIXME-in-regex/;',
+        'const escapedSlash = /escaped\\//; // TEMP escaped slash comment',
+        'const charClass = /[\\/]value/; // XXX char class comment',
+        '',
+      ].join('\n'),
+    );
+    childProcess.execSync('git add src && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    const variables = buildInjectedObligationsDiffVariables(repoDir);
+
+    expect(variables.obligations_diff).toContain('src/scan.ts:3 TEMP [production] [UNTRACKED] const escapedSlash = /escaped\\//; // TEMP escaped slash comment');
+    expect(variables.obligations_diff).toContain('src/scan.ts:4 XXX [production] [UNTRACKED] const charClass = /[\\/]value/; // XXX char class comment');
+    expect(variables.obligations_diff).not.toContain('src/scan.ts:1 TODO');
+    expect(variables.obligations_diff).not.toContain('src/scan.ts:2 FIXME');
+  });
+
+  it('ignores inert marker vocabulary in json strings and regex literals while keeping real comments', () => {
+    const remoteDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    childProcess.execSync('git init --bare', { cwd: remoteDir });
+    childProcess.execSync('git init -b main', { cwd: repoDir });
+    childProcess.execSync('git config user.email test@example.com', { cwd: repoDir });
+    childProcess.execSync('git config user.name Test User', { cwd: repoDir });
+    childProcess.execSync('mkdir -p config/specialists src/cli src scripts', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/README.md`, 'base\n');
+    childProcess.execSync('git add README.md && git commit -m base', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git push -u origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git fetch origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main', { cwd: repoDir });
+    childProcess.execSync('git checkout -b feature', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    fs.writeFileSync(
+      `${repoDir}/config/specialists/debugger.specialist.json`,
+      '{"system":"Use structured form: // TODO(<follow-up-bead-id>): <one-line reason>."}\n',
+    );
+    fs.writeFileSync(
+      `${repoDir}/config/specialists/obligations-scanner.specialist.json`,
+      '{"description":"Scans executor diff for TODO/FIXME/HACK/XXX/TEMP/NOTE(release)/WIP in production code."}\n',
+    );
+    fs.writeFileSync(
+      `${repoDir}/src/cli/run.ts`,
+      [
+        'const OBLIGATION_MARKER_REGEX = /\\b(TODO|FIXME|HACK|XXX|TEMP|WIP|NOTE\\(release\\))(?![\\w-])/;',
+        'const TRACKED_OBLIGATION_REGEX = /\\b(?:TODO|FIXME|HACK|XXX|TEMP|WIP|NOTE\\(release\\))\\(([A-Za-z0-9.-]+)\\):/;',
+        '',
+      ].join('\n'),
+    );
+    fs.writeFileSync(
+      `${repoDir}/src/scan.ts`,
+      [
+        '// TODO(unitAI-real): tracked line comment',
+        'export const value = 1; // FIXME inline comment',
+        '/*',
+        ' * HACK(unitAI-block): block comment',
+        ' */',
+        '',
+      ].join('\n'),
+    );
+    fs.writeFileSync(`${repoDir}/config/pipeline.yaml`, 'image: latest # TEMP yaml comment\n');
+    fs.writeFileSync(`${repoDir}/scripts/run.sh`, 'echo ok # XXX shell comment\n');
+    childProcess.execSync('git add config src scripts && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    const variables = buildInjectedObligationsDiffVariables(repoDir);
+
+    expect(variables.obligations_diff).toContain('added-marker inventory: COMPLETE — complete exact-delta scan; 5 added marker match(es)');
+    expect(variables.obligations_diff).toContain('src/scan.ts:1 TODO [production] [TRACKED unitAI-real] // TODO(unitAI-real): tracked line comment');
+    expect(variables.obligations_diff).toContain('src/scan.ts:2 FIXME [production] [UNTRACKED] export const value = 1; // FIXME inline comment');
+    expect(variables.obligations_diff).toContain('src/scan.ts:4 HACK [production] [TRACKED unitAI-block] * HACK(unitAI-block): block comment');
+    expect(variables.obligations_diff).toContain('config/pipeline.yaml:1 TEMP [production] [UNTRACKED] image: latest # TEMP yaml comment');
+    expect(variables.obligations_diff).toContain('scripts/run.sh:1 XXX [production] [UNTRACKED] echo ok # XXX shell comment');
+    expect(variables.obligations_diff).not.toContain('config/specialists/debugger.specialist.json:1 TODO');
+    expect(variables.obligations_diff).not.toContain('config/specialists/obligations-scanner.specialist.json:1 TODO');
+    expect(variables.obligations_diff).not.toContain('src/cli/run.ts:1 TODO');
+    expect(variables.obligations_diff).not.toContain('src/cli/run.ts:2 TODO');
+  });
+
+  it('detects all supported markers and classifies nested test surfaces', () => {
+    const remoteDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    childProcess.execSync('git init --bare', { cwd: remoteDir });
+    childProcess.execSync('git init -b main', { cwd: repoDir });
+    childProcess.execSync('git config user.email test@example.com', { cwd: repoDir });
+    childProcess.execSync('git config user.name Test User', { cwd: repoDir });
+    childProcess.execSync('mkdir -p src src/nested/test src/nested/fixture src/nested/mock src/nested/e2e src/nested/docs src/nested/__tests__', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/src/scan.ts`, 'base\n');
+    childProcess.execSync('git add src/scan.ts && git commit -m base', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git push -u origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git fetch origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main', { cwd: repoDir });
+    childProcess.execSync('git checkout -b feature', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    fs.writeFileSync(
+      `${repoDir}/src/scan.ts`,
+      [
+        'base',
+        '// TODO(unitAI-todo): tracked todo',
+        '// FIXME(unitAI-fixme): tracked fixme',
+        '// HACK(unitAI-hack): tracked hack',
+        '// XXX bare xxx',
+        '// TEMP bare temp',
+        '// WIP bare wip',
+        '// NOTE(release): release note',
+        '',
+      ].join('\n'),
+    );
+    fs.writeFileSync(`${repoDir}/src/nested/test/check.ts`, '// TODO(unitAI-test): nested test\n');
+    fs.writeFileSync(`${repoDir}/src/nested/fixture/check.ts`, '// FIXME(unitAI-fixture): nested fixture\n');
+    fs.writeFileSync(`${repoDir}/src/nested/mock/check.ts`, '// HACK(unitAI-mock): nested mock\n');
+    fs.writeFileSync(`${repoDir}/src/nested/e2e/check.ts`, '// XXX(unitAI-e2e): nested e2e\n');
+    fs.writeFileSync(`${repoDir}/src/nested/docs/check.ts`, '// TEMP(unitAI-docs): nested docs\n');
+    fs.writeFileSync(`${repoDir}/src/nested/__tests__/check.ts`, '// WIP(unitAI-inner): nested __tests__\n');
+    childProcess.execSync('git add src && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    const variables = buildInjectedObligationsDiffVariables(repoDir);
+
+    expect(variables.obligations_diff).toContain('src/scan.ts:2 TODO [production] [TRACKED unitAI-todo] // TODO(unitAI-todo): tracked todo');
+    expect(variables.obligations_diff).toContain('src/scan.ts:3 FIXME [production] [TRACKED unitAI-fixme] // FIXME(unitAI-fixme): tracked fixme');
+    expect(variables.obligations_diff).toContain('src/scan.ts:4 HACK [production] [TRACKED unitAI-hack] // HACK(unitAI-hack): tracked hack');
+    expect(variables.obligations_diff).toContain('src/scan.ts:5 XXX [production] [UNTRACKED] // XXX bare xxx');
+    expect(variables.obligations_diff).toContain('src/scan.ts:6 TEMP [production] [UNTRACKED] // TEMP bare temp');
+    expect(variables.obligations_diff).toContain('src/scan.ts:7 WIP [production] [UNTRACKED] // WIP bare wip');
+    expect(variables.obligations_diff).toContain('src/scan.ts:8 NOTE(release) [production] [UNTRACKED] // NOTE(release): release note');
+    expect(variables.obligations_diff).toContain('src/nested/test/check.ts:1 TODO [test] [N/A] // TODO(unitAI-test): nested test');
+    expect(variables.obligations_diff).toContain('src/nested/fixture/check.ts:1 FIXME [test] [N/A] // FIXME(unitAI-fixture): nested fixture');
+    expect(variables.obligations_diff).toContain('src/nested/mock/check.ts:1 HACK [test] [N/A] // HACK(unitAI-mock): nested mock');
+    expect(variables.obligations_diff).toContain('src/nested/e2e/check.ts:1 XXX [test] [N/A] // XXX(unitAI-e2e): nested e2e');
+    expect(variables.obligations_diff).toContain('src/nested/docs/check.ts:1 TEMP [test] [N/A] // TEMP(unitAI-docs): nested docs');
+    expect(variables.obligations_diff).toContain('src/nested/__tests__/check.ts:1 WIP [test] [N/A] // WIP(unitAI-inner): nested __tests__');
+  });
+
+  it('keeps full changed-path inventory when hunk excerpts omit tail files', () => {
+    const remoteDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    childProcess.execSync('git init --bare', { cwd: remoteDir });
+    childProcess.execSync('git init -b main', { cwd: repoDir });
+    childProcess.execSync('git config user.email test@example.com', { cwd: repoDir });
+    childProcess.execSync('git config user.name Test User', { cwd: repoDir });
+    childProcess.execSync('mkdir -p src', { cwd: repoDir, shell: '/bin/bash' as never });
+    fs.writeFileSync(`${repoDir}/README.md`, 'base\n');
+    childProcess.execSync('git add README.md && git commit -m base', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git push -u origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git fetch origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+    childProcess.execSync('git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main', { cwd: repoDir });
+    childProcess.execSync('git checkout -b feature', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    for (let index = 0; index < 22; index += 1) {
+      const fileName = `file-${String(index).padStart(2, '0')}.ts`;
+      const content = index === 0
+        ? '// TODO(unitAI-first): first marker\n'
+        : index === 21
+          ? '// FIXME last marker\n'
+          : `export const value${index} = ${index};\n`;
+      fs.writeFileSync(`${repoDir}/src/${fileName}`, content);
+    }
+    childProcess.execSync('git add src && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+
+    const reviewerVariables = buildInjectedReviewerDiffVariables(repoDir);
+    const obligationsVariables = buildInjectedObligationsDiffVariables(repoDir);
+
+    expect(reviewerVariables.reviewer_diff_files).toContain('src/file-00.ts');
+    expect(reviewerVariables.reviewer_diff_files).toContain('src/file-21.ts');
+    expect(reviewerVariables.reviewer_diff_hunks).toContain('Hunk evidence completeness: partial — 20/22 changed paths carried hunk excerpts; 20 complete, 0 truncated, 2 omitted');
+    expect(reviewerVariables.reviewer_diff_hunks).toContain('src/file-00.ts — hunks: complete');
+    expect(reviewerVariables.reviewer_diff_hunks).toContain('src/file-21.ts — hunks: omitted (excerpt file cap 20)');
+
+    expect(obligationsVariables.obligations_diff).toContain('- changed files: 22');
+    expect(obligationsVariables.obligations_diff).toContain('added-marker inventory: COMPLETE');
+    expect(obligationsVariables.obligations_diff).toContain('src/file-00.ts:1 TODO [production] [TRACKED unitAI-first] // TODO(unitAI-first): first marker');
+    expect(obligationsVariables.obligations_diff).toContain('src/file-21.ts:1 FIXME [production] [UNTRACKED] // FIXME last marker');
   });
 
   it('builds writer_diff from the same worktree diff source as reviewer context', () => {
@@ -392,12 +876,18 @@ describe('run CLI', () => {
     childProcess.execSync('git checkout -b feature', { cwd: repoDir, shell: '/bin/bash' as never });
     fs.writeFileSync(`${repoDir}/src/writer.ts`, 'base\nwriter change\n');
     childProcess.execSync('git add src/writer.ts && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+    const headSha = childProcess.execSync('git rev-parse HEAD', { cwd: repoDir, encoding: 'utf8' }).trim();
     fs.writeFileSync(`${repoDir}/.xtrm/SKILL.md`, 'noise\n');
 
     const variables = buildInjectedWriterDiffVariables(repoDir);
 
-    expect(variables.writer_diff).toContain('Source: injected diff context (branch-vs-base diff');
+    expect(variables.writer_diff).toContain(`Source: injected diff context (branch-vs-base diff (`);
+    expect(variables.writer_diff).toContain(`..${headSha}))`);
+    expect(variables.writer_diff).toContain(`Reviewed head: ${headSha}`);
+    expect(variables.writer_diff).toContain('Worktree state: dirty');
+    expect(variables.writer_diff).toContain('Hunk evidence completeness: complete');
     expect(variables.writer_diff).toContain('Changed files:\nsrc/writer.ts');
+    expect(variables.writer_diff).toContain('Changed path coverage:\nsrc/writer.ts — hunks: complete');
     expect(variables.writer_diff).toContain('Diff stat:');
     expect(variables.writer_diff).toContain('+writer change');
     expect(variables.writer_diff).not.toContain('.xtrm/SKILL.md');
@@ -965,6 +1455,7 @@ describe('run CLI', () => {
     childProcess.execSync('git checkout -b feature', { cwd: repoDir, shell: '/bin/bash' as never });
     fs.writeFileSync(`${repoDir}/src/writer.ts`, 'base\nwriter change\n');
     childProcess.execSync('git add src/writer.ts && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+    const headSha = childProcess.execSync('git rev-parse HEAD', { cwd: repoDir, encoding: 'utf8' }).trim();
 
     process.argv = ['node', 'specialists', 'run', 'seconder', '--prompt', 'review writer', '--job', 'job-writer'];
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
@@ -1017,6 +1508,8 @@ describe('run CLI', () => {
     }));
     expect(runArgs.variables?.writer_diff).toContain('src/writer.ts');
     expect(runArgs.variables?.writer_diff).toContain('+writer change');
+    expect(runArgs.variables?.writer_diff).toContain(`Reviewed head: ${headSha}`);
+    expect(runArgs.variables?.writer_diff).toContain('Worktree state: clean');
   });
 
   it('prefers explicit reviewed_job_id override from prompt over --job lineage', async () => {

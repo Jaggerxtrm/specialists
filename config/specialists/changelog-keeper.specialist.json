@@ -58,9 +58,9 @@
         "git"
       ],
       "required_tools": [
-        "Read",
-        "Edit",
-        "Bash"
+        "read",
+        "bash",
+        "edit"
       ]
     },
     "validation": {

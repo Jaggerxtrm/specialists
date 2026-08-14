@@ -2,6 +2,7 @@ import { buildMandatoryRulesInjection } from './mandatory-rules.js';
 import { type BeadRecord } from './beads.js';
 import { type PayloadComponentMeasurement } from './payload-measure.js';
 import type { Specialist } from './schema.js';
+export declare const MANDATORY_RULES_TOKEN_LIMIT = 2000;
 export type Surface = 'pi' | 'claude' | 'codex';
 /**
  * Derive a skill's invocation name from its declared path.

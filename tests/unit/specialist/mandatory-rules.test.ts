@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -9,7 +9,12 @@ vi.mock('../../../src/specialist/canonical-asset-resolver.js', () => ({
   resolveCanonicalAssetDir: (kind: string) => packageCanonicalDirs.get(kind) ?? null,
 }));
 
-import { buildMandatoryRulesInjection } from '../../../src/specialist/mandatory-rules.js';
+import {
+  MandatoryRulesBudgetError,
+  buildMandatoryRulesInjection,
+  compileMandatoryRulesBudget,
+  type MandatoryRulesSection,
+} from '../../../src/specialist/mandatory-rules.js';
 
 function captureWarnings<T>(fn: () => T): { result: T; warnings: string[] } {
   const warnings: string[] = [];
@@ -93,6 +98,13 @@ describe('mandatory rules resolution', () => {
       'git-workflow-safe',
       'specialist-extra',
       'specialist-inline-rules',
+    ]);
+    expect(result.sections.map(section => section.priority)).toEqual([
+      'must_keep',
+      'must_keep',
+      'important',
+      'optional',
+      'must_keep',
     ]);
     expect(result.sections.every(section => section.block.length > 0)).toBe(true);
   });
@@ -381,5 +393,122 @@ describe('mandatory rules resolution', () => {
     expect(result.block).toContain('### specialist-inline-rules');
     expect(result.setsLoaded).toEqual(['workflow-quick-rules']);
     expect(result.ruleCount).toBe(2);
+  });
+});
+
+describe('mandatory rules budget compiler', () => {
+  const section = (
+    setId: string,
+    priority: MandatoryRulesSection['priority'],
+    text: string,
+  ): MandatoryRulesSection => ({ setId, priority, ruleCount: 1, block: `### ${setId}\n${text}` });
+
+  it('injects every section at the exact token limit', () => {
+    const sections = [section('floor', 'must_keep', 'safe'), section('extra', 'optional', 'useful')];
+    const candidate = `## MANDATORY_RULES\n${sections.map((item) => item.block).join('\n\n')}`;
+    const result = compileMandatoryRulesBudget(sections, Math.ceil(candidate.length / 4));
+
+    expect(result.outcome).toBe('full');
+    expect(result.block).toBe(candidate);
+    expect(result.injectedTokens).toBe(result.budgetLimit);
+    expect(result.injectedSectionIds).toEqual(['floor', 'extra']);
+    expect(result.evictedSectionIds).toEqual([]);
+  });
+
+  it('evicts one-token-over optional content and preserves candidate order', () => {
+    const sections = [
+      section('floor-a', 'must_keep', 'a'),
+      section('optional-large', 'optional', 'x'.repeat(80)),
+      section('floor-b', 'must_keep', 'b'),
+      section('important', 'important', 'c'),
+    ];
+    const retained = [sections[0], sections[2], sections[3]];
+    const retainedBlock = `## MANDATORY_RULES\n${retained.map((item) => item.block).join('\n\n')}`;
+    const result = compileMandatoryRulesBudget(sections, Math.ceil(retainedBlock.length / 4));
+
+    expect(result.outcome).toBe('degraded');
+    expect(result.injectedSectionIds).toEqual(['floor-a', 'floor-b', 'important']);
+    expect(result.evictedSectionIds).toEqual(['optional-large']);
+    expect(result.block).toBe(retainedBlock);
+    expect(result.injectedTokens).toBe(result.budgetLimit);
+  });
+
+  it('skips an oversized optional section and retains a later fitting section deterministically', () => {
+    const sections = [
+      section('floor', 'must_keep', 'safe'),
+      section('oversized', 'optional', 'x'.repeat(400)),
+      section('small', 'optional', 'ok'),
+    ];
+    const first = compileMandatoryRulesBudget(sections, 30);
+    const second = compileMandatoryRulesBudget(sections, 30);
+
+    expect(first).toEqual(second);
+    expect(first.injectedSectionIds).toEqual(['floor', 'small']);
+    expect(first.evictedSectionIds).toEqual(['oversized']);
+  });
+
+  it('ignores empty sections without reporting them as injected or evicted', () => {
+    const result = compileMandatoryRulesBudget([
+      section('floor', 'must_keep', 'safe'),
+      { setId: 'empty', priority: 'optional', ruleCount: 0, block: '   ' },
+    ], 30);
+
+    expect(result.injectedSectionIds).toEqual(['floor']);
+    expect(result.evictedSectionIds).toEqual([]);
+  });
+
+  it('fails closed with impossible metadata when the MUST_KEEP floor is one token over budget', () => {
+    const sections = [section('floor', 'must_keep', 'x'.repeat(40))];
+    const candidate = `## MANDATORY_RULES\n${sections[0].block}`;
+    const floorTokens = Math.ceil(candidate.length / 4);
+
+    expect(() => compileMandatoryRulesBudget(sections, floorTokens - 1)).toThrow(MandatoryRulesBudgetError);
+    try {
+      compileMandatoryRulesBudget(sections, floorTokens - 1);
+    } catch (error) {
+      expect(error).toMatchObject({
+        outcome: 'impossible',
+        budgetLimit: floorTokens - 1,
+        candidateTokens: floorTokens,
+        mustKeepTokens: floorTokens,
+        injectedTokens: 0,
+        injectedSectionIds: [],
+        evictedSectionIds: ['floor'],
+      });
+      expect((error as Error).message).toContain(`MUST_KEEP floor requires ${floorTokens} tokens`);
+    }
+  });
+
+  it.each([
+    ['executor', [
+      'workflow-quick-rules',
+      'core-session-boundary',
+      'git-workflow-safe',
+      'executor-delivery',
+      'code-quality-defaults',
+      'gitnexus-required',
+      'exact-citation-contract',
+      'per-turn-handoff-schema',
+      'bead-id-verbatim',
+    ]],
+    ['reviewer', [
+      'workflow-quick-rules',
+      'core-session-boundary',
+      'git-workflow-safe',
+      'reviewer-verdict-format',
+      'code-quality-defaults',
+      'gitnexus-required',
+      'exact-citation-contract',
+      'per-turn-handoff-schema',
+      'bead-id-verbatim',
+    ]],
+  ] as const)('retains the complete %s governance set under the production budget', async (name, expectedIds) => {
+    const config = JSON.parse(await readFile(join(process.cwd(), 'config', 'specialists', `${name}.specialist.json`), 'utf-8'));
+    const result = buildMandatoryRulesInjection({ cwd: process.cwd(), specialist: config.specialist }, 2000);
+
+    expect(result.outcome).toBe('full');
+    expect(result.injectedTokens).toBeLessThanOrEqual(result.budgetLimit);
+    expect(result.injectedSectionIds).toEqual(expectedIds);
+    expect(result.evictedSectionIds).toEqual([]);
   });
 });

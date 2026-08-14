@@ -68,6 +68,40 @@ const JOB_TTL_DAYS = Number(process.env.SPECIALISTS_JOB_TTL_DAYS ?? 7);
 const PARENT_NOTIFICATION_MAX_BYTES = 4 * 1024;
 const PARENT_NOTIFICATION_TIMEOUT_MS = 5_000;
 
+export interface MandatoryRulesInjectionProjection {
+  sets_loaded: string[];
+  rules_count: number;
+  inline_rules_count: number;
+  globals_disabled: boolean;
+  token_estimate: number;
+  budget_limit: number;
+  candidate_tokens: number;
+  injected_tokens: number;
+  injected_section_ids: string[];
+  evicted_section_ids: string[];
+  payload_digest: string;
+  outcome: 'full' | 'degraded' | 'impossible';
+}
+
+export function projectMandatoryRulesInjection(
+  data: Partial<MandatoryRulesInjectionProjection>,
+): MandatoryRulesInjectionProjection {
+  return {
+    sets_loaded: data.sets_loaded ?? [],
+    rules_count: data.rules_count ?? 0,
+    inline_rules_count: data.inline_rules_count ?? 0,
+    globals_disabled: data.globals_disabled ?? false,
+    token_estimate: data.token_estimate ?? 0,
+    budget_limit: data.budget_limit ?? 0,
+    candidate_tokens: data.candidate_tokens ?? 0,
+    injected_tokens: data.injected_tokens ?? 0,
+    injected_section_ids: data.injected_section_ids ?? [],
+    evicted_section_ids: data.evicted_section_ids ?? [],
+    payload_digest: data.payload_digest ?? '',
+    outcome: data.outcome ?? 'full',
+  };
+}
+
 export const STALL_DETECTION_DEFAULTS: Required<StallDetectionConfig> = {
   running_silence_warn_ms: 60_000,
   running_silence_error_ms: 300_000,
@@ -134,13 +168,7 @@ export interface SupervisorStatus {
       gitnexus_tokens: number;
       total_tokens: number;
     };
-    mandatory_rules_injection?: {
-      sets_loaded: string[];
-      rules_count: number;
-      inline_rules_count: number;
-      globals_disabled: boolean;
-      token_estimate: number;
-    };
+    mandatory_rules_injection?: MandatoryRulesInjectionProjection;
     skills?: {
       count: number;
       activated: string[];
@@ -2270,6 +2298,13 @@ export class Supervisor {
                   inline_rules_count?: number;
                   globals_disabled?: boolean;
                   token_estimate?: number;
+                  budget_limit?: number;
+                  candidate_tokens?: number;
+                  injected_tokens?: number;
+                  injected_section_ids?: string[];
+                  evicted_section_ids?: string[];
+                  payload_digest?: string;
+                  outcome?: 'full' | 'degraded' | 'impossible';
                 };
               };
             } catch {
@@ -2285,6 +2320,13 @@ export class Supervisor {
               inline_rules_count?: number;
               globals_disabled?: boolean;
               token_estimate?: number;
+              budget_limit?: number;
+              candidate_tokens?: number;
+              injected_tokens?: number;
+              injected_section_ids?: string[];
+              evicted_section_ids?: string[];
+              payload_digest?: string;
+              outcome?: 'full' | 'degraded' | 'impossible';
             };
           } | undefined;
 
@@ -2298,13 +2340,7 @@ export class Supervisor {
             : undefined;
 
           const mandatoryRulesInjection = parsedMeta?.source === 'mandatory_rules_injection' && parsedMeta.data
-            ? {
-                sets_loaded: parsedMeta.data.sets_loaded ?? [],
-                rules_count: parsedMeta.data.rules_count ?? 0,
-                inline_rules_count: parsedMeta.data.inline_rules_count ?? 0,
-                globals_disabled: parsedMeta.data.globals_disabled ?? false,
-                token_estimate: parsedMeta.data.token_estimate ?? 0,
-              }
+            ? projectMandatoryRulesInjection(parsedMeta.data)
             : undefined;
 
           const payloadBreakdown = parsedMeta?.payload_breakdown?.components && parsedMeta.payload_breakdown.totals

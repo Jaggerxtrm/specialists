@@ -140,6 +140,13 @@ export function renderAndEmit(
           rules_count: rendered.mandatoryRules.ruleCount,
           inline_rules_count: rendered.mandatoryRules.inlineRulesCount,
           globals_disabled: rendered.mandatoryRules.globalsDisabled,
+          budget_limit: rendered.mandatoryRules.budgetLimit,
+          candidate_tokens: rendered.mandatoryRules.candidateTokens,
+          injected_tokens: rendered.mandatoryRules.injectedTokens,
+          injected_section_ids: rendered.mandatoryRules.injectedSectionIds,
+          evicted_section_ids: rendered.mandatoryRules.evictedSectionIds,
+          payload_digest: rendered.mandatoryRules.payloadDigest,
+          outcome: rendered.mandatoryRules.outcome,
         }
       : null,
     skills: specialist.skills?.paths ?? [],

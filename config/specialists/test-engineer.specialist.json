@@ -103,9 +103,6 @@
     "capabilities": {
       "required_tools": [
         "read",
-        "grep",
-        "find",
-        "ls",
         "bash",
         "edit",
         "write"

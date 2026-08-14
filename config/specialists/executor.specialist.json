@@ -34,6 +34,7 @@
         "code-quality-defaults",
         "git-workflow-safe",
         "gitnexus-required",
+        "exact-citation-contract",
         "per-turn-handoff-schema",
         "bead-id-verbatim"
       ]
@@ -98,12 +99,10 @@
     },
     "capabilities": {
       "required_tools": [
-        "bash",
         "read",
-        "grep",
-        "glob",
-        "write",
-        "edit"
+        "bash",
+        "edit",
+        "write"
       ],
       "external_commands": [
         "git",

@@ -3,7 +3,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { PiAgentSession, resolveGlobalNodeModulesDir, resolvePermissionTools } from '../pi/session.js';
+import { PiAgentSession, resolveRuntimeToolContract } from '../pi/session.js';
+import { getReadLineNumbersExtensionPath } from '../pi/read-line-numbers-extension.js';
 import { SpecialistLoader } from './loader.js';
 import { buildMandatoryRulesInjection } from './mandatory-rules.js';
 import { resolveModelChain } from './model-chain.js';
@@ -12,6 +13,7 @@ import { createObservabilitySqliteClient, createObservabilitySqliteClientAtPath 
 import { formatScriptOutput, runScript, validateBeforeRun } from './runner.js';
 import type { ScriptEntry, Specialist } from './schema.js';
 import type { SupervisorStatus } from './supervisor.js';
+import { formatResolvedToolContract, type ResolvedToolContract } from './resolved-tool-contract.js';
 import { renderTemplate } from './templateEngine.js';
 import {
   createFinishReasonEvent,
@@ -671,9 +673,22 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
     compatGuard(spec, trust);
     const skillPaths = trust.allowSkills ? collectSkillPaths(spec, baseDir) : [];
     const skillSources = trust.allowSkills ? computeSkillSources(spec, baseDir) : undefined;
+    const permissionLevel = spec.specialist.execution.permission_required;
+    const specialistName = spec.specialist.metadata?.name ?? resolvedSpecialist;
+    const specialistPermissions = spec.specialist.permissions;
+    const excludeExtensions = [
+      spec.specialist.execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
+    ].filter((value): value is string => Boolean(value));
+    const resolvedToolContract = resolveRuntimeToolContract({
+      level: permissionLevel,
+      specialistName,
+      specialistPermissions,
+      excludeExtensions,
+    });
+    const resolvedToolContractBlock = resolvedToolContract ? formatResolvedToolContract(resolvedToolContract) : '';
 
     const localScripts = getLocalScripts(spec);
-    validateBeforeRun(buildValidationSpec(spec, localScripts), spec.specialist.execution.permission_required);
+    validateBeforeRun(buildValidationSpec(spec, localScripts), permissionLevel, resolvedToolContract);
     const executableScripts = trust.allowLocalScripts ? localScripts : [];
     const preScripts = executableScripts.filter((script) => script.phase === 'pre');
     const postScripts = executableScripts.filter((script) => script.phase === 'post');
@@ -712,6 +727,7 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
       bead_id: '',
       pre_script_output: preScriptOutput,
       ...(input.variables ?? {}),
+      ...(resolvedToolContractBlock ? { resolved_tool_contract: resolvedToolContractBlock } : {}),
     };
     let prompt = applyOutputContract(renderTaskTemplate(template, variables), spec);
     if (!spec.specialist.execution.bare) {
@@ -817,7 +833,7 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
       const systemPromptMode = spec.specialist.prompt.system_prompt_mode;
       let attempt: { model: string; text: string; stderr: string; exitCode: number; timedOut: boolean; outputTooLarge: boolean; outputTooLargeReason?: AttemptFailureReason };
       try {
-        attempt = await runSingleAttempt(prompt, model, input.thinking_level ?? spec.specialist.execution.thinking_level, timeoutMs, assistantTextLimitBytes, options, spec, systemPrompt, systemPromptMode, skillPaths, shouldParseJson ? expectedKeys : [], appendTimelineEvent);
+        attempt = await runSingleAttempt(prompt, model, input.thinking_level ?? spec.specialist.execution.thinking_level, timeoutMs, assistantTextLimitBytes, options, spec, systemPrompt, systemPromptMode, skillPaths, shouldParseJson ? expectedKeys : [], resolvedToolContract, appendTimelineEvent);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         persistTerminalOnce({
@@ -950,8 +966,11 @@ export function collectModelCandidates(input: ScriptGenerateRequest, spec: Speci
 
 type AttemptFailureReason = 'assistant_text_too_large' | 'stderr_too_large' | 'malformed_line_too_large';
 
-function appendExtensionArgs(args: string[], spec: Specialist): void {
+function appendExtensionArgs(args: string[], spec: Specialist, resolvedToolContract?: ResolvedToolContract): void {
   const permissionLevel = spec.specialist.execution.permission_required.toUpperCase();
+  // Always-on: numbered read output. Safe for every permission level.
+  const readLineNumbersPath = getReadLineNumbersExtensionPath();
+  if (readLineNumbersPath) args.push('-e', readLineNumbersPath);
   const piExtDir = join(homedir(), '.pi', 'agent', 'extensions');
   if (permissionLevel !== 'READ_ONLY') {
     const qualityGatesPath = join(piExtDir, 'quality-gates');
@@ -964,28 +983,35 @@ function appendExtensionArgs(args: string[], spec: Specialist): void {
   const cavemanPath = join(piExtDir, 'caveman');
   if (existsSync(cavemanPath)) args.push('-e', cavemanPath);
 
-  const npmGlobalDir = resolveGlobalNodeModulesDir();
-  // Serena extension injection retired (unitAI-e67up.8): `extensions.serena`
-  // config remains parseable but is ignored; only gitnexus opt-out is active.
-  const excludedExtensions = new Set([
-    spec.specialist.execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
-  ].filter((value): value is string => Boolean(value)));
-  if (!npmGlobalDir) return;
-
-  if (!excludedExtensions.has('pi-gitnexus')) {
-    const gitnexusPath = join(npmGlobalDir, 'pi-gitnexus');
-    if (existsSync(gitnexusPath)) args.push('-e', gitnexusPath);
+  const gitnexusContract = resolvedToolContract?.extensions.gitnexus;
+  if (gitnexusContract?.status === 'available' && gitnexusContract.packagePath && existsSync(gitnexusContract.packagePath)) {
+    args.push('-e', gitnexusContract.packagePath);
   }
 }
 
-async function runSingleAttempt(prompt: string, model: string, thinkingLevel: string | undefined, timeoutMs: number, assistantTextLimitBytes: number, options: ScriptRunnerOptions, spec: Specialist, systemPrompt?: string, systemPromptMode?: 'append' | 'replace', skillPaths: string[] = [], requiredJsonKeys: string[] = [], appendTimelineEvent?: ScriptTimelineAppender): Promise<{ model: string; text: string; stderr: string; exitCode: number; timedOut: boolean; outputTooLarge: boolean; outputTooLargeReason?: AttemptFailureReason }> {
+async function runSingleAttempt(
+  prompt: string,
+  model: string,
+  thinkingLevel: string | undefined,
+  timeoutMs: number,
+  assistantTextLimitBytes: number,
+  options: ScriptRunnerOptions,
+  spec: Specialist,
+  systemPrompt?: string,
+  systemPromptMode?: 'append' | 'replace',
+  skillPaths: string[] = [],
+  requiredJsonKeys: string[] = [],
+  resolvedToolContract?: ResolvedToolContract,
+  appendTimelineEvent?: ScriptTimelineAppender,
+): Promise<{ model: string; text: string; stderr: string; exitCode: number; timedOut: boolean; outputTooLarge: boolean; outputTooLargeReason?: AttemptFailureReason }> {
   if (options.surface === 'script' && spec.specialist.execution.permission_required !== 'READ_ONLY') {
     const session = await PiAgentSession.create({
       model,
       systemPrompt,
       systemPromptMode,
       permissionLevel: spec.specialist.execution.permission_required,
-      specialistName: spec.specialist.metadata.name,
+      specialistName: spec.specialist.metadata?.name,
+      specialistPermissions: spec.specialist.permissions,
       skillPaths,
       thinkingLevel,
       cwd: options.projectDir ?? process.cwd(),
@@ -993,6 +1019,7 @@ async function runSingleAttempt(prompt: string, model: string, thinkingLevel: st
       excludeExtensions: [
         spec.specialist.execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
       ].filter((value): value is string => Boolean(value)),
+      resolvedToolContract,
       onToken: (delta) => {
         recordAssistantDelta(delta);
         appendTimelineEvent?.({ t: Date.now(), type: 'text', char_count: delta.length });
@@ -1107,13 +1134,13 @@ async function runSingleAttempt(prompt: string, model: string, thinkingLevel: st
 
   return await new Promise((resolve, reject) => {
     const args = ['--mode', 'json', '--no-session', '--no-extensions', '--no-skills', '--offline', '--no-context-files', '--no-prompt-templates', '--no-themes'];
-    const toolsFlag = resolvePermissionTools({ level: spec.specialist.execution.permission_required });
+    const toolsFlag = resolvedToolContract?.toolsFlag;
     if (toolsFlag) args.push('--tools', toolsFlag);
     for (const skillPath of skillPaths) args.push('--skill', skillPath);
     args.push('--model', model);
     if (thinkingLevel) args.push('--thinking', thinkingLevel);
     if (systemPrompt) args.push(systemPromptMode === 'append' ? '--append-system-prompt' : '--system-prompt', systemPrompt);
-    appendExtensionArgs(args, spec);
+    appendExtensionArgs(args, spec, resolvedToolContract);
 
     const pi = spawn('pi', args, { stdio: ['pipe', 'pipe', 'pipe'], cwd: options.projectDir ?? process.cwd() });
     options.onChild?.(pi);

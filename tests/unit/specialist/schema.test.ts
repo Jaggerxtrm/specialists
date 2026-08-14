@@ -7,6 +7,7 @@ import {
   OVERRIDE_ALLOWED_STALL_DETECTION_PATHS,
   OVERRIDE_ALLOWED_TOP_FIELDS,
   parseSpecialist,
+  validateSpecialist,
 } from '../../../src/specialist/schema.js';
 import {
   getGlobalSpecialistOverrideLeafPaths,
@@ -223,6 +224,54 @@ describe('parseSpecialist', () => {
     const result = await parseSpecialist(toJson(spec));
     expect(result.specialist.execution.extensions?.serena).toBe(false);
     expect(result.specialist.execution.extensions?.gitnexus).toBe(false);
+  });
+
+  it('accepts specialist.permissions manifest overrides', async () => {
+    const spec = createValidSpec() as ReturnType<typeof createValidSpec> & {
+      specialist: ReturnType<typeof createValidSpec>['specialist'] & {
+        permissions: {
+          READ_ONLY: {
+            denied_natives_when_extension: string[];
+            denied_natives_mode: 'hard';
+          };
+        };
+      };
+    };
+    spec.specialist.permissions = {
+      READ_ONLY: {
+        denied_natives_when_extension: ['grep', 'find', 'ls'],
+        denied_natives_mode: 'hard',
+      },
+    };
+
+    const result = await parseSpecialist(toJson(spec));
+
+    expect(result.specialist.permissions?.READ_ONLY?.denied_natives_when_extension).toEqual(['grep', 'find', 'ls']);
+    expect(result.specialist.permissions?.READ_ONLY?.denied_natives_mode).toBe('hard');
+  });
+
+  it('rejects invalid specialist.permissions shape', async () => {
+    const spec = createValidSpec() as ReturnType<typeof createValidSpec> & {
+      specialist: ReturnType<typeof createValidSpec>['specialist'] & {
+        permissions: {
+          READ_ONLY: {
+            denied_natives_mode: string;
+          };
+        };
+      };
+    };
+    spec.specialist.permissions = {
+      READ_ONLY: {
+        denied_natives_mode: 'blocked',
+      },
+    };
+
+    const result = await validateSpecialist(toJson(spec));
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'specialist.permissions.READ_ONLY.denied_natives_mode' }),
+    ]));
   });
 
   it('rejects invalid execution.output_type', async () => {

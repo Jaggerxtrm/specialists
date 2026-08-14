@@ -65,10 +65,8 @@
     },
     "capabilities": {
       "required_tools": [
-        "bash",
         "read",
-        "grep",
-        "glob"
+        "bash"
       ],
       "external_commands": [
         "bd",

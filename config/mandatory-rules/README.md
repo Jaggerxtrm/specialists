@@ -103,12 +103,17 @@ only applies to this repo (e.g. "use bunx here"), put it in
 
 ## Budget
 
-The full injection block is capped at ~2000 tokens (`src/specialist/runner.ts`).
-Over-budget: the block is skipped and a warning is logged.
+The injection block is capped at 2000 estimated tokens (`src/specialist/task-prompt.ts`).
+Sections use a stable priority policy:
+
+1. `must_keep`: `workflow-quick-rules`, `required_template_sets`, and specialist inline rules. These sections are never evicted.
+2. `important`: `default_template_sets`.
+3. `optional`: specialist `template_sets` that are not also required or default sets.
+
+The compiler considers sections in priority order and preserves their original relative order in the final prompt. It evicts a section when adding that section would exceed the budget. If the `must_keep` floor exceeds the budget, prompt construction fails before a model session starts.
 
 ## Debugging
 
 - Loader warnings appear on stderr prefixed `[specialist runner]`.
-- The supervisor emits a `mandatory_rules_injection` meta event on every run
-  with `sets_loaded`, `rules_count`, `inline_rules_count`, `token_estimate`.
+- The supervisor emits a `mandatory_rules_injection` meta event with final-payload section IDs, token estimates, digest, budget, and `full`, `degraded`, or `impossible` outcome data.
 - Inspect any run's injection: `sp ps <job-id>` shows the metadata.

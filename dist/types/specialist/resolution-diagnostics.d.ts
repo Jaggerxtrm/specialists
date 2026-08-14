@@ -1,4 +1,5 @@
 import { type ExtensionState, type ResolverResult, type ToolCatalogName } from './manifest-resolver.js';
+import { type ResolvedToolContract } from './resolved-tool-contract.js';
 export interface ExtensionProbe {
     name: ToolCatalogName;
     package: string;
@@ -20,6 +21,7 @@ export interface ResolvedConfigReport {
     catalogs: readonly CatalogRecord[];
     extensionAvailability: readonly ExtensionProbe[];
     resolver: ResolverResult;
+    toolContract: ResolvedToolContract;
     catalogCompatibility: readonly string[];
 }
 export declare function classifyExtensionProbe(catalog: CatalogRecord, input: {

@@ -1,0 +1,17 @@
+{
+  "name": "@jaggerxtrm-bundled/read-line-numbers",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Prefix model-facing read tool output with true source line numbers (bundled fork of xtrm-dev/core@7f6cd7f7).",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.mjs",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.0"
+  },
+  "pi": {
+    "extensions": [
+      "./index.mjs"
+    ]
+  }
+}

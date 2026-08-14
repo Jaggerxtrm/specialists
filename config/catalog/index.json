@@ -2,19 +2,19 @@
   "precedence_order": ["native", "gitnexus"],
   "default_overrides": {
     "READ_ONLY": {
-      "denied_natives_when_extension": ["read", "grep", "find", "ls"],
+      "denied_natives_when_extension": ["grep", "find", "ls"],
       "denied_natives_mode": "hard"
     },
     "LOW": {
-      "denied_natives_when_extension": ["read", "grep", "find", "ls"],
+      "denied_natives_when_extension": ["grep", "find", "ls"],
       "denied_natives_mode": "hard"
     },
     "MEDIUM": {
-      "denied_natives_when_extension": ["read", "grep", "find", "ls"],
+      "denied_natives_when_extension": ["grep", "find", "ls"],
       "denied_natives_mode": "hard"
     },
     "HIGH": {
-      "denied_natives_when_extension": ["read", "grep", "find", "ls"],
+      "denied_natives_when_extension": ["grep", "find", "ls"],
       "denied_natives_mode": "hard"
     }
   },

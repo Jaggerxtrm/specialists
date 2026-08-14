@@ -1,10 +1,13 @@
 // src/specialist/runner.ts
 import { writeJobFileOutput } from './job-file-output.js';
+import { createHash } from 'node:crypto';
 import { renderTemplate } from './templateEngine.js';
 import { buildBeadBoundaryInstruction, renderTaskPrompt } from './task-prompt.js';
+import { MandatoryRulesBudgetError } from './mandatory-rules.js';
 import {
   PiAgentSession,
   SessionKilledError,
+  resolveRuntimeToolContract,
   type PiSessionOptions,
   type SessionMetricEvent,
   type SessionRunMetrics,
@@ -17,6 +20,7 @@ import { createObservabilitySqliteClient } from './observability-sqlite.js';
 import type { TimelineEvent, TimelineEventRunComplete } from './timeline-events.js';
 import { resolveModelChain } from './model-chain.js';
 import type { RuntimeOriginV1 } from './runtime-origin.js';
+import { formatResolvedToolContract, type ResolvedToolContract } from './resolved-tool-contract.js';
 
 export interface RunOptions {
   name: string;
@@ -261,6 +265,7 @@ function isToolAvailable(tool: string, permissionLevel: string): boolean {
 export function validateBeforeRun(
   spec: { specialist: { skills?: { paths?: string[]; scripts?: Array<{ run?: string; path?: string; phase: string; inject_output: boolean }> }; capabilities?: { external_commands?: string[]; required_tools?: string[] } } },
   permissionLevel: string,
+  resolvedToolContract?: ResolvedToolContract,
 ): void {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -314,6 +319,12 @@ export function validateBeforeRun(
     if (!isToolAvailable(tool, permissionLevel)) {
       errors.push(
         `  ✗ capabilities.required_tools: tool "${tool}" requires higher permission than "${permissionLevel}"`,
+      );
+      continue;
+    }
+    if (resolvedToolContract && !resolvedToolContract.toolsList.some((availableTool) => availableTool.toLowerCase() === tool.toLowerCase())) {
+      errors.push(
+        `  ✗ capabilities.required_tools: tool "${tool}" missing from resolved runtime contract (${resolvedToolContract.toolsFlag || '(none)'})`,
       );
     }
   }
@@ -1006,15 +1017,8 @@ export class SpecialistRunner {
     const initialModel = selectAvailableModel(modelChain, circuitBreaker);
     const fallbackUsed = initialModel !== primaryModel;
 
-    await hooks.emit('pre_render', invocationId, metadata.name, metadata.version, {
-      variables_keys: Object.keys(options.variables ?? {}),
-      backend_resolved: initialModel,
-      fallback_used: fallbackUsed,
-      circuit_breaker_state: circuitBreaker.getState(initialModel),
-      scope: 'project',
-    });
-
     const permissionLevel = options.autonomyLevel ?? execution.permission_required;
+    const specialistPermissions = options.specialistPermissions ?? spec.specialist.permissions;
     const effectiveKeepAlive = options.noKeepAlive
       ? false
       : (options.keepAlive ?? execution.interactive ?? false);
@@ -1023,9 +1027,28 @@ export class SpecialistRunner {
     const excludeExtensions = [
       execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
     ].filter((value): value is string => Boolean(value));
+    const resolvedToolContract = resolveRuntimeToolContract({
+      level: permissionLevel,
+      specialistName: options.specialistName ?? metadata.name,
+      specialistPermissions,
+      excludeExtensions,
+    });
+    const resolvedToolContractBlock = resolvedToolContract ? formatResolvedToolContract(resolvedToolContract) : '';
+    const promptVariables = {
+      ...(options.variables ?? {}),
+      ...(resolvedToolContractBlock ? { resolved_tool_contract: resolvedToolContractBlock } : {}),
+    };
+
+    await hooks.emit('pre_render', invocationId, metadata.name, metadata.version, {
+      variables_keys: Object.keys(promptVariables),
+      backend_resolved: initialModel,
+      fallback_used: fallbackUsed,
+      circuit_breaker_state: circuitBreaker.getState(initialModel),
+      scope: 'project',
+    });
 
     // Pre-run validation: check scripts exist, commands/tools are available, shebang typos
-    validateBeforeRun(spec, permissionLevel);
+    validateBeforeRun(spec, permissionLevel, resolvedToolContract);
 
     // Pre-phase scripts/commands run locally before the pi session starts.
     // Their stdout is captured and injected into the task via $pre_script_output.
@@ -1057,30 +1080,51 @@ export class SpecialistRunner {
     // Task-side assembly is shared verbatim with `sp render-task` (unitAI-6639v.4).
     // Reviewer diff context is execution-only, so it enters through the hook rather
     // than the pure seam — it must still land before the hash, as it always has.
-    const rendered = renderTaskPrompt({
-      specialist: spec.specialist,
-      cwd: runCwd,
-      beadId: options.inputBeadId,
-      bead,
-      completedBlockers,
-      fallbackPrompt: () => this.resolvePromptWithBeadContext(options, runCwd, beadsClient),
-      preScriptOutput,
-      variables: options.variables,
-      reusedFromJobId: options.reusedFromJobId,
-      worktreeOwnerJobId: options.worktreeOwnerJobId,
-      gitnexusSummary: gitnexusSummary || undefined,
-      worktreeBoundary: options.worktreeBoundary,
-      appendExecutionContext: metadata.name === 'reviewer'
-        ? (task, cwd, variables) => {
-            try {
-              return `${task}${buildReviewerDiffInstruction(buildReviewerDiffContext(cwd, variables))}`;
-            } catch (error) {
-              console.warn(`[specialist runner] Reviewer diff context unavailable: ${String(error)}`);
-              return task;
+    let rendered;
+    try {
+      rendered = renderTaskPrompt({
+        specialist: spec.specialist,
+        cwd: runCwd,
+        beadId: options.inputBeadId,
+        bead,
+        completedBlockers,
+        fallbackPrompt: () => this.resolvePromptWithBeadContext(options, runCwd, beadsClient),
+        preScriptOutput,
+        variables: promptVariables,
+        reusedFromJobId: options.reusedFromJobId,
+        worktreeOwnerJobId: options.worktreeOwnerJobId,
+        gitnexusSummary: gitnexusSummary || undefined,
+        worktreeBoundary: options.worktreeBoundary,
+        appendExecutionContext: metadata.name === 'reviewer'
+          ? (task, cwd, variables) => {
+              try {
+                return `${task}${buildReviewerDiffInstruction(buildReviewerDiffContext(cwd, variables))}`;
+              } catch (error) {
+                console.warn(`[specialist runner] Reviewer diff context unavailable: ${String(error)}`);
+                return task;
+              }
             }
-          }
-        : undefined,
-    });
+          : undefined,
+      });
+    } catch (error) {
+      if (error instanceof MandatoryRulesBudgetError) {
+        const data = {
+          budget_limit: error.budgetLimit,
+          candidate_tokens: error.candidateTokens,
+          injected_tokens: error.injectedTokens,
+          injected_section_ids: error.injectedSectionIds,
+          evicted_section_ids: error.evictedSectionIds,
+          payload_digest: createHash('sha256').update('').digest('hex'),
+          outcome: error.outcome,
+        };
+        onEvent?.('meta', {
+          source: 'mandatory_rules_injection',
+          data,
+          summary: JSON.stringify({ kind: 'meta', source: 'mandatory_rules_injection', data }),
+        });
+      }
+      throw error;
+    }
 
     const {
       beadContextOwn,
@@ -1261,7 +1305,14 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
             rules_count: mandatoryRulesInjection.ruleCount,
             inline_rules_count: mandatoryRulesInjection.inlineRulesCount,
             globals_disabled: mandatoryRulesInjection.globalsDisabled,
-            token_estimate: estimateInjectedTokens(mandatoryRulesBlock),
+            token_estimate: mandatoryRulesInjection.injectedTokens,
+            budget_limit: mandatoryRulesInjection.budgetLimit,
+            candidate_tokens: mandatoryRulesInjection.candidateTokens,
+            injected_tokens: mandatoryRulesInjection.injectedTokens,
+            injected_section_ids: mandatoryRulesInjection.injectedSectionIds,
+            evicted_section_ids: mandatoryRulesInjection.evictedSectionIds,
+            payload_digest: mandatoryRulesInjection.payloadDigest,
+            outcome: mandatoryRulesInjection.outcome,
           },
         }
       : null;
@@ -1386,7 +1437,8 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
           thinkingLevel: execution.thinking_level,
           permissionLevel,
           specialistName: options.specialistName ?? metadata.name,
-          specialistPermissions: options.specialistPermissions ?? (spec.specialist.permissions as PiSessionOptions['specialistPermissions']),
+          specialistPermissions,
+          resolvedToolContract,
           stallTimeoutMs: execution.stall_timeout_ms,
           cwd: runCwd,
           worktreeBoundary: options.worktreeBoundary,

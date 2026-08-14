@@ -147,17 +147,17 @@ export declare const createBeadActionSchema: z.ZodObject<{
     depends_on: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
 }, "strip", z.ZodTypeAny, {
     type: "create_bead";
+    priority: number;
     description: string;
     title: string;
-    priority: number;
     depends_on: string[];
     bead_type: "task" | "decision" | "epic" | "bug" | "feature" | "chore";
     parent_bead_id?: string | undefined;
 }, {
     type: "create_bead";
+    priority: number;
     description: string;
     title: string;
-    priority: number;
     bead_type: "task" | "decision" | "epic" | "bug" | "feature" | "chore";
     depends_on?: string[] | undefined;
     parent_bead_id?: string | undefined;
@@ -208,17 +208,17 @@ export declare const coordinatorActionSchema: z.ZodDiscriminatedUnion<"type", [z
     depends_on: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
 }, "strip", z.ZodTypeAny, {
     type: "create_bead";
+    priority: number;
     description: string;
     title: string;
-    priority: number;
     depends_on: string[];
     bead_type: "task" | "decision" | "epic" | "bug" | "feature" | "chore";
     parent_bead_id?: string | undefined;
 }, {
     type: "create_bead";
+    priority: number;
     description: string;
     title: string;
-    priority: number;
     bead_type: "task" | "decision" | "epic" | "bug" | "feature" | "chore";
     depends_on?: string[] | undefined;
     parent_bead_id?: string | undefined;

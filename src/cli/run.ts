@@ -1,7 +1,7 @@
 // src/cli/run.ts
 
-import { join } from 'node:path';
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve, sep } from 'node:path';
+import { constants as fsConstants, existsSync, fstatSync, openSync, readFileSync, readSync, readdirSync, realpathSync, statSync, writeFileSync, closeSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { spawn as cpSpawn, execSync } from 'node:child_process';
 import { SpecialistLoader } from '../specialist/loader.js';
@@ -418,11 +418,13 @@ function resolveWorkingDirectory(
     bead_id?: string;
     worktree_path?: string;
     worktree_owner_job_id?: string;
+    base_sha_pinned?: string;
   } | null,
 ): {
   workingDirectory?: string;
   reusedFromJobId?: string;
   worktreeOwnerJobId?: string;
+  reusedBaseShaPinned?: string;
   inferredBeadId?: string;
   /** Coordinator integration branch the worktree's branch was based on, if any. */
   coordinatorBase?: string;
@@ -502,6 +504,7 @@ function resolveWorkingDirectory(
       workingDirectory: worktreePath,
       reusedFromJobId: args.reuseJobId,
       worktreeOwnerJobId,
+      reusedBaseShaPinned: targetStatus.base_sha_pinned,
       inferredBeadId: targetStatus.bead_id,
     };
   }
@@ -679,6 +682,21 @@ function runGit(cwd: string, args: string[]): string {
   }).trim();
 }
 
+function tryRunGit(cwd: string, args: string[]): string | undefined {
+  try {
+    const output = runGit(cwd, args);
+    return output || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveVerifiedBaseSha(cwd: string, candidate: string | undefined): string | undefined {
+  const trimmed = candidate?.trim();
+  if (!trimmed) return undefined;
+  return tryRunGit(cwd, ['rev-parse', '--verify', '--quiet', `${trimmed}^{commit}`]);
+}
+
 function formatErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -711,6 +729,24 @@ function runGitForBasePin(cwd: string, args: string[], runArgs: RunArgs): string
  *   current with origin is coordinator judgement (the P1-04 ladder), not this
  *   guard's call.
  */
+function resolveInheritedBasePin(worktreePath: string | undefined, recordedBaseSha: string | undefined): BasePinResult | undefined {
+  if (!worktreePath) return undefined;
+  const baseShaPinned = resolveVerifiedBaseSha(worktreePath, recordedBaseSha);
+  if (!baseShaPinned) return undefined;
+  const currentSha = tryRunGit(worktreePath, ['rev-parse', 'HEAD']);
+  const branch = tryRunGit(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  if (!currentSha || !branch) return undefined;
+  const commitsBehindText = tryRunGit(worktreePath, ['rev-list', '--count', `${currentSha}..${baseShaPinned}`]);
+  return {
+    baseShaPinned,
+    baseShaObserved: baseShaPinned,
+    currentSha,
+    branch,
+    commitsBehind: Number.parseInt(commitsBehindText ?? '0', 10) || 0,
+    override: false,
+  };
+}
+
 export function resolveBasePin(
   args: RunArgs,
   worktreePath?: string,
@@ -779,64 +815,645 @@ function buildReusedWorktreeAwarenessBlock(options: {
   ].join('\n');
 }
 
-type InjectedDiffContext = {
-  source: string;
-  stat: string;
-  files: string;
-  hunks: string;
+type HunkCoverageStatus = 'complete' | 'truncated' | 'omitted';
+type ObligationsInventoryStatus = 'complete' | 'incomplete' | 'blocked';
+
+type SnapshotReaderFs = {
+  openSync: typeof openSync;
+  fstatSync: typeof fstatSync;
+  readSync: typeof readSync;
+  closeSync: typeof closeSync;
+  realpathSync: typeof realpathSync;
+  constants: Pick<typeof fsConstants, 'O_RDONLY' | 'O_NOFOLLOW'>;
 };
 
-function buildInjectedDiffContext(cwd: string, maxFiles = 20): InjectedDiffContext | null {
-  const read = (command: string): string => {
+function resolveOpenedDescriptorPath(fd: number, fsApi: SnapshotReaderFs): string | null {
+  try {
+    return fsApi.realpathSync.native(`/proc/self/fd/${fd}`);
+  } catch {
+    return null;
+  }
+}
+
+const snapshotReaderFs: SnapshotReaderFs = {
+  openSync,
+  fstatSync,
+  readSync,
+  closeSync,
+  realpathSync,
+  constants: fsConstants,
+};
+
+type InjectedDiffFileEvidence = {
+  path: string;
+  status: HunkCoverageStatus;
+  detail?: string;
+};
+
+type InjectedDiffContext = {
+  source: string;
+  reviewedBaseSha?: string;
+  reviewedHeadSha: string;
+  worktreeState: 'clean' | 'dirty';
+  stat: string;
+  files: string;
+  pathCoverage: string;
+  hunks: string;
+  hunkCompleteness: string;
+  obligationsInventoryStatus: ObligationsInventoryStatus;
+  obligationsInventorySummary: string;
+  obligationsInventoryLines: string;
+};
+
+const OBLIGATION_MARKER_REGEX = /\b(TODO|FIXME|HACK|XXX|TEMP|WIP|NOTE\(release\))(?![\w-])/;
+const TRACKED_OBLIGATION_REGEX = /\b(?:TODO|FIXME|HACK|XXX|TEMP|WIP|NOTE\(release\))\(([A-Za-z0-9.-]+)\):/;
+const TEST_PATH_PATTERNS = [
+  /(?:^|\/)test\//,
+  /(?:^|\/)tests\//,
+  /(?:^|\/)__tests__\//,
+  /\.spec\./,
+  /\.test\./,
+  /\.fixture\./,
+  /(?:^|\/)fixtures?\//,
+  /(?:^|\/)mocks?\//,
+  /(?:^|\/)e2e\//,
+  /(?:^|\/)docs\//,
+] as const;
+
+function formatHunkCoverageEntry(entry: InjectedDiffFileEvidence): string {
+  const detail = entry.detail ? ` (${entry.detail})` : '';
+  return `${entry.path} — hunks: ${entry.status}${detail}`;
+}
+
+function summarizeHunkCompleteness(entries: readonly InjectedDiffFileEvidence[]): string {
+  if (entries.length === 0) return 'complete — 0/0 changed paths carried hunk evidence';
+
+  const completeCount = entries.filter((entry) => entry.status === 'complete').length;
+  const truncatedCount = entries.filter((entry) => entry.status === 'truncated').length;
+  const omittedCount = entries.filter((entry) => entry.status === 'omitted').length;
+  const excerptedCount = completeCount + truncatedCount;
+
+  if (truncatedCount === 0 && omittedCount === 0) {
+    return `complete — ${excerptedCount}/${entries.length} changed paths carried full hunk evidence`;
+  }
+
+  const detailParts = [
+    `${completeCount} complete`,
+    `${truncatedCount} truncated`,
+    `${omittedCount} omitted`,
+  ];
+  return `partial — ${excerptedCount}/${entries.length} changed paths carried hunk excerpts; ${detailParts.join(', ')}`;
+}
+
+function classifyObligationSurface(filePath: string): 'production' | 'test' {
+  const normalizedPath = filePath.replaceAll('\\', '/');
+  return TEST_PATH_PATTERNS.some((pattern) => pattern.test(normalizedPath)) ? 'test' : 'production';
+}
+
+type ObligationLexicalMode = 'block-comment' | 'code' | 'double-quote' | 'regex' | 'single-quote' | 'template';
+
+type ObligationLexicalState = {
+  mode: ObligationLexicalMode;
+  canStartRegex: boolean;
+  isEscaped: boolean;
+  isInRegexCharacterClass: boolean;
+  templateExpressionDepth: number;
+};
+
+type ObligationCommentScanResult = {
+  comment: string | null;
+  state: ObligationLexicalState;
+};
+
+const REGEX_PREFIX_KEYWORDS = new Set([
+  'await',
+  'case',
+  'delete',
+  'do',
+  'else',
+  'in',
+  'instanceof',
+  'new',
+  'of',
+  'return',
+  'throw',
+  'typeof',
+  'void',
+  'yield',
+]);
+
+function createInitialObligationLexicalState(): ObligationLexicalState {
+  return {
+    mode: 'code',
+    canStartRegex: true,
+    isEscaped: false,
+    isInRegexCharacterClass: false,
+    templateExpressionDepth: 0,
+  };
+}
+
+function cloneObligationLexicalState(state: ObligationLexicalState): ObligationLexicalState {
+  return {
+    mode: state.mode,
+    canStartRegex: state.canStartRegex,
+    isEscaped: state.isEscaped,
+    isInRegexCharacterClass: state.isInRegexCharacterClass,
+    templateExpressionDepth: state.templateExpressionDepth,
+  };
+}
+
+function isHashCommentStart(line: string, index: number): boolean {
+  if (line[index] !== '#') return false;
+  if (index === 0) return true;
+  return /\s/.test(line[index - 1] ?? '');
+}
+
+function isIdentifierCharacter(character: string | undefined): boolean {
+  return !!character && /[A-Za-z0-9_$]/.test(character);
+}
+
+function isRegexPrefixPunctuation(character: string | undefined): boolean {
+  return !!character && '({[,;:=!?~%^&*|+-<>'.includes(character);
+}
+
+function updateRegexEligibilityFromToken(state: ObligationLexicalState, token: string): void {
+  state.canStartRegex = REGEX_PREFIX_KEYWORDS.has(token);
+}
+
+function extractObligationComment(line: string, initialState: ObligationLexicalState): ObligationCommentScanResult {
+  const state = cloneObligationLexicalState(initialState);
+  let markerComment: string | null = null;
+  let index = 0;
+
+  const rememberComment = (commentText: string): void => {
+    if (markerComment) return;
+    const trimmedComment = commentText.trimStart();
+    if (trimmedComment.match(OBLIGATION_MARKER_REGEX)) markerComment = trimmedComment;
+  };
+
+  while (index < line.length) {
+    if (state.mode === 'block-comment') {
+      const closeIndex = line.indexOf('*/', index);
+      const commentEnd = closeIndex >= 0 ? closeIndex + 2 : line.length;
+      rememberComment(line.slice(index, commentEnd));
+      if (closeIndex < 0) return { comment: markerComment, state };
+      state.mode = 'code';
+      state.canStartRegex = false;
+      index = closeIndex + 2;
+      continue;
+    }
+
+    if (state.mode === 'single-quote' || state.mode === 'double-quote') {
+      const quoteCharacter = state.mode === 'single-quote' ? '\'' : '"';
+      while (index < line.length) {
+        const character = line[index];
+        index += 1;
+        if (state.isEscaped) {
+          state.isEscaped = false;
+          continue;
+        }
+        if (character === '\\') {
+          state.isEscaped = true;
+          continue;
+        }
+        if (character === quoteCharacter) {
+          state.mode = 'code';
+          state.canStartRegex = false;
+          break;
+        }
+      }
+      continue;
+    }
+
+    if (state.mode === 'template') {
+      while (index < line.length) {
+        const character = line[index];
+        const nextCharacter = line[index + 1];
+        index += 1;
+
+        if (state.isEscaped) {
+          state.isEscaped = false;
+          continue;
+        }
+        if (character === '\\') {
+          state.isEscaped = true;
+          continue;
+        }
+        if (character === '`') {
+          state.mode = 'code';
+          state.canStartRegex = false;
+          break;
+        }
+        if (character === '$' && nextCharacter === '{') {
+          state.mode = 'code';
+          state.canStartRegex = true;
+          state.templateExpressionDepth = 1;
+          index += 1;
+          break;
+        }
+      }
+      continue;
+    }
+
+    if (state.mode === 'regex') {
+      while (index < line.length) {
+        const character = line[index];
+        index += 1;
+
+        if (state.isEscaped) {
+          state.isEscaped = false;
+          continue;
+        }
+        if (character === '\\') {
+          state.isEscaped = true;
+          continue;
+        }
+        if (character === '[') {
+          state.isInRegexCharacterClass = true;
+          continue;
+        }
+        if (character === ']' && state.isInRegexCharacterClass) {
+          state.isInRegexCharacterClass = false;
+          continue;
+        }
+        if (character === '/' && !state.isInRegexCharacterClass) {
+          state.mode = 'code';
+          state.canStartRegex = false;
+          break;
+        }
+      }
+      continue;
+    }
+
+    const character = line[index];
+    const nextCharacter = line[index + 1];
+
+    if (!character) break;
+    if (/\s/.test(character)) {
+      index += 1;
+      continue;
+    }
+
+    if (isHashCommentStart(line, index)) {
+      rememberComment(line.slice(index));
+      return { comment: markerComment, state };
+    }
+
+    if (character === '/' && nextCharacter === '/') {
+      rememberComment(line.slice(index));
+      return { comment: markerComment, state };
+    }
+
+    if (character === '/' && nextCharacter === '*') {
+      const closeIndex = line.indexOf('*/', index + 2);
+      const commentEnd = closeIndex >= 0 ? closeIndex + 2 : line.length;
+      rememberComment(line.slice(index, commentEnd));
+      if (closeIndex < 0) {
+        state.mode = 'block-comment';
+        return { comment: markerComment, state };
+      }
+      state.canStartRegex = false;
+      index = closeIndex + 2;
+      continue;
+    }
+
+    if (character === '/' && state.canStartRegex) {
+      state.mode = 'regex';
+      state.isEscaped = false;
+      state.isInRegexCharacterClass = false;
+      index += 1;
+      continue;
+    }
+
+    if (character === '\'' || character === '"') {
+      state.mode = character === '\'' ? 'single-quote' : 'double-quote';
+      state.isEscaped = false;
+      index += 1;
+      continue;
+    }
+
+    if (character === '`') {
+      state.mode = 'template';
+      state.isEscaped = false;
+      index += 1;
+      continue;
+    }
+
+    if (isIdentifierCharacter(character)) {
+      let token = character;
+      index += 1;
+      while (isIdentifierCharacter(line[index])) {
+        token += line[index];
+        index += 1;
+      }
+      updateRegexEligibilityFromToken(state, token);
+      continue;
+    }
+
+    if (/\d/.test(character)) {
+      index += 1;
+      while (/[0-9._]/.test(line[index] ?? '')) index += 1;
+      state.canStartRegex = false;
+      continue;
+    }
+
+    if (character === '{') {
+      if (state.templateExpressionDepth > 0) state.templateExpressionDepth += 1;
+      state.canStartRegex = true;
+      index += 1;
+      continue;
+    }
+
+    if (character === '}') {
+      if (state.templateExpressionDepth > 0) {
+        state.templateExpressionDepth -= 1;
+        if (state.templateExpressionDepth === 0) {
+          state.mode = 'template';
+          state.canStartRegex = false;
+          index += 1;
+          continue;
+        }
+      }
+      state.canStartRegex = false;
+      index += 1;
+      continue;
+    }
+
+    if (character === '(' || character === '[' || character === ',' || character === ';' || character === ':') {
+      state.canStartRegex = true;
+      index += 1;
+      continue;
+    }
+
+    if (character === ')' || character === ']') {
+      state.canStartRegex = false;
+      index += 1;
+      continue;
+    }
+
+    if ((character === '+' || character === '-') && nextCharacter === character) {
+      state.canStartRegex = false;
+      index += 2;
+      continue;
+    }
+
+    state.canStartRegex = isRegexPrefixPunctuation(character);
+    index += 1;
+  }
+
+  return { comment: markerComment, state };
+}
+
+export function readSafeSnapshotFile(
+  cwd: string,
+  file: string,
+  maxBytes: number,
+  fsApi: SnapshotReaderFs = snapshotReaderFs,
+): { ok: boolean; output: string } {
+  const noFollowFlag = fsApi.constants.O_NOFOLLOW;
+  if (typeof noFollowFlag !== 'number') return { ok: false, output: '' };
+
+  try {
+    const resolvedCwd = fsApi.realpathSync.native(resolve(cwd));
+    const candidatePath = resolve(cwd, file);
+    const lexicalContainment = candidatePath === resolvedCwd || candidatePath.startsWith(`${resolvedCwd}${sep}`);
+    if (!lexicalContainment) return { ok: false, output: '' };
+
+    const realParentPath = fsApi.realpathSync.native(dirname(candidatePath));
+    const parentContained = realParentPath === resolvedCwd || realParentPath.startsWith(`${resolvedCwd}${sep}`);
+    if (!parentContained) return { ok: false, output: '' };
+
+    let fd: number | undefined;
+    let result: { ok: boolean; output: string } = { ok: false, output: '' };
     try {
-      return execSync(command, {
-        cwd,
-        stdio: 'pipe',
-        encoding: 'utf-8',
-        timeout: 5000,
-      }).trim();
+      fd = fsApi.openSync(candidatePath, fsApi.constants.O_RDONLY | noFollowFlag);
+      const stat = fsApi.fstatSync(fd);
+      if (!stat.isFile() || stat.size > maxBytes) return result;
+
+      const openedPath = resolveOpenedDescriptorPath(fd, fsApi);
+      if (!openedPath) return result;
+
+      const fileContained = openedPath === resolvedCwd || openedPath.startsWith(`${resolvedCwd}${sep}`);
+      if (!fileContained) return result;
+
+      const buffer = Buffer.alloc(stat.size);
+      let bytesRead = 0;
+      while (bytesRead < buffer.length) {
+        const chunkSize = fsApi.readSync(fd, buffer, bytesRead, buffer.length - bytesRead, bytesRead);
+        if (chunkSize <= 0) return result;
+        bytesRead += chunkSize;
+      }
+
+      result = { ok: true, output: buffer.toString('utf8') };
     } catch {
-      return '';
+      return { ok: false, output: '' };
+    } finally {
+      if (fd !== undefined) {
+        try {
+          fsApi.closeSync(fd);
+        } catch {
+          result = { ok: false, output: '' };
+        }
+      }
+    }
+
+    return result;
+  } catch {
+    return { ok: false, output: '' };
+  }
+}
+
+function buildInjectedDiffContext(cwd: string, maxFiles = 20, explicitBaseSha?: string): InjectedDiffContext | null {
+  const readResult = (command: string): { ok: boolean; output: string } => {
+    try {
+      return {
+        ok: true,
+        output: execSync(command, {
+          cwd,
+          stdio: 'pipe',
+          encoding: 'utf-8',
+          timeout: 5000,
+          maxBuffer: 8 * 1024 * 1024,
+        }).trimEnd(),
+      };
+    } catch {
+      return { ok: false, output: '' };
     }
   };
 
+  const read = (command: string): string => readResult(command).output.trim();
+
   const MAX_TOTAL_HUNKS_CHARS = 12_000;
   const MAX_FILE_DIFF_CHARS = 2_000;
+  const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
+  const reviewedHeadSha = read('git rev-parse HEAD');
+  if (!reviewedHeadSha) return null;
+
+  const worktreeStatus = readResult('git status --porcelain=v1 --untracked-files=all');
+  const worktreeState: 'clean' | 'dirty' = !worktreeStatus.ok || worktreeStatus.output.trim() ? 'dirty' : 'clean';
 
   const resolveMergeBase = (): string => {
     const headRef = read('git symbolic-ref refs/remotes/origin/HEAD');
     const baseBranch = headRef ? headRef.split('/').pop() ?? 'main' : 'main';
-    return read(`git merge-base ${shellQuote(baseBranch)} HEAD`);
+    return read(`git merge-base ${shellQuote(baseBranch)} ${shellQuote(reviewedHeadSha)}`);
   };
 
   type Source = {
     label: string;
+    reviewedBaseSha?: string;
     statCmd: string;
     namesCmd: string;
     diffCmd: (file: string) => string;
+    inventoryCmd: string;
+    readFileContent: (file: string) => { ok: boolean; output: string };
   };
 
-  const mergeBase = resolveMergeBase();
-  const sources: Source[] = [
-    {
-      label: 'unstaged diff',
-      statCmd: 'git diff --stat',
-      namesCmd: 'git diff --name-only',
-      diffCmd: (f) => `git diff -- ${shellQuote(f)}`,
-    },
-    {
-      label: 'staged diff',
-      statCmd: 'git diff --cached --stat',
-      namesCmd: 'git diff --cached --name-only',
-      diffCmd: (f) => `git diff --cached -- ${shellQuote(f)}`,
-    },
-    ...(mergeBase ? [{
-      label: `branch-vs-base diff (${mergeBase.slice(0, 12)}..HEAD)`,
-      statCmd: `git diff --stat ${shellQuote(mergeBase)}..HEAD`,
-      namesCmd: `git diff --name-only ${shellQuote(mergeBase)}..HEAD`,
-      diffCmd: (f: string) => `git diff ${shellQuote(mergeBase)}..HEAD -- ${shellQuote(f)}`,
-    }] : []),
-  ];
+  const buildRangeSource = (label: string, baseSha: string): Source => ({
+    label: `${label} (${baseSha}..${reviewedHeadSha})`,
+    reviewedBaseSha: baseSha,
+    statCmd: `git diff --stat ${shellQuote(baseSha)}..${shellQuote(reviewedHeadSha)}`,
+    namesCmd: `git diff --name-only ${shellQuote(baseSha)}..${shellQuote(reviewedHeadSha)}`,
+    diffCmd: (file: string) => `git diff ${shellQuote(baseSha)}..${shellQuote(reviewedHeadSha)} -- ${shellQuote(file)}`,
+    inventoryCmd: `git diff -U0 ${shellQuote(baseSha)}..${shellQuote(reviewedHeadSha)}`,
+    readFileContent: (file: string) => readResult(`git show ${shellQuote(`${reviewedHeadSha}:${file}`)}`),
+  });
+
+  const buildObligationsInventory = (
+    inventoryCmd: string,
+    changedPaths: readonly string[],
+    readFileContent: (file: string) => { ok: boolean; output: string },
+  ): Pick<InjectedDiffContext, 'obligationsInventoryStatus' | 'obligationsInventorySummary' | 'obligationsInventoryLines'> => {
+    const inventory = readResult(inventoryCmd);
+    if (!inventory.ok) {
+      return {
+        obligationsInventoryStatus: 'blocked',
+        obligationsInventorySummary: 'BLOCKED — unable to scan exact delta for added markers',
+        obligationsInventoryLines: 'BLOCKED: exact-delta marker inventory unavailable from selected diff source.',
+      };
+    }
+
+    const allowedPaths = new Set(changedPaths);
+    const addedLineNumbersByPath = new Map<string, Set<number>>();
+    let currentFile: string | undefined;
+    let nextNewLineNumber = 0;
+    let parseGaps = 0;
+
+    for (const line of inventory.output.split('\n')) {
+      if (line.startsWith('+++ ')) {
+        const rawPath = line.slice(4).trim();
+        if (rawPath === '/dev/null') {
+          currentFile = undefined;
+          continue;
+        }
+        currentFile = rawPath.startsWith('b/') ? rawPath.slice(2) : rawPath;
+        continue;
+      }
+
+      const hunkMatch = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (hunkMatch) {
+        nextNewLineNumber = Number(hunkMatch[1]);
+        continue;
+      }
+
+      if (!line.startsWith('+') || line.startsWith('+++')) continue;
+      if (!currentFile || !allowedPaths.has(currentFile)) {
+        nextNewLineNumber += 1;
+        continue;
+      }
+      if (!Number.isFinite(nextNewLineNumber) || nextNewLineNumber <= 0) {
+        parseGaps += 1;
+        nextNewLineNumber += 1;
+        continue;
+      }
+
+      const addedLineNumbers = addedLineNumbersByPath.get(currentFile) ?? new Set<number>();
+      addedLineNumbers.add(nextNewLineNumber);
+      addedLineNumbersByPath.set(currentFile, addedLineNumbers);
+      nextNewLineNumber += 1;
+    }
+
+    const findings: string[] = [];
+
+    for (const filePath of changedPaths) {
+      const addedLineNumbers = addedLineNumbersByPath.get(filePath);
+      if (!addedLineNumbers || addedLineNumbers.size === 0) continue;
+
+      const fileSnapshot = readFileContent(filePath);
+      if (!fileSnapshot.ok) {
+        parseGaps += addedLineNumbers.size;
+        continue;
+      }
+
+      const fileLines = fileSnapshot.output.split('\n');
+      const lexicalState = createInitialObligationLexicalState();
+
+      for (let lineIndex = 0; lineIndex < fileLines.length; lineIndex += 1) {
+        const lineNumber = lineIndex + 1;
+        const scanResult = extractObligationComment(fileLines[lineIndex] ?? '', lexicalState);
+        lexicalState.mode = scanResult.state.mode;
+        lexicalState.canStartRegex = scanResult.state.canStartRegex;
+        lexicalState.isEscaped = scanResult.state.isEscaped;
+        lexicalState.isInRegexCharacterClass = scanResult.state.isInRegexCharacterClass;
+        lexicalState.templateExpressionDepth = scanResult.state.templateExpressionDepth;
+
+        if (!addedLineNumbers.has(lineNumber)) continue;
+
+        const markerMatch = scanResult.comment?.match(OBLIGATION_MARKER_REGEX);
+        if (!markerMatch) continue;
+
+        const surface = classifyObligationSurface(filePath);
+        const trackedBeadId = scanResult.comment?.match(TRACKED_OBLIGATION_REGEX)?.[1];
+        const status = surface === 'test' ? 'N/A' : trackedBeadId ? `TRACKED ${trackedBeadId}` : 'UNTRACKED';
+        const excerpt = fileLines[lineIndex]?.trim() || '(blank)';
+        findings.push(`- ${filePath}:${lineNumber} ${markerMatch[1]} [${surface}] [${status}] ${excerpt}`);
+      }
+
+      for (const addedLineNumber of addedLineNumbers) {
+        if (addedLineNumber > fileLines.length) parseGaps += 1;
+      }
+    }
+
+    const markerCount = findings.length;
+    if (parseGaps > 0) {
+      return {
+        obligationsInventoryStatus: 'incomplete',
+        obligationsInventorySummary: `INCOMPLETE — exact-delta scan found ${markerCount} added marker match(es) with ${parseGaps} parse gap(s)`,
+        obligationsInventoryLines: findings.length > 0 ? findings.join('\n') : '(none)',
+      };
+    }
+
+    return {
+      obligationsInventoryStatus: 'complete',
+      obligationsInventorySummary: `complete exact-delta scan; ${markerCount} added marker match(es)`,
+      obligationsInventoryLines: findings.length > 0 ? findings.join('\n') : '(none)',
+    };
+  };
+
+  const verifiedExplicitBaseSha = resolveVerifiedBaseSha(cwd, explicitBaseSha);
+  const mergeBase = verifiedExplicitBaseSha ? undefined : resolveMergeBase();
+  const sources: Source[] = verifiedExplicitBaseSha
+    ? [buildRangeSource('recorded-base diff', verifiedExplicitBaseSha)]
+    : [
+        {
+          label: 'unstaged diff',
+          statCmd: 'git diff --stat',
+          namesCmd: 'git diff --name-only',
+          diffCmd: (f) => `git diff -- ${shellQuote(f)}`,
+          inventoryCmd: 'git diff -U0',
+          readFileContent: (file: string) => readSafeSnapshotFile(cwd, file, MAX_SNAPSHOT_BYTES),
+        },
+        {
+          label: 'staged diff',
+          statCmd: 'git diff --cached --stat',
+          namesCmd: 'git diff --cached --name-only',
+          diffCmd: (f) => `git diff --cached -- ${shellQuote(f)}`,
+          inventoryCmd: 'git diff --cached -U0',
+          readFileContent: (file: string) => readResult(`git show ${shellQuote(`:${file}`)}`),
+        },
+        ...(mergeBase
+          ? [buildRangeSource('branch-vs-base diff', mergeBase)]
+          : []),
+      ];
 
   for (const src of sources) {
     const stat = read(src.statCmd);
@@ -844,72 +1461,169 @@ function buildInjectedDiffContext(cwd: string, maxFiles = 20): InjectedDiffConte
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean)
-      .slice(0, maxFiles)
       .filter((file) => !AUTO_COMMIT_NOISE_PREFIXES.some((prefix) => file.startsWith(prefix)));
 
     if (files.length === 0) continue;
 
     let remaining = MAX_TOTAL_HUNKS_CHARS;
-    const sections: string[] = [];
+    let excerptedFiles = 0;
+    const coverage: InjectedDiffFileEvidence[] = [];
+    const excerptSections: string[] = [];
+
     for (const file of files) {
-      if (remaining <= 0) break;
-      const diff = read(src.diffCmd(file));
-      const truncated = diff.length > MAX_FILE_DIFF_CHARS
-        ? `${diff.slice(0, MAX_FILE_DIFF_CHARS)}
-... [truncated]`
-        : diff;
-      const section = truncated ? `### ${file}\n${truncated}` : `### ${file}\n(no hunks)`;
-      if (section.length > remaining) {
-        sections.push(`${section.slice(0, remaining)}
-... [truncated]`);
-        remaining = 0;
-        break;
+      if (excerptedFiles >= maxFiles) {
+        coverage.push({ path: file, status: 'omitted', detail: `excerpt file cap ${maxFiles}` });
+        continue;
       }
-      sections.push(section);
+      if (remaining <= 0) {
+        coverage.push({ path: file, status: 'omitted', detail: 'total hunk excerpt budget exhausted' });
+        continue;
+      }
+
+      const diff = read(src.diffCmd(file));
+      let excerpt = diff || '(no hunks)';
+      const detailParts: string[] = [];
+      let status: HunkCoverageStatus = 'complete';
+
+      if (excerpt.length > MAX_FILE_DIFF_CHARS) {
+        excerpt = `${excerpt.slice(0, MAX_FILE_DIFF_CHARS)}\n... [truncated after ${MAX_FILE_DIFF_CHARS} chars]`;
+        status = 'truncated';
+        detailParts.push(`per-file excerpt limit ${MAX_FILE_DIFF_CHARS} chars`);
+      }
+
+      const buildSection = (detail: string | undefined, body: string): string => {
+        const detailSuffix = detail ? `; ${detail}` : '';
+        return `### ${file}\n[hunks: ${status}${detailSuffix}]\n${body}`;
+      };
+
+      let detail = detailParts.length > 0 ? detailParts.join('; ') : undefined;
+      let section = buildSection(detail, excerpt);
+      if (section.length > remaining) {
+        status = 'truncated';
+        detailParts.push('total hunk excerpt budget exhausted');
+        detail = detailParts.join('; ');
+        const header = `### ${file}\n[hunks: ${status}; ${detail}]\n`;
+        const availableBodyChars = Math.max(0, remaining - header.length);
+        if (availableBodyChars === 0) {
+          coverage.push({ path: file, status: 'omitted', detail: 'total hunk excerpt budget exhausted' });
+          remaining = 0;
+          continue;
+        }
+        const truncatedBody = `${excerpt.slice(0, availableBodyChars)}\n... [truncated by total hunk excerpt budget]`;
+        section = `${header}${truncatedBody}`;
+      }
+
+      excerptSections.push(section);
+      coverage.push({ path: file, status, detail });
       remaining -= section.length + 2;
+      excerptedFiles += 1;
     }
 
-    const hunks = sections.join('\n\n');
-    if (!hunks.trim()) continue;
+    const hunkCompleteness = summarizeHunkCompleteness(coverage);
+    const changedPathCoverage = coverage.map(formatHunkCoverageEntry).join('\n');
+    const hunks = [
+      `Hunk evidence completeness: ${hunkCompleteness}`,
+      '',
+      'Changed path coverage:',
+      changedPathCoverage,
+      '',
+      'Hunk excerpts:',
+      excerptSections.length > 0 ? excerptSections.join('\n\n') : '(no hunk excerpts captured)',
+    ].join('\n');
+
+    const obligationsInventory = buildObligationsInventory(src.inventoryCmd, files, src.readFileContent);
 
     return {
       source: `injected diff context (${src.label})`,
+      reviewedBaseSha: src.reviewedBaseSha,
+      reviewedHeadSha,
+      worktreeState,
       stat: stat || '(no stat)',
       files: files.join('\n'),
+      pathCoverage: changedPathCoverage,
       hunks,
+      hunkCompleteness,
+      obligationsInventoryStatus: obligationsInventory.obligationsInventoryStatus,
+      obligationsInventorySummary: obligationsInventory.obligationsInventorySummary,
+      obligationsInventoryLines: obligationsInventory.obligationsInventoryLines,
     };
   }
 
   return null;
 }
 
-export function buildInjectedReviewerDiffVariables(cwd: string, maxFiles = 20): Record<string, string> {
-  const context = buildInjectedDiffContext(cwd, maxFiles);
+export function buildInjectedReviewerDiffVariables(cwd: string, maxFiles = 20, explicitBaseSha?: string): Record<string, string> {
+  const context = buildInjectedDiffContext(cwd, maxFiles, explicitBaseSha);
   if (!context) return {};
 
   return {
-    reviewer_diff_source: context.source,
+    reviewer_diff_source: [
+      context.source,
+      context.reviewedBaseSha ? `reviewed-base: ${context.reviewedBaseSha}` : undefined,
+      `reviewed-head: ${context.reviewedHeadSha}`,
+      `worktree-state: ${context.worktreeState}`,
+    ].filter(Boolean).join('\n'),
     reviewer_diff_stat: context.stat,
     reviewer_diff_files: context.files,
     reviewer_diff_hunks: context.hunks,
   };
 }
 
-export function buildInjectedWriterDiffVariables(cwd: string, maxFiles = 20): Record<string, string> {
-  const context = buildInjectedDiffContext(cwd, maxFiles);
+export function buildInjectedWriterDiffVariables(cwd: string, maxFiles = 20, explicitBaseSha?: string): Record<string, string> {
+  const context = buildInjectedDiffContext(cwd, maxFiles, explicitBaseSha);
   if (!context) return {};
 
   return {
     writer_diff: [
       `Source: ${context.source}`,
+      ...(context.reviewedBaseSha ? [`Reviewed base: ${context.reviewedBaseSha}`] : []),
+      `Reviewed head: ${context.reviewedHeadSha}`,
+      `Worktree state: ${context.worktreeState}`,
+      `Hunk evidence completeness: ${context.hunkCompleteness}`,
       '',
       'Changed files:',
       context.files,
+      '',
+      'Changed path coverage:',
+      context.pathCoverage,
       '',
       'Diff stat:',
       context.stat,
       '',
       'Diff hunks:',
+      context.hunks,
+    ].join('\n'),
+  };
+}
+
+export function buildInjectedObligationsDiffVariables(cwd: string, maxFiles = 20, explicitBaseSha?: string): Record<string, string> {
+  const context = buildInjectedDiffContext(cwd, maxFiles, explicitBaseSha);
+  if (!context) return {};
+
+  return {
+    obligations_diff: [
+      '## Obligations Diff Evidence',
+      `- source: ${context.source}`,
+      ...(context.reviewedBaseSha ? [`- reviewed-base: ${context.reviewedBaseSha}`] : []),
+      `- reviewed-head: ${context.reviewedHeadSha}`,
+      `- worktree-state: ${context.worktreeState}`,
+      `- changed files: ${context.files.split('\n').filter(Boolean).length}`,
+      `- hunk evidence completeness: ${context.hunkCompleteness}`,
+      `- added-marker inventory: ${context.obligationsInventoryStatus.toUpperCase()} — ${context.obligationsInventorySummary}`,
+      '',
+      '### Changed files',
+      context.files,
+      '',
+      '### Changed path coverage',
+      context.pathCoverage,
+      '',
+      '### Added marker inventory',
+      context.obligationsInventoryLines,
+      '',
+      '### Diff stat',
+      context.stat,
+      '',
+      '### Diff hunks',
       context.hunks,
     ].join('\n'),
   };
@@ -1131,13 +1845,21 @@ export async function run(): Promise<void> {
   });
 
   const effectiveArgs = { ...args, worktree: useWorktree };
-  const { workingDirectory, reusedFromJobId, worktreeOwnerJobId, inferredBeadId, coordinatorBase } = resolveWorkingDirectory(
+  const {
+    workingDirectory,
+    reusedFromJobId,
+    worktreeOwnerJobId,
+    reusedBaseShaPinned,
+    inferredBeadId,
+    coordinatorBase,
+  } = resolveWorkingDirectory(
     effectiveArgs,
     jobsDir,
     perm,
     (jobId) => statusReader.readStatus(jobId),
   );
-  const basePin = resolveBasePin(effectiveArgs, workingDirectory, coordinatorBase);
+  const basePin = resolveBasePin(effectiveArgs, workingDirectory, coordinatorBase)
+    ?? resolveInheritedBasePin(workingDirectory, reusedBaseShaPinned);
   await statusReader.dispose();
 
   if (!effectiveBeadId && inferredBeadId) {
@@ -1172,14 +1894,23 @@ export async function run(): Promise<void> {
 
   if (args.reuseJobId) {
     const reviewedJobId = extractReviewedJobIdOverride(prompt) ?? args.reuseJobId;
-    const injectedReviewerDiffVariables = workingDirectory && args.name === 'reviewer' ? buildInjectedReviewerDiffVariables(workingDirectory) : {};
-    const injectedWriterDiffVariables = workingDirectory && args.name === 'seconder' ? buildInjectedWriterDiffVariables(workingDirectory) : {};
+    const explicitDiffBaseSha = basePin?.baseShaPinned;
+    const injectedReviewerDiffVariables = workingDirectory && args.name === 'reviewer'
+      ? buildInjectedReviewerDiffVariables(workingDirectory, 20, explicitDiffBaseSha)
+      : {};
+    const injectedWriterDiffVariables = workingDirectory && args.name === 'seconder'
+      ? buildInjectedWriterDiffVariables(workingDirectory, 20, explicitDiffBaseSha)
+      : {};
+    const injectedObligationsDiffVariables = workingDirectory && args.name === 'obligations-scanner'
+      ? buildInjectedObligationsDiffVariables(workingDirectory, 20, explicitDiffBaseSha)
+      : {};
     variables = {
       ...(variables ?? {}),
       reviewed_job_id: reviewedJobId,
       reused_worktree_awareness: buildReusedWorktreeAwarenessBlock({ reusedFromJobId: args.reuseJobId, worktreeOwnerJobId }),
       ...injectedReviewerDiffVariables,
       ...injectedWriterDiffVariables,
+      ...injectedObligationsDiffVariables,
     };
   }
 

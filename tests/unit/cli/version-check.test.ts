@@ -1,10 +1,17 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_CWD = process.cwd();
+
+function resetVersionCheckEnv(): void {
+  process.env = { ...ORIGINAL_ENV };
+  delete process.env.SPECIALISTS_JOB_ID;
+  delete process.env.PI_SESSION_ID;
+  delete process.env.SPECIALISTS_OFFLINE;
+}
 
 function setupTty(): void {
   Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
@@ -23,6 +30,10 @@ async function loadModule() {
 describe('version-check CLI', () => {
   let tempDir = '';
 
+  beforeEach(() => {
+    resetVersionCheckEnv();
+  });
+
   afterEach(() => {
     process.env = { ...ORIGINAL_ENV };
     process.chdir(ORIGINAL_CWD);
@@ -30,7 +41,6 @@ describe('version-check CLI', () => {
     vi.restoreAllMocks();
     vi.resetModules();
   });
-
 
   it('resolves package version from bundled and source layouts without throwing', async () => {
     const { readBundledPackageVersion } = await loadModule();

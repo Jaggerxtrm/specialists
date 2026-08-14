@@ -38,13 +38,15 @@ export class StallTimeoutError extends Error {
 //   error                   — message-level error
 //
 import { createHash } from 'node:crypto';
+import { getReadLineNumbersExtensionPath } from './read-line-numbers-extension.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, resolve, sep, join, dirname } from 'node:path';
 import { mapSpecialistBackend, getProviderArgs } from './backendMap.js';
 import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
-import { resolveManifestTools, type ManifestPolicy, type ManifestPolicyTier } from '../specialist/manifest-resolver.js';
+import { type ExtensionState, type ManifestPolicy, type ManifestPolicyTier, type ToolCatalog } from '../specialist/manifest-resolver.js';
+import { buildResolvedToolContract, type ResolvedToolContract } from '../specialist/resolved-tool-contract.js';
 import { loadToolCatalogIndex, type ToolCatalogIndex } from '../specialist/tool-catalog.js';
 
 const TEST_COMMAND_STALL_TIMEOUT_MS = 300_000;
@@ -120,6 +122,8 @@ export interface PiSessionOptions {
   env?: Record<string, string>;
   /** npm extension package names to skip when assembling pi -e args */
   excludeExtensions?: string[];
+  /** Shared resolver-backed runtime contract computed before launch. */
+  resolvedToolContract?: ResolvedToolContract;
   /** Called with each text token as it arrives */
   onToken?: (delta: string) => void;
   /** Called with each thinking token */
@@ -160,19 +164,32 @@ export interface PiSessionOptions {
 
 let cachedToolCatalogIndex: ToolCatalogIndex | undefined;
 
+function toRuntimeToolCatalogs(catalogIndex: ToolCatalogIndex): readonly ToolCatalog[] {
+  return catalogIndex.catalogs.map((catalog) => ({
+    catalog: catalog.catalog,
+    precedence: catalog.precedence,
+    source_tiers: {
+      READ_ONLY: catalog.source_tiers.READ_ONLY ?? [],
+      LOW: catalog.source_tiers.LOW ?? [],
+      MEDIUM: catalog.source_tiers.MEDIUM ?? [],
+      HIGH: catalog.source_tiers.HIGH ?? [],
+    },
+  }));
+}
+
 function loadSharedToolCatalogIndex(): ToolCatalogIndex | undefined {
   if (cachedToolCatalogIndex) return cachedToolCatalogIndex;
 
   const overridePath = resolve(process.cwd(), '.specialists', 'catalog', 'index.json');
   try {
-    cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(overridePath, 'utf8')) as ToolCatalogIndex;
+    cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(overridePath, 'utf8'));
     return cachedToolCatalogIndex;
   } catch {
     try {
       const canonicalDir = resolveCanonicalAssetDir('catalog');
       if (!canonicalDir) return undefined;
       const canonicalPath = resolve(canonicalDir, 'index.json');
-      cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(canonicalPath, 'utf8')) as ToolCatalogIndex;
+      cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(canonicalPath, 'utf8'));
       return cachedToolCatalogIndex;
     } catch {
       return undefined;
@@ -180,19 +197,76 @@ function loadSharedToolCatalogIndex(): ToolCatalogIndex | undefined {
   }
 }
 
-function probeExtensionHealth(packageName: string): 'loaded_healthy' | 'not_installed' {
-  const globalDir = resolveGlobalNodeModulesDir();
-  if (globalDir && existsSync(join(globalDir, packageName, 'package.json'))) {
-    return 'loaded_healthy';
+function readPackageVersion(packageJsonPath: string): string | undefined {
+  try {
+    const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { version?: string };
+    return typeof pkg.version === 'string' ? pkg.version : undefined;
+  } catch {
+    return undefined;
   }
-  return 'not_installed';
 }
 
-export function resolvePermissionTools(options: {
+function resolveGitnexusRuntime(options: { catalogIndex: ToolCatalogIndex; excludeExtensions?: readonly string[] }): {
+  packageName: string;
+  packagePath?: string;
+  extensionState: ExtensionState;
+} {
+  const gitnexusCatalog = options.catalogIndex.catalogs.find(catalog => catalog.catalog === 'gitnexus');
+  const packageName = gitnexusCatalog?.package ?? 'pi-gitnexus';
+  if ((options.excludeExtensions ?? []).includes(packageName)) {
+    return {
+      packageName,
+      extensionState: { enabled: false, health: 'disabled', catalogCompatible: true },
+    };
+  }
+
+  const globalDir = resolveGlobalNodeModulesDir();
+  if (!globalDir) {
+    return {
+      packageName,
+      extensionState: { enabled: true, health: 'not_installed', catalogCompatible: false },
+    };
+  }
+
+  const packagePath = join(globalDir, packageName);
+  const packageJsonPath = join(packagePath, 'package.json');
+  if (!existsSync(packageJsonPath)) {
+    return {
+      packageName,
+      extensionState: { enabled: true, health: 'not_installed', catalogCompatible: false },
+    };
+  }
+
+  const installedVersion = readPackageVersion(packageJsonPath);
+  if (!installedVersion) {
+    return {
+      packageName,
+      packagePath,
+      extensionState: { enabled: true, health: 'loaded_unhealthy', catalogCompatible: false },
+    };
+  }
+
+  if (gitnexusCatalog && installedVersion !== gitnexusCatalog.version) {
+    return {
+      packageName,
+      packagePath,
+      extensionState: { enabled: true, health: 'loaded_unhealthy', catalogCompatible: false },
+    };
+  }
+
+  return {
+    packageName,
+    packagePath,
+    extensionState: { enabled: true, health: 'loaded_healthy', catalogCompatible: true },
+  };
+}
+
+export function resolveRuntimeToolContract(options: {
   level?: string;
   specialistName?: string;
   specialistPermissions?: ManifestPolicy['permissions'];
-}): string | undefined {
+  excludeExtensions?: readonly string[];
+}): ResolvedToolContract | undefined {
   const catalogIndex = loadSharedToolCatalogIndex();
   if (!catalogIndex) return undefined;
 
@@ -200,15 +274,41 @@ export function resolvePermissionTools(options: {
   if (tier !== 'READ_ONLY' && tier !== 'LOW' && tier !== 'MEDIUM' && tier !== 'HIGH') return undefined;
 
   const specialistOverride: ManifestPolicyTier | undefined = options.specialistPermissions?.[tier];
-  return resolveManifestTools({
+  const gitnexusRuntime = resolveGitnexusRuntime({
+    catalogIndex,
+    excludeExtensions: options.excludeExtensions,
+  });
+
+  const runtimeCatalogs = toRuntimeToolCatalogs(catalogIndex);
+
+  return buildResolvedToolContract({
     tier,
-    catalogs: catalogIndex.catalogs as unknown as Parameters<typeof resolveManifestTools>[0]['catalogs'],
+    catalogs: runtimeCatalogs,
     catalogDefaultOverrides: catalogIndex.default_overrides,
+    manifestPolicy: options.specialistPermissions ? { permissions: options.specialistPermissions } : undefined,
     specialistOverride,
+    specialistExclusions: (options.excludeExtensions ?? []).includes(gitnexusRuntime.packageName)
+      ? { disabledExtensions: ['gitnexus'] }
+      : undefined,
     extensionState: {
-      gitnexus: { enabled: true, health: probeExtensionHealth('pi-gitnexus') },
+      gitnexus: gitnexusRuntime.extensionState,
     },
-  }).tools || undefined;
+    extensionPackages: {
+      gitnexus: {
+        packageName: gitnexusRuntime.packageName,
+        packagePath: gitnexusRuntime.packagePath,
+      },
+    },
+  });
+}
+
+export function resolvePermissionTools(options: {
+  level?: string;
+  specialistName?: string;
+  specialistPermissions?: ManifestPolicy['permissions'];
+  excludeExtensions?: readonly string[];
+}): string | undefined {
+  return resolveRuntimeToolContract(options)?.toolsFlag || undefined;
 }
 
 export function resolveGlobalNodeModulesDir(): string | undefined {
@@ -625,12 +725,13 @@ export class PiAgentSession {
     ];
 
     // Enforce permission level via --tools flag
-    const toolsFlag = resolvePermissionTools({
+    const resolvedToolContract = this.options.resolvedToolContract ?? resolveRuntimeToolContract({
       level: this.options.permissionLevel,
       specialistName: this.options.specialistName,
       specialistPermissions: this.options.specialistPermissions,
+      excludeExtensions: this.options.excludeExtensions,
     });
-    if (toolsFlag) args.push('--tools', toolsFlag);
+    if (resolvedToolContract?.toolsFlag) args.push('--tools', resolvedToolContract.toolsFlag);
 
     // Thinking level (models that don't support it ignore the flag)
     if (this.options.thinkingLevel) {
@@ -666,14 +767,9 @@ export class PiAgentSession {
     // Serena extension injection was retired with the K4 Serena retirement
     // (unitAI-e67up.8): legacy `excludeExtensions: ['pi-serena-tools']` entries
     // remain accepted and simply have nothing to exclude.
-    const npmGlobalDir = resolveGlobalNodeModulesDir();
-    const excludedExtensions = new Set(this.options.excludeExtensions ?? []);
-    if (npmGlobalDir) {
-      const gitnexusPackageName = 'pi-gitnexus';
-      if (!excludedExtensions.has(gitnexusPackageName)) {
-        const gitnexusPath = join(npmGlobalDir, gitnexusPackageName);
-        if (existsSync(gitnexusPath)) args.push('-e', gitnexusPath);
-      }
+    const gitnexusContract = resolvedToolContract?.extensions.gitnexus;
+    if (gitnexusContract?.status === 'available' && gitnexusContract.packagePath && existsSync(gitnexusContract.packagePath)) {
+      args.push('-e', gitnexusContract.packagePath);
     }
 
     if (this.options.systemPrompt) {
@@ -688,6 +784,14 @@ export class PiAgentSession {
         args.push('-e', boundaryExtPath);
       }
     }
+
+    // Numbered `read` output — bundled fork of xtrm-dev/core's read-line-numbers
+    // Pi extension. Fires on tool_result only, no I/O, safe at every permission
+    // level. Pushed AFTER worktree-boundary so the boundary check (tool_call)
+    // always sees raw payloads even if Pi later adds a raw hook — argv-order
+    // invariant is behaviorally moot today but coded on purpose.
+    const readLineNumbersPath = getReadLineNumbersExtensionPath();
+    if (readLineNumbersPath) args.push('-e', readLineNumbersPath);
 
     const hookEnv = {
       ...process.env,

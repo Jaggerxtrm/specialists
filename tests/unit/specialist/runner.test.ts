@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { SpecialistRunner } from '../../../src/specialist/runner.js';
 import { HookEmitter } from '../../../src/specialist/hooks.js';
 import { CircuitBreaker } from '../../../src/utils/circuitBreaker.js';
@@ -239,6 +240,94 @@ describe('SpecialistRunner', () => {
     }
   });
 
+  it('reports only final injected mandatory sections with exact budget telemetry and digest', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'mandatory-rule-budget-'));
+    try {
+      mkdirSync(join(cwd, 'config', 'mandatory-rules'), { recursive: true });
+      writeFileSync(join(cwd, 'config', 'mandatory-rules', 'floor.md'), '---\nrules:\n  - id: floor-1\n    level: error\n    text: stay safe\n---\n');
+      writeFileSync(join(cwd, 'config', 'mandatory-rules', 'oversized.md'), `---\nrules:\n  - id: optional-1\n    level: info\n    text: ${'x'.repeat(9000)}\n---\n`);
+      writeFileSync(join(cwd, 'config', 'mandatory-rules', 'index.json'), JSON.stringify({
+        required_template_sets: ['floor'],
+        default_template_sets: ['oversized'],
+      }));
+
+      const events: Array<{ type: string; details: Record<string, unknown> }> = [];
+      const runner = new SpecialistRunner({
+        loader: makeLoader({}, 'never', {}, { mandatory_rules: { disable_default_globals: true } }),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+      });
+
+      await runner.run({ name: 'test-spec', prompt: 'do thing', workingDirectory: cwd }, undefined, (type, details) => {
+        events.push({ type, details });
+      });
+
+      const prompt = mockSession.prompt.mock.calls.at(-1)?.[0] as string;
+      const injectedBlock = '## MANDATORY_RULES\n### floor\n- [error] stay safe';
+      expect(prompt).toContain(injectedBlock);
+      expect(prompt).not.toContain('### oversized');
+
+      const metaEvent = events.find((event) => event.type === 'meta' && event.details.source === 'mandatory_rules_injection');
+      expect(metaEvent).toBeDefined();
+      expect(metaEvent?.details.data).toMatchObject({
+        budget_limit: 2000,
+        outcome: 'degraded',
+        injected_section_ids: ['floor'],
+        evicted_section_ids: ['oversized'],
+        injected_tokens: Math.ceil(injectedBlock.length / 4),
+        payload_digest: createHash('sha256').update(injectedBlock).digest('hex'),
+      });
+
+      const payloadEvent = events.find((event) => event.type === 'payload_breakdown');
+      const payload = JSON.parse(payloadEvent?.details.summary as string) as {
+        payload_breakdown: { components: Array<{ kind: string; name: string }> };
+      };
+      expect(payload.payload_breakdown.components.filter((item) => item.kind === 'mandatory_rule').map((item) => item.name)).toEqual(['floor']);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('does not start a session when the MUST_KEEP floor exceeds the budget', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'mandatory-rule-impossible-'));
+    const sessionFactory = vi.fn().mockResolvedValue(mockSession);
+    const events: Array<{ type: string; details: Record<string, unknown> }> = [];
+    try {
+      mkdirSync(join(cwd, 'config', 'mandatory-rules'), { recursive: true });
+      writeFileSync(join(cwd, 'config', 'mandatory-rules', 'floor.md'), `---\nrules:\n  - id: floor-1\n    level: error\n    text: ${'x'.repeat(9000)}\n---\n`);
+      writeFileSync(join(cwd, 'config', 'mandatory-rules', 'index.json'), JSON.stringify({ required_template_sets: ['floor'] }));
+      const runner = new SpecialistRunner({
+        loader: makeLoader({}, 'never', {}, { mandatory_rules: { disable_default_globals: true } }),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory,
+      });
+
+      await expect(runner.run({ name: 'test-spec', prompt: 'do thing', workingDirectory: cwd }, undefined, (type, details) => {
+        events.push({ type, details });
+      })).rejects.toMatchObject({
+        outcome: 'impossible',
+        budgetLimit: 2000,
+        injectedSectionIds: [],
+        evictedSectionIds: ['floor'],
+      });
+      expect(sessionFactory).not.toHaveBeenCalled();
+      expect(mockSession.start).not.toHaveBeenCalled();
+      const impossible = events.find((event) => event.type === 'meta' && event.details.source === 'mandatory_rules_injection');
+      expect(impossible?.details.data).toMatchObject({
+        budget_limit: 2000,
+        outcome: 'impossible',
+        injected_tokens: 0,
+        injected_section_ids: [],
+        evicted_section_ids: ['floor'],
+        payload_digest: createHash('sha256').update('').digest('hex'),
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('passes execution.stall_timeout_ms through to PiAgentSession options', async () => {
     const sessionFactory = vi.fn().mockResolvedValue(mockSession);
     const runner = new SpecialistRunner({
@@ -400,6 +489,45 @@ describe('SpecialistRunner', () => {
     } finally {
       repo.cleanup();
     }
+  });
+
+  it('injects resolved tool contract into prompt variables before launch', async () => {
+    const sessionFactory = vi.fn().mockResolvedValue(mockSession);
+    const runner = new SpecialistRunner({
+      loader: makeLoader(
+        { extensions: { gitnexus: false } },
+        'auto',
+        { task_template: 'Contract follows\n\n$resolved_tool_contract' },
+      ),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory,
+    });
+
+    await runner.run({ name: 'test-spec', prompt: 'do thing' });
+
+    const promptArg = mockSession.prompt.mock.calls.at(-1)?.[0] as string;
+    expect(promptArg).toContain('## Resolved Tool Contract');
+    expect(promptArg).toContain('effective tier: READ_ONLY');
+    expect(promptArg).toContain('gitnexus: disabled');
+  });
+
+  it('fails fast when required tool is impossible under resolved runtime contract', async () => {
+    const runner = new SpecialistRunner({
+      loader: makeLoader(
+        { extensions: { gitnexus: false } },
+        'auto',
+        {},
+        { capabilities: { required_tools: ['gitnexus_query'] } },
+      ),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory: vi.fn().mockResolvedValue(mockSession),
+    });
+
+    await expect(runner.run({ name: 'test-spec', prompt: 'do thing' })).rejects.toThrow(
+      'tool "gitnexus_query" missing from resolved runtime contract',
+    );
   });
 
   it('injects markdown output contract when response_format=markdown', async () => {
@@ -606,7 +734,7 @@ describe('SpecialistRunner', () => {
       sessionFactory: vi.fn().mockResolvedValue(mockSession),
     });
 
-    await runner.run({ name: 'test-spec', prompt: 'analyze this' }, undefined, undefined, undefined, undefined, undefined, undefined, undefined, onResumeReady);
+    await runner.run({ name: 'test-spec', prompt: 'analyze this' }, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, onResumeReady);
 
     expect(onResumeReady).toHaveBeenCalledOnce();
     expect(mockSession.close).not.toHaveBeenCalled();
@@ -621,7 +749,7 @@ describe('SpecialistRunner', () => {
       sessionFactory: vi.fn().mockResolvedValue(mockSession),
     });
 
-    await runner.run({ name: 'test-spec', prompt: 'analyze this', noKeepAlive: true }, undefined, undefined, undefined, undefined, undefined, undefined, undefined, onResumeReady);
+    await runner.run({ name: 'test-spec', prompt: 'analyze this', noKeepAlive: true }, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, onResumeReady);
 
     expect(onResumeReady).not.toHaveBeenCalled();
     expect(mockSession.close).toHaveBeenCalledOnce();
@@ -1159,7 +1287,7 @@ describe('SpecialistRunner', () => {
       const reviewerConfig = JSON.parse(readFileSync(reviewerConfigPath, 'utf8'));
       const systemPrompt = reviewerConfig?.specialist?.prompt?.system ?? '';
       expect(systemPrompt).toContain('## AUTHORITATIVE REVIEW CONTEXT');
-      expect(systemPrompt).toContain('Evidence precedence, highest to lowest');
+      expect(systemPrompt).toContain('Evidence precedence for lineage, requirements, and evidence availability, highest to lowest');
       expect(systemPrompt).toContain('Missing local artifacts MUST NOT trigger FAIL by itself.');
       expect(systemPrompt).toContain('authoritative_lineage_present: yes|no');
       expect(systemPrompt).toContain('authoritative_result_present: yes|no');

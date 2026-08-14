@@ -1,4 +1,5 @@
 import * as z from 'zod';
+import type { ManifestPolicyTier } from './manifest-resolver.js';
 export declare const SpecialistSchema: z.ZodObject<{
     specialist: z.ZodObject<{
         metadata: z.ZodObject<{
@@ -360,6 +361,7 @@ export declare const SpecialistSchema: z.ZodObject<{
                 when: z.ZodOptional<z.ZodString>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
+        permissions: z.ZodOptional<z.ZodType<Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>, z.ZodTypeDef, Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>>>;
         /** Write handoff output to this file path via unified job-file writer */
         output_file: z.ZodOptional<z.ZodString>;
         notes_mode: z.ZodDefault<z.ZodEnum<["full-trail", "final-only"]>>;
@@ -725,6 +727,7 @@ export declare const SpecialistSchema: z.ZodObject<{
                 when: z.ZodOptional<z.ZodString>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
+        permissions: z.ZodOptional<z.ZodType<Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>, z.ZodTypeDef, Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>>>;
         /** Write handoff output to this file path via unified job-file writer */
         output_file: z.ZodOptional<z.ZodString>;
         notes_mode: z.ZodDefault<z.ZodEnum<["full-trail", "final-only"]>>;
@@ -1090,6 +1093,7 @@ export declare const SpecialistSchema: z.ZodObject<{
                 when: z.ZodOptional<z.ZodString>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
+        permissions: z.ZodOptional<z.ZodType<Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>, z.ZodTypeDef, Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>>>;
         /** Write handoff output to this file path via unified job-file writer */
         output_file: z.ZodOptional<z.ZodString>;
         notes_mode: z.ZodDefault<z.ZodEnum<["full-trail", "final-only"]>>;
@@ -1457,6 +1461,7 @@ export declare const SpecialistSchema: z.ZodObject<{
                 when: z.ZodOptional<z.ZodString>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
+        permissions: z.ZodOptional<z.ZodType<Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>, z.ZodTypeDef, Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>>>;
         /** Write handoff output to this file path via unified job-file writer */
         output_file: z.ZodOptional<z.ZodString>;
         notes_mode: z.ZodDefault<z.ZodEnum<["full-trail", "final-only"]>>;
@@ -1822,6 +1827,7 @@ export declare const SpecialistSchema: z.ZodObject<{
                 when: z.ZodOptional<z.ZodString>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
+        permissions: z.ZodOptional<z.ZodType<Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>, z.ZodTypeDef, Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>>>;
         /** Write handoff output to this file path via unified job-file writer */
         output_file: z.ZodOptional<z.ZodString>;
         notes_mode: z.ZodDefault<z.ZodEnum<["full-trail", "final-only"]>>;
@@ -2187,6 +2193,7 @@ export declare const SpecialistSchema: z.ZodObject<{
                 when: z.ZodOptional<z.ZodString>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
+        permissions: z.ZodOptional<z.ZodType<Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>, z.ZodTypeDef, Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>>>;
         /** Write handoff output to this file path via unified job-file writer */
         output_file: z.ZodOptional<z.ZodString>;
         notes_mode: z.ZodDefault<z.ZodEnum<["full-trail", "final-only"]>>;
@@ -2554,6 +2561,7 @@ export declare const SpecialistSchema: z.ZodObject<{
                 when: z.ZodOptional<z.ZodString>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
+        permissions: z.ZodOptional<z.ZodType<Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>, z.ZodTypeDef, Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>>>;
         /** Write handoff output to this file path via unified job-file writer */
         output_file: z.ZodOptional<z.ZodString>;
         notes_mode: z.ZodDefault<z.ZodEnum<["full-trail", "final-only"]>>;
@@ -2919,6 +2927,7 @@ export declare const SpecialistSchema: z.ZodObject<{
                 when: z.ZodOptional<z.ZodString>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
+        permissions: z.ZodOptional<z.ZodType<Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>, z.ZodTypeDef, Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>>>;
         /** Write handoff output to this file path via unified job-file writer */
         output_file: z.ZodOptional<z.ZodString>;
         notes_mode: z.ZodDefault<z.ZodEnum<["full-trail", "final-only"]>>;
@@ -3284,6 +3293,7 @@ export declare const SpecialistSchema: z.ZodObject<{
                 when: z.ZodOptional<z.ZodString>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
+        permissions: z.ZodOptional<z.ZodType<Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>, z.ZodTypeDef, Partial<Record<import("./manifest-resolver.js").ToolTier, ManifestPolicyTier>>>>;
         /** Write handoff output to this file path via unified job-file writer */
         output_file: z.ZodOptional<z.ZodString>;
         notes_mode: z.ZodDefault<z.ZodEnum<["full-trail", "final-only"]>>;
@@ -3292,6 +3302,7 @@ export declare const SpecialistSchema: z.ZodObject<{
     }, z.ZodTypeAny, "passthrough">>;
 }, z.ZodTypeAny, "passthrough">>;
 export type Specialist = z.infer<typeof SpecialistSchema>;
+export type SpecialistPermissions = NonNullable<Specialist['specialist']['permissions']>;
 export type ScriptEntry = {
     run: string;
     phase: 'pre' | 'post';
