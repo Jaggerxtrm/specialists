@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- Sp config show --resolved falls back to canonical catalog ([6366058](https://github.com/xtrm-dev/specialists/commit/636605877881de38cc724d9df7c86b2330915eda))
+- Classify rate-limit / quota errors as transient (unitAI-63xi3.1) ([8c1c797](https://github.com/xtrm-dev/specialists/commit/8c1c797e385f38e795a102336633d7558cff1945))
+- Harden --bead lookup against shell injection (unitAI-eao44, CWE-78) ([1add04a](https://github.com/xtrm-dev/specialists/commit/1add04af28b853ee8d950f267dc74bf8bbb90def))
+
+### Project maintenance
+- Regenerate v3.21.3 section via git-cliff (was incomplete) ([8155e0d](https://github.com/xtrm-dev/specialists/commit/8155e0ddbb8a8e6150e20fdbe99c5dd4ebefb461))
+- Drop CHANGELOG-content assertion after v3.21.3 regeneration ([462c090](https://github.com/xtrm-dev/specialists/commit/462c090c03e3940c79048af8b4c7c0e26b4c541e))
+
 ## [3.21.3] - 2026-08-14
 
 ### Added
