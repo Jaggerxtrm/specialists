@@ -1172,6 +1172,18 @@ describe('SpecialistRunner', () => {
       'sync-docs',
       'executor',
     ])('injects cwd/worktree boundary rule into bead task payload for %s', async specialistName => {
+      // Mock BeadsClient so the test does not depend on `bd` being installed
+      // or on `unitAI-55d` existing in the runtime beads DB. The Runtime
+      // Boundary Rules block is only injected when input.bead is non-null,
+      // and BeadsClient.readBead spawns real `bd show <id> --json` otherwise.
+      const beadsClient = makeBeadsClient({
+        readBead: vi.fn().mockReturnValue({
+          id: 'unitAI-55d',
+          title: 'inspect boundary behavior',
+          description: 'test bead for boundary rule injection',
+          status: 'in_progress',
+        }),
+      });
       const runner = new SpecialistRunner({
         loader: {
           get: vi.fn().mockResolvedValue({
@@ -1188,6 +1200,7 @@ describe('SpecialistRunner', () => {
         hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
         circuitBreaker: new CircuitBreaker(),
         sessionFactory: vi.fn().mockResolvedValue(mockSession),
+        beadsClient,
       });
 
       await runner.run({
