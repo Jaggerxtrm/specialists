@@ -70,3 +70,41 @@ describe('config CLI resolved output', () => {
     expect(output).toContain('--tools:');
   });
 });
+
+// Regression for unitAI-63xi3.2: sp config show --resolved must not ENOENT when
+// only the canonical config/catalog/index.json exists (no legacy .specialists/catalog/).
+// Precedence matches src/pi/session.ts loadSharedToolCatalogIndex.
+describe('config CLI resolved output — canonical catalog fallback', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'specialists-config-resolved-canonical-'));
+    // Manifest only. NO .specialists/catalog/ directory; loader must fall back
+    // to the canonical config/catalog/index.json resolved from the running module.
+    await mkdir(join(tempDir, 'config', 'specialists'), { recursive: true });
+    await writeFile(join(tempDir, 'config', 'specialists', 'executor.specialist.json'), JSON.stringify(SPECIALIST), 'utf-8');
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    vi.resetModules();
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('falls back to canonical config/catalog/index.json when legacy .specialists/catalog is absent', async () => {
+    process.argv = ['node', 'specialists', 'config', 'show', 'executor', '--resolved'];
+
+    const { run } = await import('../../../src/cli/config.js');
+    await expect(run()).resolves.toBeUndefined();
+
+    const errorCalls = vi.mocked(console.error).mock.calls.map(call => String(call[0] ?? '')).join('\n');
+    expect(errorCalls).not.toContain('ENOENT');
+    expect(errorCalls).not.toContain('.specialists/catalog/index.json');
+
+    const output = vi.mocked(console.log).mock.calls.map(call => String(call[0] ?? '')).join('\n');
+    expect(output).toContain('specialist: executor');
+  });
+});
