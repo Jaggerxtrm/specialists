@@ -3,7 +3,7 @@
 import { dirname, join, resolve, sep } from 'node:path';
 import { constants as fsConstants, existsSync, fstatSync, openSync, readFileSync, readSync, readdirSync, realpathSync, statSync, writeFileSync, closeSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { spawn as cpSpawn, execSync } from 'node:child_process';
+import { spawn as cpSpawn, execFileSync, execSync } from 'node:child_process';
 import { SpecialistLoader } from '../specialist/loader.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
 import { HookEmitter } from '../specialist/hooks.js';
@@ -269,9 +269,16 @@ interface BdBeadSummary {
   issue_type?: string;
 }
 
-function readBeadSummary(beadId: string): BdBeadSummary | null {
+// Bead IDs are dash-separated slugs with optional dotted decimal suffixes
+// (e.g. `unitAI-63xi3`, `unitAI-tpafe.6.2`). Reject anything else before
+// spawning `bd` to close CWE-78: interpolating the raw value into a shell
+// command previously let metacharacters execute as the CLI user.
+export const BEAD_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*(\.[0-9]+)*$/;
+
+export function readBeadSummary(beadId: string): BdBeadSummary | null {
+  if (!BEAD_ID_PATTERN.test(beadId)) return null;
   try {
-    const raw = execSync(`bd show ${beadId} --json`, {
+    const raw = execFileSync('bd', ['show', beadId, '--json'], {
       stdio: 'pipe',
       encoding: 'utf-8',
       timeout: 5000,
