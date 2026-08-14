@@ -7,21 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v3.21.3] — 2026-08-12
+## [3.21.3] - 2026-08-14
 
 ### Added
-
-- Bundled `read-line-numbers` Pi extension (fork of `xtrm-dev/core@7f6cd7f7 packages/pi-extensions/extensions/read-line-numbers/`). Wired unconditionally into every headless specialist dispatch via `-e <path>` from `session.ts` and `script-runner.ts` (READ_ONLY and up). Model-facing `read` tool output is now prefixed with true source line numbers honoring `offset`, enabling accurate `file:line` self-citation without a separate helper. Ships at `config/pi-extensions/read-line-numbers/`.
-
-### Changed
-
-- Exact citation evidence now uses a verified local fallback pinned to `@earendil-works/pi-coding-agent@0.84.1` (upstream git commit `53fa77ccd8a279eb87e92294ef3687b03ff80112`). Because raw Pi `read` output does not number each content line, executor, reviewer, and obligations-scanner guidance now permits exact `file:line` claims only when a line-number-emitting tool or local helper has deterministically verified the current file. Raw reads may still cite a file, symbol, section, or excerpt. No upstream Pi change is required for this fallback.
-- **Release parity and attestation (3.21.3).** Corrected package surface excludes retired Serena assets and records source commit, tarball checksum, catalog/rule/tool-contract fingerprints, pinned Pi smoke identity, validation commands, and rollback scope. Compatibility claim remains Specialists-local; this does not certify Pi v0.84.1.
-- Retired the active Serena runtime integration (unitAI-e67up.8): Specialists no longer probes for `pi-serena-tools`, injects it into Pi argv, pre-spawns the `serena-pool` daemon, or sets `SERENA_MCP_PORT`. The Serena tool catalog and the `serena-cheatsheet` mandatory rule are removed; specialist definitions, skills, and docs route through native tools plus GitNexus. `execution.extensions.serena` remains parseable but is deprecated and ignored; passive `sp ps` process-health detection of foreign Serena processes is unchanged.
+- Add native codex role/render surface (K3, experimental) ([6c3ffe4](https://github.com/xtrm-dev/specialists/commit/6c3ffe498b1264da0763e462309e2d8332b8e73f))
+- Complete codex role invocation and result parity (K4) ([8641d36](https://github.com/xtrm-dev/specialists/commit/8641d36af64765bde73751171317bae0cc9bf786))
+- Retire active Serena runtime integration (K4, unitAI-e67up.8) ([7053236](https://github.com/xtrm-dev/specialists/commit/7053236fcac9b5d244fd8edf9c9a08979c2491fe))
+- Add bounded semantic review gates ([92225bb](https://github.com/xtrm-dev/specialists/commit/92225bb50903a66ffdd36c6fee423247b40621f8))
+- Add contextual exploitability method ([772041e](https://github.com/xtrm-dev/specialists/commit/772041e46d669d58395e0c56c2b1237e20b637ba))
+- Add semantic correctness gates ([a79c072](https://github.com/xtrm-dev/specialists/commit/a79c0729d87ad1d6d758e86d7b649a678647209f))
+- Establish verified citation contract ([b3f4fff](https://github.com/xtrm-dev/specialists/commit/b3f4fff3e628522f684aff3dac3884f124e4f9ab))
+- Consume read-line-numbers extension via pi -e alongside --no-extensions ([9da21eb](https://github.com/xtrm-dev/specialists/commit/9da21eb2a46f17732680002e098b76fa934600ee))
 
 ### Fixed
+- Ship CHANGELOG.md in the package, compact the changelog format (#242) ([eaf044f](https://github.com/xtrm-dev/specialists/commit/eaf044f0592aa89d68ba752ec95a36b6404023ae))
+- Enforce Core schema patterns in the launch-outcome consumer (K4 review) ([ba3e8dc](https://github.com/xtrm-dev/specialists/commit/ba3e8dcda63c6b5ce3de351fbec3917832f02f41))
+- Enforce required-property presence in the launch-outcome consumer (K4 review r3) ([c026f40](https://github.com/xtrm-dev/specialists/commit/c026f40357382c6c22742ee27420f1e70c3c6299))
+- Preserve native read fallback ([5ed558a](https://github.com/xtrm-dev/specialists/commit/5ed558aa38069ff0f4a987e29e96a715544b9d24))
+- Pin injected diff evidence to immutable head ([5b79d47](https://github.com/xtrm-dev/specialists/commit/5b79d47f56330ee0423b9bcd262ac8a9585e5964))
+- Reuse resolved tool contract ([25d4a70](https://github.com/xtrm-dev/specialists/commit/25d4a702107e2760dc56f561c9e17700dcc2ae0f))
+- Use resolved gitnexus contract ([823aa51](https://github.com/xtrm-dev/specialists/commit/823aa51f125290a8e5204abc3bbdb418826c508e))
+- Enforce mandatory rule budget floor ([61b5019](https://github.com/xtrm-dev/specialists/commit/61b50191eb985823ab64450963098ce87f2ee8c0))
+- Constrain citation paths to trusted roots ([0880e4e](https://github.com/xtrm-dev/specialists/commit/0880e4e12728a86b9a6e17f986c6750ecf2afdfc))
+- Fix package attestation payload gate ([6779738](https://github.com/xtrm-dev/specialists/commit/677973842140d2d1ae36b2a7ee37582757dd172a))
+- Enforce release attestation provenance in CI ([0cd941e](https://github.com/xtrm-dev/specialists/commit/0cd941e964a3ff6f9632861f5ae42ad7a3f1f1d8))
+- Fix package payload attestation parity ([23386dc](https://github.com/xtrm-dev/specialists/commit/23386dc91d016e6ca3e65f7faad658379db964a6))
+- Pin SEC-001 workflow dependencies ([1df5c76](https://github.com/xtrm-dev/specialists/commit/1df5c76c824baf8cb03023a54b956eef6c462fe5))
+- Fix CI release boundary failures ([da6a94b](https://github.com/xtrm-dev/specialists/commit/da6a94b4004c72fc0089847f8f13341baa2a6a5e))
 
-- Restored source/package parity after Serena retirement and added reproducible release attestation.
+### Other changes
+- Restore native read tool fallbacks ([3ef4168](https://github.com/xtrm-dev/specialists/commit/3ef41683c1e60ad511f98dfec359f65a6f1e325d))
+- Remove Pi session missing-contract GitNexus fallback ([bd86f66](https://github.com/xtrm-dev/specialists/commit/bd86f6604dcefd0d4a6c816a3708012b0b9bece7))
+- Fix obligations literal false positives ([57c572f](https://github.com/xtrm-dev/specialists/commit/57c572fe06e606b8aecc908ee3022a66022f70dc))
+- Restore GitNexus counts in docs ([efe26e2](https://github.com/xtrm-dev/specialists/commit/efe26e2aa8ad833ff3da9995ee332d225c13e26f))
+- Harden unstaged obligations snapshot reads ([8dd9b9f](https://github.com/xtrm-dev/specialists/commit/8dd9b9f3a6dbb034ed08898d08288aa5ff1830f1))
+- Restore final .4 release attestation gates ([eb61776](https://github.com/xtrm-dev/specialists/commit/eb61776f1fdee160b8b1b9e2c1efca217f3c4459))
+- Pin package artifact upload ([949ff47](https://github.com/xtrm-dev/specialists/commit/949ff471081d158eb83a4f51de4e34a4b49e6b4f))
+- Pin package payload workflow actions ([14a592f](https://github.com/xtrm-dev/specialists/commit/14a592ff8a990a6c0157ee0d6c933c99ace61182))
+
+### Project maintenance
+- Reconcile roadmap pickup with the released XTRM trio (#244) ([fce9e4d](https://github.com/xtrm-dev/specialists/commit/fce9e4db8616f43fe74a0fec962265c0b39bde9c))
+- Characterize K1 Codex surface boundary ([c6eb842](https://github.com/xtrm-dev/specialists/commit/c6eb842bd3f01389419a39532331908dffde502a))
+- Pin K1 external references ([f2cbbd3](https://github.com/xtrm-dev/specialists/commit/f2cbbd338959987a7b9da06152ed08bd86f5aceb))
+- Clarify K1 Codex fixture provenance ([ba5d803](https://github.com/xtrm-dev/specialists/commit/ba5d8036346bb439c52e598dc37a1cd2c2be1fa2))
+- Label K1 fixture evidence owners ([0d1d944](https://github.com/xtrm-dev/specialists/commit/0d1d944d11dc059691febb68e7298a1b23580938))
+- Make K1 render evidence reproducible ([502d0be](https://github.com/xtrm-dev/specialists/commit/502d0be25b183a9cafdfb4cf2268aa668e7d0927))
+- Pin K1 render error output ([779d608](https://github.com/xtrm-dev/specialists/commit/779d60826487b7710c970bf76e6ca0d43dbe48ce))
+- Correct GATE-IFACE ordering for the codex surface (review round 2) ([eb74640](https://github.com/xtrm-dev/specialists/commit/eb74640e3e30cff9a48268a6a02e4f82daa08394))
+- Pin prompt hardening contracts ([ca30387](https://github.com/xtrm-dev/specialists/commit/ca30387a1b6e74aa18673a3974877119fc23784b))
+- Add silent refusal regression fixture ([704dd3b](https://github.com/xtrm-dev/specialists/commit/704dd3b507479e95d7353c9c4f7182a1b48724fa))
+- Add green-chain refusal context fixture ([8485662](https://github.com/xtrm-dev/specialists/commit/8485662e2f6852a5026db75feb1950c35dc12333))
+- Model silent refusal acceptance case ([4fa71cd](https://github.com/xtrm-dev/specialists/commit/4fa71cd0c1793f031362214f01de0bbb047eccb0))
+- Record Pi v0.84.1 compatibility audit (#251) ([64f5ab3](https://github.com/xtrm-dev/specialists/commit/64f5ab3c5c745d0f04ef12f8a3d7169d99a4119a))
+- Chore add to next pr ([81c626a](https://github.com/xtrm-dev/specialists/commit/81c626a0e078aed3b62d9096eade275ac48b5275))
+- Checkpoint script-runner contract coverage ([cecc60c](https://github.com/xtrm-dev/specialists/commit/cecc60cb3873dffb2a321200d2ca6d173713537e))
+- Fix stale script-runner quarantine expectations ([757277e](https://github.com/xtrm-dev/specialists/commit/757277e7c0c9d96f4c3c297a8aba7dc8a1e07e25))
+- Cover safe snapshot reader branches ([11299c7](https://github.com/xtrm-dev/specialists/commit/11299c7ec5509dd9a47e5b7d88dd92e7374bad0a))
+- Cover release attestation refusal paths ([a75c5e8](https://github.com/xtrm-dev/specialists/commit/a75c5e89747bbc862d385c4aee20931add39e24e))
+- Expect immutable attestation upload action ([4b0fcf0](https://github.com/xtrm-dev/specialists/commit/4b0fcf07bf94b39e0c09aac0f0c0b6ca21e7c29f))
+- Cover v3.21.3 release candidate metadata ([c7c1827](https://github.com/xtrm-dev/specialists/commit/c7c182710c65e640ed137d8065e687a4ff243e3b))
+- Anchor release attestation to tagged source ([2619316](https://github.com/xtrm-dev/specialists/commit/2619316d2640a936f4a9ca34432de6cadce5d86e))
+- Commit reconciled beads export and ignore runtime skill links ([4a6921f](https://github.com/xtrm-dev/specialists/commit/4a6921fe0f1bd28cf34ecf3204562d66051c425a))
+- Mark 5 operator-only skills as non-model-invocable (#253) ([8331659](https://github.com/xtrm-dev/specialists/commit/8331659438d88e01ab5d08c9d2416e662bc19d8a))
 
 ## [v3.21.2] — 2026-07-28
 
