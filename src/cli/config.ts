@@ -1,10 +1,11 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { run as runEdit } from './edit.js';
 import { formatResolvedConfigReport, loadResolvedConfigReport } from '../specialist/resolution-diagnostics.js';
+import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
 
 const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
 
@@ -154,7 +155,17 @@ async function showResolvedConfig(argv: string[]): Promise<void> {
   }
 
   const projectDir = process.cwd();
-  const catalogsPath = join(projectDir, '.specialists', 'catalog', 'index.json');
+  // Precedence matches session.ts loadSharedToolCatalogIndex: legacy per-project
+  // override first, canonical packaged catalog second. loadResolvedConfigReport
+  // will surface ENOENT for the resolved path if both are missing.
+  const legacyCatalogsPath = join(projectDir, '.specialists', 'catalog', 'index.json');
+  let catalogsPath = legacyCatalogsPath;
+  if (!existsSync(catalogsPath)) {
+    const canonicalDir = resolveCanonicalAssetDir('catalog');
+    if (canonicalDir) {
+      catalogsPath = join(canonicalDir, 'index.json');
+    }
+  }
 
   if (!flags.has('--from-source') && shouldWarnAboutSourceMode(projectDir)) {
     console.error(yellow('⚠ hint: use --from-source for worktree-source resolver review'));
