@@ -1,6 +1,6 @@
 // tests/unit/circuitBreaker.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CircuitBreaker, isTransientError } from '../../src/utils/circuitBreaker.js';
+import { CircuitBreaker, isRateLimitError, isTransientError } from '../../src/utils/circuitBreaker.js';
 
 describe('CircuitBreaker (3-state)', () => {
   let cb: CircuitBreaker;
@@ -56,8 +56,34 @@ describe('isTransientError', () => {
     expect(isTransientError({ status: 503, message: 'service unavailable' })).toBe(true);
   });
 
+  it('returns true for rate-limit / quota errors', () => {
+    expect(isTransientError(new Error('HTTP 429 Too Many Requests'))).toBe(true);
+    expect(isTransientError({ status: 429, message: 'rate limited' })).toBe(true);
+    expect(isTransientError(new Error('ResourceExhausted: Worker local total request limit reached (10/10)'))).toBe(true);
+    expect(isTransientError(new Error('quota exceeded'))).toBe(true);
+  });
+
   it('returns false for non-transient errors', () => {
     expect(isTransientError(new Error('401 Unauthorized'))).toBe(false);
     expect(isTransientError(new Error('Validation failed'))).toBe(false);
+  });
+});
+
+describe('isRateLimitError', () => {
+  it('matches 429, rate-limit text, NVIDIA NIM ResourceExhausted, quota exhaustion', () => {
+    expect(isRateLimitError({ status: 429 })).toBe(true);
+    expect(isRateLimitError(new Error('HTTP 429 Too Many Requests'))).toBe(true);
+    expect(isRateLimitError(new Error('rate limit exceeded'))).toBe(true);
+    expect(isRateLimitError(new Error('rate-limit exceeded'))).toBe(true);
+    expect(isRateLimitError(new Error('ResourceExhausted: Worker local total request limit reached (5/5)'))).toBe(true);
+    expect(isRateLimitError(new Error('quota exhausted'))).toBe(true);
+    expect(isRateLimitError(new Error('quota exceeded'))).toBe(true);
+  });
+
+  it('returns false for non-rate-limit errors', () => {
+    expect(isRateLimitError(null)).toBe(false);
+    expect(isRateLimitError(new Error('503 service unavailable'))).toBe(false);
+    expect(isRateLimitError(new Error('401 Unauthorized'))).toBe(false);
+    expect(isRateLimitError(new Error('ECONNRESET'))).toBe(false);
   });
 });

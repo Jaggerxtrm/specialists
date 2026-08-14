@@ -14,7 +14,7 @@ import {
 } from '../pi/session.js';
 import type { SpecialistLoader } from './loader.js';
 import type { HookEmitter } from './hooks.js';
-import { isAuthError, isTransientError, type CircuitBreaker } from '../utils/circuitBreaker.js';
+import { isAuthError, isRateLimitError, isTransientError, type CircuitBreaker } from '../utils/circuitBreaker.js';
 import { stripJsonFences } from './json-output.js';
 import { createObservabilitySqliteClient } from './observability-sqlite.js';
 import type { TimelineEvent, TimelineEventRunComplete } from './timeline-events.js';
@@ -1467,8 +1467,11 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
             sessionBackend = session.meta.backend;
             break;
           } catch (err: any) {
+            const isRateLimit = isRateLimitError(err);
             const isTransient = !(err instanceof SessionKilledError) && !isAuthError(err) && isTransientError(err);
-            const shouldRetry = attempt < maxAttempts && isTransient;
+            // Rate-limit / quota errors: the current model's window is exhausted — retrying
+            // the same model is guaranteed-wasteful, so skip straight to the fallback chain.
+            const shouldRetry = attempt < maxAttempts && isTransient && !isRateLimit;
 
             if (shouldRetry) {
               const delayMs = getRetryDelayMs(attempt);
