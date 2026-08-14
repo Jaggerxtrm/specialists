@@ -4,6 +4,7 @@ interface CircuitBreakerOptions {
     cooldownMs?: number;
 }
 export declare function isTransientError(error: unknown): boolean;
+export declare function isRateLimitError(error: unknown): boolean;
 export declare function isAuthError(error: unknown): boolean;
 export declare class CircuitBreaker {
     private states;

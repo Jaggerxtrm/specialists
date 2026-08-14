@@ -57,6 +57,13 @@ export declare function formatBackgroundLaunchLine(opts: {
     tmuxSession?: string;
     pid?: number;
 }): string;
+interface BdBeadSummary {
+    id?: string;
+    parent?: string;
+    issue_type?: string;
+}
+export declare const BEAD_ID_PATTERN: RegExp;
+export declare function readBeadSummary(beadId: string): BdBeadSummary | null;
 /**
  * Tail events.jsonl for a job and emit formatted output to stdout.
  * Polls every 100ms; safe for same-process use (no partial-line risk).

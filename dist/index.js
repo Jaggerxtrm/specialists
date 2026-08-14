@@ -24169,8 +24169,22 @@ function isTransientError(error2) {
   if (typeof status === "number" && status >= 500 && status < 600) {
     return true;
   }
-  const message = error2 instanceof Error ? error2.message : typeof error2 === "string" ? error2 : JSON.stringify(error2);
-  return TRANSIENT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+  if (status === 429)
+    return true;
+  const message = errorMessage(error2);
+  return TRANSIENT_ERROR_PATTERNS.some((pattern) => pattern.test(message)) || RATE_LIMIT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+function isRateLimitError(error2) {
+  if (!error2)
+    return false;
+  const status = error2.status ?? error2.statusCode;
+  if (status === 429)
+    return true;
+  const message = errorMessage(error2);
+  return RATE_LIMIT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+function errorMessage(error2) {
+  return error2 instanceof Error ? error2.message : typeof error2 === "string" ? error2 : JSON.stringify(error2);
 }
 function isAuthError(error2) {
   if (!error2)
@@ -24179,8 +24193,7 @@ function isAuthError(error2) {
   if (status === 401 || status === 403) {
     return true;
   }
-  const message = error2 instanceof Error ? error2.message : typeof error2 === "string" ? error2 : JSON.stringify(error2);
-  return AUTH_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+  return AUTH_ERROR_PATTERNS.some((pattern) => pattern.test(errorMessage(error2)));
 }
 
 class CircuitBreaker {
@@ -24216,7 +24229,7 @@ class CircuitBreaker {
     this.states.set(backend, entry);
   }
 }
-var TRANSIENT_ERROR_PATTERNS, AUTH_ERROR_PATTERNS;
+var TRANSIENT_ERROR_PATTERNS, RATE_LIMIT_ERROR_PATTERNS, AUTH_ERROR_PATTERNS;
 var init_circuitBreaker = __esm(() => {
   TRANSIENT_ERROR_PATTERNS = [
     /\b5\d{2}\b/,
@@ -24230,6 +24243,15 @@ var init_circuitBreaker = __esm(() => {
     /service unavailable/i,
     /bad gateway/i,
     /gateway timeout/i
+  ];
+  RATE_LIMIT_ERROR_PATTERNS = [
+    /\b429\b/,
+    /rate.?limit/i,
+    /too many requests/i,
+    /resourceexhausted/i,
+    /request limit reached/i,
+    /quota exceeded/i,
+    /quota exhausted/i
   ];
   AUTH_ERROR_PATTERNS = [
     /\b401\b/,
@@ -25238,8 +25260,9 @@ ${preScripts.map((s) => `    \u2022 ${s.run ?? s.path ?? "<missing>"}${s.inject_
             sessionBackend = session.meta.backend;
             break;
           } catch (err) {
+            const isRateLimit = isRateLimitError(err);
             const isTransient = !(err instanceof SessionKilledError) && !isAuthError(err) && isTransientError(err);
-            const shouldRetry = attempt < maxAttempts && isTransient;
+            const shouldRetry = attempt < maxAttempts && isTransient && !isRateLimit;
             if (shouldRetry) {
               const delayMs = getRetryDelayMs(attempt);
               onEvent?.("auto_retry");
@@ -52847,17 +52870,19 @@ __export(exports_run, {
   run: () => run20,
   resolveBasePin: () => resolveBasePin,
   readSafeSnapshotFile: () => readSafeSnapshotFile,
+  readBeadSummary: () => readBeadSummary,
   formatBackgroundLaunchLine: () => formatBackgroundLaunchLine,
   buildTmuxLiveFeedCommand: () => buildTmuxLiveFeedCommand,
   buildInjectedWriterDiffVariables: () => buildInjectedWriterDiffVariables,
   buildInjectedReviewerDiffVariables: () => buildInjectedReviewerDiffVariables,
   buildInjectedObligationsDiffVariables: () => buildInjectedObligationsDiffVariables,
+  BEAD_ID_PATTERN: () => BEAD_ID_PATTERN,
   BACKGROUND_LAUNCH_SCHEMA: () => BACKGROUND_LAUNCH_SCHEMA
 });
 import { dirname as dirname18, join as join34, resolve as resolve12, sep as sep4 } from "path";
 import { constants as fsConstants, existsSync as existsSync30, fstatSync, openSync as openSync3, readFileSync as readFileSync27, readSync, readdirSync as readdirSync12, realpathSync, statSync as statSync10, closeSync as closeSync2 } from "fs";
 import { randomBytes } from "crypto";
-import { spawn as cpSpawn, execSync as execSync5 } from "child_process";
+import { spawn as cpSpawn, execFileSync as execFileSync3, execSync as execSync5 } from "child_process";
 function formatBackgroundLaunchLine(opts) {
   if (opts.outputMode !== "json")
     return `${opts.jobId ?? opts.pid ?? ""}
@@ -53056,8 +53081,10 @@ async function parseArgs9(argv) {
   };
 }
 function readBeadSummary(beadId) {
+  if (!BEAD_ID_PATTERN.test(beadId))
+    return null;
   try {
-    const raw = execSync5(`bd show ${beadId} --json`, {
+    const raw = execFileSync3("bd", ["show", beadId, "--json"], {
       stdio: "pipe",
       encoding: "utf-8",
       timeout: 5000
@@ -54392,7 +54419,7 @@ async function run20() {
     ambientRuntimeOrigin
   });
 }
-var dim11 = (s) => `\x1B[2m${s}\x1B[0m`, JOB_ID_HANDOFF_PATH_ENV = "SPECIALISTS_BG_JOB_ID_PATH", BACKGROUND_LAUNCH_SCHEMA = "specialists.background_launch.v1", BLOCKED_JOB_REUSE_STATUSES, snapshotReaderFs, OBLIGATION_MARKER_REGEX, TRACKED_OBLIGATION_REGEX, TEST_PATH_PATTERNS, REGEX_PREFIX_KEYWORDS;
+var dim11 = (s) => `\x1B[2m${s}\x1B[0m`, JOB_ID_HANDOFF_PATH_ENV = "SPECIALISTS_BG_JOB_ID_PATH", BACKGROUND_LAUNCH_SCHEMA = "specialists.background_launch.v1", BLOCKED_JOB_REUSE_STATUSES, BEAD_ID_PATTERN, snapshotReaderFs, OBLIGATION_MARKER_REGEX, TRACKED_OBLIGATION_REGEX, TEST_PATH_PATTERNS, REGEX_PREFIX_KEYWORDS;
 var init_run = __esm(() => {
   init_loader();
   init_circuitBreaker();
@@ -54409,6 +54436,7 @@ var init_run = __esm(() => {
   init_runtime_origin();
   init_launch();
   BLOCKED_JOB_REUSE_STATUSES = new Set(["starting", "running"]);
+  BEAD_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*(\.[0-9]+)*$/;
   snapshotReaderFs = {
     openSync: openSync3,
     fstatSync,
@@ -55899,8 +55927,8 @@ class NodeSupervisor {
       throw result.error;
     }
     if (result.status !== 0) {
-      const errorMessage = result.stderr?.trim() || result.stdout?.trim() || `bd update exited with status ${result.status}`;
-      throw new Error(errorMessage);
+      const errorMessage2 = result.stderr?.trim() || result.stdout?.trim() || `bd update exited with status ${result.status}`;
+      throw new Error(errorMessage2);
     }
   }
   runCommand(command, args, cwd) {
