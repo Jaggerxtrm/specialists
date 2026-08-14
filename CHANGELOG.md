@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.21.4] - 2026-08-14
+
 ### Fixed
 - Sp config show --resolved falls back to canonical catalog ([6366058](https://github.com/xtrm-dev/specialists/commit/636605877881de38cc724d9df7c86b2330915eda))
 - Classify rate-limit / quota errors as transient (unitAI-63xi3.1) ([8c1c797](https://github.com/xtrm-dev/specialists/commit/8c1c797e385f38e795a102336633d7558cff1945))
