@@ -26,6 +26,16 @@ const TRANSIENT_ERROR_PATTERNS = [
   /gateway timeout/i,
 ] as const;
 
+const RATE_LIMIT_ERROR_PATTERNS = [
+  /\b429\b/,
+  /rate.?limit/i,
+  /too many requests/i,
+  /resourceexhausted/i,
+  /request limit reached/i,
+  /quota exceeded/i,
+  /quota exhausted/i,
+] as const;
+
 const AUTH_ERROR_PATTERNS = [
   /\b401\b/,
   /\b403\b/,
@@ -45,14 +55,30 @@ export function isTransientError(error: unknown): boolean {
   if (typeof status === 'number' && status >= 500 && status < 600) {
     return true;
   }
+  if (status === 429) return true;
 
-  const message = error instanceof Error
+  const message = errorMessage(error);
+  return TRANSIENT_ERROR_PATTERNS.some((pattern) => pattern.test(message))
+    || RATE_LIMIT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+
+export function isRateLimitError(error: unknown): boolean {
+  if (!error) return false;
+
+  const status = (error as { status?: unknown; statusCode?: unknown }).status
+    ?? (error as { statusCode?: unknown }).statusCode;
+  if (status === 429) return true;
+
+  const message = errorMessage(error);
+  return RATE_LIMIT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error
     ? error.message
     : typeof error === 'string'
       ? error
       : JSON.stringify(error);
-
-  return TRANSIENT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
 }
 
 export function isAuthError(error: unknown): boolean {
@@ -64,13 +90,7 @@ export function isAuthError(error: unknown): boolean {
     return true;
   }
 
-  const message = error instanceof Error
-    ? error.message
-    : typeof error === 'string'
-      ? error
-      : JSON.stringify(error);
-
-  return AUTH_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+  return AUTH_ERROR_PATTERNS.some((pattern) => pattern.test(errorMessage(error)));
 }
 
 export class CircuitBreaker {
