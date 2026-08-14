@@ -1,9 +1,12 @@
 // Unit tests for the bundled read-line-numbers Pi extension.
 // - Verifies the resolver returns an existing, cached, readable path.
 // - Dynamic-imports the shipped .mjs (with the peer dep stubbed) and re-runs
-//   the canonical behavior tests (ported from xtrm-dev/core@7f6cd7f7
-//   packages/pi-extensions/extensions/read-line-numbers/index.test.ts) against
-//   the shipped copy, so drift from the canonical source is caught here.
+//   the canonical behavior tests against the shipped copy, so drift from
+//   the canonical source is caught here.
+// - Encodes Pi's split("\n") EOF model exactly (see pi-coding-agent read.js
+//   line 85: `const allLines = textContent.split("\n")`), including the
+//   trailing empty produced by a terminating newline being numbered as a
+//   citable line.
 
 import { describe, expect, it, beforeAll, vi } from 'vitest';
 import { pathToFileURL } from 'node:url';
@@ -62,43 +65,46 @@ beforeAll(async () => {
   mjs = (await import(pathToFileURL(join(p, 'index.mjs')).href)) as MjsModule;
 });
 
-describe('numberReadText (ported canonical suite)', () => {
+describe('numberReadText (Pi EOF-parity model)', () => {
   it('multi-line input prefixes every line with 1-based numbers', () => {
     expect(mjs.numberReadText('foo\nbar\nbaz', 1, false)).toBe('1 | foo\n2 | bar\n3 | baz');
   });
   it('offset 137 numbers from the true source line', () => {
     expect(mjs.numberReadText('foo\nbar', 137, false)).toBe('137 | foo\n138 | bar');
   });
-  it('empty content passes through unchanged', () => {
-    expect(mjs.numberReadText('', 1, false)).toBe('');
-  });
   it('single-line content is numbered 1', () => {
     expect(mjs.numberReadText('text', 1, false)).toBe('1 | text');
-  });
-  it('trailing newline leaves the final empty line unnumbered', () => {
-    expect(mjs.numberReadText('foo\nbar\n', 1, false)).toBe('1 | foo\n2 | bar\n');
-  });
-  it('Pi truncation notice is preserved verbatim, not prefixed', () => {
-    const input = 'foo\nbar\n\n[Showing lines 1-2 of 5000. Use offset=3 to continue.]';
-    expect(mjs.numberReadText(input, 1, true)).toBe(
-      '1 | foo\n2 | bar\n\n[Showing lines 1-2 of 5000. Use offset=3 to continue.]',
-    );
-  });
-  it('Pi user-limit notice is preserved verbatim even without truncation flag', () => {
-    const input = 'foo\nbar\n\n[3 more lines in file. Use offset=3 to continue.]';
-    expect(mjs.numberReadText(input, 1, false)).toBe(
-      '1 | foo\n2 | bar\n\n[3 more lines in file. Use offset=3 to continue.]',
-    );
   });
   it('first-line-exceeds banner alone is preserved verbatim', () => {
     const input = "[Line 5 is 60KB, exceeds 50KB limit. Use bash: sed -n '5p' /a/b.txt | head -c 51200]";
     expect(mjs.numberReadText(input, 1, true)).toBe(input);
   });
 
-  // --- Blank-line semantics (mirrors Core lane A) --------------------------
-  // Interior blank lines MUST carry their line number so a model citation
-  // ("line 42 is blank") resolves to the true source line. A single trailing
-  // empty from a terminating newline stays unnumbered.
+  // --- Pi split("\n") parity — every element is a citable line ------------
+  // pi-coding-agent read.js:85 uses `text.split("\n")`, so a trailing newline
+  // produces a trailing empty that Pi counts as a real line at EOF. The
+  // number model MUST match, or a model citation to "line N" points at a
+  // line the citation-evidence verifier disagrees exists.
+
+  it('empty content becomes "1 | "', () => {
+    expect(mjs.numberReadText('', 1, false)).toBe('1 | ');
+  });
+
+  it('empty content at offset 3 becomes "3 | "', () => {
+    expect(mjs.numberReadText('', 3, false)).toBe('3 | ');
+  });
+
+  it('"one\\n" becomes "1 | one\\n2 | " (trailing empty is line 2)', () => {
+    expect(mjs.numberReadText('one\n', 1, false)).toBe('1 | one\n2 | ');
+  });
+
+  it('"one\\ntwo\\n" becomes "1 | one\\n2 | two\\n3 | " (trailing empty is line 3)', () => {
+    expect(mjs.numberReadText('one\ntwo\n', 1, false)).toBe('1 | one\n2 | two\n3 | ');
+  });
+
+  it('"foo\\n\\n" numbers foo, interior blank, and trailing empty', () => {
+    expect(mjs.numberReadText('foo\n\n', 1, false)).toBe('1 | foo\n2 | \n3 | ');
+  });
 
   it('interior blank line is numbered', () => {
     expect(mjs.numberReadText('foo\n\nbar', 1, false)).toBe('1 | foo\n2 | \n3 | bar');
@@ -114,6 +120,28 @@ describe('numberReadText (ported canonical suite)', () => {
     );
   });
 
+  it('offset advances through blank lines and the trailing EOF empty', () => {
+    expect(mjs.numberReadText('foo\n\nbar\n', 137, false)).toBe(
+      '137 | foo\n138 | \n139 | bar\n140 | ',
+    );
+  });
+
+  // --- Truncation / user-limit notices — separator + notice stay verbatim -
+
+  it('Pi truncation notice is preserved verbatim, not prefixed', () => {
+    const input = 'foo\nbar\n\n[Showing lines 1-2 of 5000. Use offset=3 to continue.]';
+    expect(mjs.numberReadText(input, 1, true)).toBe(
+      '1 | foo\n2 | bar\n\n[Showing lines 1-2 of 5000. Use offset=3 to continue.]',
+    );
+  });
+
+  it('Pi user-limit notice is preserved verbatim even without truncation flag', () => {
+    const input = 'foo\nbar\n\n[3 more lines in file. Use offset=3 to continue.]';
+    expect(mjs.numberReadText(input, 1, false)).toBe(
+      '1 | foo\n2 | bar\n\n[3 more lines in file. Use offset=3 to continue.]',
+    );
+  });
+
   it('interior blank preserved before truncation notice, notice stays verbatim', () => {
     const input = 'foo\n\nbar\n\n[Showing lines 1-3 of 5000. Use offset=4 to continue.]';
     expect(mjs.numberReadText(input, 1, true)).toBe(
@@ -121,8 +149,20 @@ describe('numberReadText (ported canonical suite)', () => {
     );
   });
 
-  it('offset advances through blank lines so numbering matches the source', () => {
-    expect(mjs.numberReadText('foo\n\nbar\n', 137, false)).toBe('137 | foo\n138 | \n139 | bar\n');
+  it('notice with trailing-empty source — trailing empty is numbered', () => {
+    // Pi content "foo\n" + separator "\n\n" + "[N]" == "foo\n\n\n[N]"
+    const input = 'foo\n\n\n[Showing lines 1-2 of 5000. Use offset=3 to continue.]';
+    expect(mjs.numberReadText(input, 1, true)).toBe(
+      '1 | foo\n2 | \n\n[Showing lines 1-2 of 5000. Use offset=3 to continue.]',
+    );
+  });
+
+  it('notice with trailing-blanks source — every source blank is numbered', () => {
+    // Pi content "foo\n\n" + separator "\n\n" + "[N]" == "foo\n\n\n\n[N]"
+    const input = 'foo\n\n\n\n[3 more lines in file. Use offset=3 to continue.]';
+    expect(mjs.numberReadText(input, 1, false)).toBe(
+      '1 | foo\n2 | \n3 | \n\n[3 more lines in file. Use offset=3 to continue.]',
+    );
   });
 });
 
@@ -179,5 +219,44 @@ describe('read-line-numbers extension hook', () => {
       isError: true,
     });
     expect(result).toBeUndefined();
+  });
+
+  it('image + text-note content passes through untouched (image item present)', () => {
+    const result = runHandler({
+      type: 'tool_result',
+      toolCallId: 'call-4',
+      toolName: 'read',
+      input: { path: '/a/img.png' },
+      content: [
+        { type: 'text', text: 'Read image file [image/png]' },
+        { type: 'image', data: 'AAAA', mimeType: 'image/png' },
+      ],
+      isError: false,
+    });
+    expect(result).toBeUndefined();
+  });
+
+  it('image text-note alone (single text item) passes through untouched', () => {
+    const result = runHandler({
+      type: 'tool_result',
+      toolCallId: 'call-5',
+      toolName: 'read',
+      input: { path: '/a/img.png' },
+      content: [{ type: 'text', text: 'Read image file [image/png]\n2048x1024' }],
+      isError: false,
+    });
+    expect(result).toBeUndefined();
+  });
+
+  it('trailing EOF empty is numbered in the model-facing text', () => {
+    const result = runHandler({
+      type: 'tool_result',
+      toolCallId: 'call-6',
+      toolName: 'read',
+      input: { path: '/a/b.txt' },
+      content: [{ type: 'text', text: 'one\ntwo\n' }],
+      isError: false,
+    }) as { content: Array<{ text: string }> };
+    expect(result.content[0]?.text).toBe('1 | one\n2 | two\n3 | ');
   });
 });

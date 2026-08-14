@@ -71,6 +71,47 @@ describeIntegration('read-line-numbers Pi integration', () => {
     expect(joined).toMatch(/3 \| fixture-line-3/);
   });
 
+  it('numbers the trailing-newline EOF empty as a citable line (Pi split parity)', () => {
+    const extensionPath = getReadLineNumbersExtensionPath();
+    expect(extensionPath).toBeTruthy();
+
+    const dir = mkdtempSync(join(tmpdir(), 'rl-integration-eof-'));
+    // Fixture "one\ntwo\n" — Pi's split("\n") counts 3 lines with line 3
+    // being the EOF empty. Numbered output must contain "3 | " at trailing.
+    const fixturePath = join(dir, 'fixture.txt');
+    writeFileSync(fixturePath, 'one\ntwo\n', 'utf8');
+
+    const model = process.env.PI_INTEGRATION_MODEL ?? 'anthropic/claude-sonnet-4-5-latest';
+    const prompt = `Use the read tool on ${fixturePath} with offset=3, then reply with only the tool output.`;
+
+    const args = [
+      '--mode', 'json',
+      '--no-session',
+      '--no-extensions',
+      '--no-skills',
+      '--offline',
+      '--no-context-files',
+      '--no-prompt-templates',
+      '--no-themes',
+      '--model', model,
+      '-e', extensionPath!,
+    ];
+    const result = spawnSync('pi', args, {
+      input: prompt,
+      encoding: 'utf8',
+      timeout: 120_000,
+    });
+    if (result.error && (result.error as NodeJS.ErrnoException).code === 'ENOENT') {
+      console.warn('pi binary not present — skipping integration assertion');
+      return;
+    }
+
+    const joined = result.stdout ?? '';
+    // Trailing "3 | " (line 3 is the EOF empty) must appear in the numbered
+    // model-facing text. This is the concrete regression Lane B corrects.
+    expect(joined).toMatch(/3 \| /);
+  });
+
   it('does not prefix non-read tool output (isReadToolResult guard)', () => {
     const extensionPath = getReadLineNumbersExtensionPath();
     expect(extensionPath).toBeTruthy();
