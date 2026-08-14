@@ -36,6 +36,8 @@ split_commits = false
 commit_parsers = [
   # ── noise: never user-facing ──────────────────────────────────────────────
   { message = "^chore\\(changelog\\)", skip = true },    # meta-refresh commits (chase-tail)
+  { message = "^docs\\(changelog\\)", skip = true },     # same, but authored under the docs prefix
+  { message = "^chore\\(release\\)", skip = true },      # dist/asset-contract regen inside a version cut
   { message = "^checkpoint", skip = true },              # specialist chain checkpoints
   { message = "^(merge|Merge)", skip = true },           # merge commits restate their branch
   { message = "^release", skip = true },                 # version bump commits

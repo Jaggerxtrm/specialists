@@ -39,6 +39,14 @@ paths = [
     '''^\.xtrm/logs/.*''',
     '''^\.xtrm/cache/.*''',
 
+    # One-off board-audit handoff dumps. The exports contain ANSI-wrapped
+    # `REDACTED` markers from beads memory-store dumps, not credentials, but
+    # the entropy heuristic still trips on them. The path is not gitignored
+    # (see .gitignore addition) but the dead branch board-audit/unitAI-tpafe
+    # keeps the historical d74adfe1 commit reachable, so full-history scans
+    # keep re-hitting it.
+    '''^\.xtrm/board-audit/.*''',
+
     # Redaction test fixtures contain deliberately-fake secrets (PEM blocks,
     # token prefixes) to verify the diff-evidence redactor strips them.
     # See tests/unit/specialist/git-diff-evidence.test.ts and bead unitAI-ub65d.2.
