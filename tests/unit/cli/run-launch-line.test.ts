@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { BACKGROUND_LAUNCH_SCHEMA, formatBackgroundLaunchLine } from '../../../src/cli/run.js';
+import { BACKGROUND_LAUNCH_SCHEMA, extractLaunchError, formatBackgroundLaunchLine } from '../../../src/cli/run.js';
 
 // `sp run --background` exits before the NDJSON projector starts. Help advertises
 // --background and --json in the same options list, so the combination must still
@@ -49,6 +49,49 @@ describe('formatBackgroundLaunchLine', () => {
     expect(event.schema).toBe('specialists.background_launch.v1');
     expect(event.type).not.toBe('session');
     expect(event.type).not.toBe('agent_start');
+  });
+
+  // xtrm-5kwk2 Layer 1: a failed background launch (e.g. stale_base refusal)
+  // must surface an actionable error in the envelope instead of a silent
+  // jobId:null success. The error field is additive and only present when the
+  // job id never landed, so the schema stays backward compatible.
+  it('carries the launch error when the job id never lands', () => {
+    const event = JSON.parse(formatBackgroundLaunchLine({
+      jobId: null, specialist: 'debugger', outputMode: 'json', pid: 4242,
+      error: { error_code: 'stale_base', message: 'Fatal error: Error: {"ok":false,"error_code":"stale_base"}' },
+    }));
+    expect(event.jobId).toBe(null);
+    expect(event.pid).toBe(4242);
+    expect(event.error).toEqual({
+      error_code: 'stale_base',
+      message: 'Fatal error: Error: {"ok":false,"error_code":"stale_base"}',
+    });
+  });
+
+  it('omits the error field from a healthy launch envelope', () => {
+    const event = JSON.parse(formatBackgroundLaunchLine({
+      jobId: 'd9663f', specialist: 'explorer', outputMode: 'json', tmuxSession: 'sp-explorer-a1b2c3',
+    }));
+    expect(event).not.toHaveProperty('error');
+  });
+});
+
+describe('extractLaunchError', () => {
+  // Exact stderr shape from the xtrm-5kwk2 repro: the foreground run prints
+  // '[specialists] [ERROR] Fatal error: ...' with the refusal JSON embedded.
+  it('parses error_code and message from a stale_base fatal stderr line', () => {
+    const stderr = [
+      '[specialists] [ERROR] Fatal error: Error: {"ok":false,"error_code":"stale_base","blocked_by":["worktree_base_mismatch"],"commits_behind":1}',
+      'next_safe_action: "Fetch/recreate worktree from declared base"',
+    ].join('\n');
+    const parsed = extractLaunchError(stderr);
+    expect(parsed?.error_code).toBe('stale_base');
+    expect(parsed?.message).toContain('error_code');
+  });
+
+  it('returns undefined for empty or whitespace-only stderr', () => {
+    expect(extractLaunchError('')).toBeUndefined();
+    expect(extractLaunchError('   \n  ')).toBeUndefined();
   });
 });
 

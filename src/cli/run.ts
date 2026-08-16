@@ -16,7 +16,7 @@ import { resolveObservabilityDbLocation } from '../specialist/observability-db.j
 import type { TimelineEvent } from '../specialist/timeline-events.js';
 import { evaluateMergeWorthiness, previewBranchMergeDelta } from './merge.js';
 import { formatEventInlineDebounced, type InlineIndicatorPhase } from './format-helpers.js';
-import { isTmuxAvailable, buildSessionName, createTmuxSession } from './tmux-utils.js';
+import { isTmuxAvailable, buildSessionName, createTmuxSession, isTmuxSessionAlive } from './tmux-utils.js';
 import {
   captureRuntimeOrigin,
   decodePropagatedOrigin,
@@ -97,6 +97,7 @@ export function formatBackgroundLaunchLine(opts: {
   outputMode: OutputMode;
   tmuxSession?: string;
   pid?: number;
+  error?: { error_code?: string; message?: string };
 }): string {
   if (opts.outputMode !== 'json') return `${opts.jobId ?? opts.pid ?? ''}\n`;
   return `${JSON.stringify({
@@ -107,7 +108,20 @@ export function formatBackgroundLaunchLine(opts: {
     detached: true,
     ...(opts.tmuxSession ? { tmuxSession: opts.tmuxSession } : {}),
     ...(opts.jobId ? {} : { pid: opts.pid ?? null }),
+    ...(opts.jobId || !opts.error ? {} : { error: opts.error }),
   })}\n`;
+}
+
+/** Extract an actionable error from a failed background child's stderr/log text. */
+export function extractLaunchError(text: string): { error_code?: string; message?: string } | undefined {
+  const trimmed = text.trim();
+  if (!trimmed) return undefined;
+  const errorCodeMatch = trimmed.match(/"error_code":"([^"]+)"/);
+  const fatalMatch = trimmed.match(/Fatal error:\s*(.+)$/m);
+  return {
+    ...(errorCodeMatch ? { error_code: errorCodeMatch[1] } : {}),
+    message: fatalMatch?.[1]?.slice(0, 2000) ?? trimmed.slice(-2000),
+  };
 }
 
 async function parseArgs(argv: string[]): Promise<RunArgs> {
@@ -1723,6 +1737,7 @@ export async function run(): Promise<void> {
     let childExitPromise: Promise<void> | undefined;
     let handoffPath: string | undefined;
     let tmuxSessionName: string | undefined;
+    let childStderrText = '';
 
     // Propagate runtime origin to the detached child (spec §13.2). The child's
     // own TMUX_PANE resolves to the sp-* feed pane — the propagated value keeps
@@ -1756,6 +1771,7 @@ export async function run(): Promise<void> {
       if (childStderr) {
         childStderr.setEncoding('utf8');
         childStderr.on('data', (chunk: string) => {
+          childStderrText += chunk;
           process.stderr.write(chunk);
         });
       }
@@ -1774,6 +1790,7 @@ export async function run(): Promise<void> {
     const pollTimeoutMs = isTmuxAvailable() ? 15000 : 5000;
     const deadline = Date.now() + pollTimeoutMs;
     let jobId = '';
+    let sessionDied = false;
     while (Date.now() < deadline) {
       await Promise.race([
         new Promise(r => setTimeout(r, 100)),
@@ -1789,11 +1806,42 @@ export async function run(): Promise<void> {
           if (/^[a-f0-9]{6}$/.test(handoff)) { jobId = handoff; break; }
         } catch { /* not yet */ }
       }
+      // tmux path: the session exits when the child dies — a dead session with
+      // no job id means the launch failed (e.g. stale_base) before registration.
+      if (!jobId && tmuxSessionName && !isTmuxSessionAlive(tmuxSessionName)) {
+        sessionDied = true;
+        break;
+      }
       if (childExitCode !== undefined) break;
     }
 
-    if (!jobId && childExitCode !== undefined && childExitCode !== 0) {
-      process.exit(childExitCode);
+    const writeLaunch = (id: string | null, error?: { error_code?: string; message?: string }) => process.stdout.write(formatBackgroundLaunchLine({
+      jobId: id,
+      specialist: args.name,
+      outputMode: args.outputMode,
+      tmuxSession: tmuxSessionName,
+      pid: childPid,
+      ...(error ? { error } : {}),
+    }));
+
+    const launchErrorFor = (): { error_code?: string; message?: string } | undefined => {
+      if (handoffPath) {
+        try {
+          return extractLaunchError(readFileSync(`${handoffPath}.log`, 'utf-8').slice(-4096));
+        } catch { /* no log yet */ }
+      }
+      return extractLaunchError(childStderrText);
+    };
+
+    if (!jobId && (sessionDied || (childExitCode !== undefined && childExitCode !== 0))) {
+      // Launch failed before a job id was registered: surface the child's
+      // stderr (tmux log / captured stderr) instead of a bogus null envelope.
+      const launchError = launchErrorFor();
+      if (launchError) {
+        process.stderr.write(`[specialists] [ERROR] Background launch failed: ${launchError.message}\n`);
+        writeLaunch(null, launchError);
+      }
+      process.exit(childExitCode ?? 1);
     }
 
     if (!jobId) {
@@ -1803,14 +1851,6 @@ export async function run(): Promise<void> {
     if (!jobId) {
       jobId = resolveNewestJobIdFromJobsDir(jobsDir, oldLatest, launchStartedAt - 1000);
     }
-
-    const writeLaunch = (id: string | null) => process.stdout.write(formatBackgroundLaunchLine({
-      jobId: id,
-      specialist: args.name,
-      outputMode: args.outputMode,
-      tmuxSession: tmuxSessionName,
-      pid: childPid,
-    }));
 
     if (jobId) {
       if (tmuxSessionName) {
@@ -1824,6 +1864,12 @@ export async function run(): Promise<void> {
       }
       writeLaunch(jobId);
     } else {
+      const launchError = launchErrorFor();
+      if (launchError) {
+        process.stderr.write(`[specialists] [ERROR] Background launch failed: ${launchError.message}\n`);
+        writeLaunch(null, launchError);
+        process.exit(1);
+      }
       process.stderr.write('Warning: job started but ID not yet available. Check specialists status.\n');
       writeLaunch(null);
     }

@@ -24783,9 +24783,9 @@ function selectAvailableModel(modelChain, circuitBreaker) {
 function classifyFallbackError(error2) {
   if (isAuthError(error2))
     return "auth";
-  const message = error2 instanceof Error ? error2.message.toLowerCase() : String(error2).toLowerCase();
-  if (/rate.?limit|429|too many requests/.test(message))
+  if (isRateLimitError(error2))
     return "rate_limit";
+  const message = error2 instanceof Error ? error2.message.toLowerCase() : String(error2).toLowerCase();
   if (/timeout|timed out|etimedout|deadline/.test(message))
     return "timeout";
   if (isTransientError(error2))
@@ -28431,6 +28431,7 @@ class Supervisor {
         tool_invocations: gitnexusAccumulator.tool_invocations
       } : undefined;
       appendTimelineEvent(createRunCompleteEvent("COMPLETE", Math.round((Date.now() - startedAtMs) / 1000), {
+        final: false,
         model: result.model,
         backend: result.backend,
         bead_id: result.beadId,
@@ -29223,8 +29224,24 @@ ${appendError}
         } else if (shouldAutoFinalizeKeepAlive(finalResult.output)) {
           await closeKeepAliveSession();
         } else {
+          if (!finalResult.output?.trim() && toolCallNames.length === 0 && resumeFn) {
+            appendTimelineEvent(createMetaEvent("degenerate_empty_turn", "supervisor"));
+            try {
+              const nudgeOutput = await resumeFn("Your previous turn produced no output and no tool calls. Continue the task now: investigate the issue and fix it.");
+              if (nudgeOutput?.trim()) {
+                latestOutput = nudgeOutput;
+                try {
+                  this.withSqliteOperation("upsertResult:degenerate_turn_nudge", (client) => client.upsertResult(id, nudgeOutput));
+                } catch (error2) {
+                  console.warn(`[supervisor] SQLite upsertResult failed after degenerate-turn nudge: ${String(error2)}`);
+                }
+              }
+            } catch (error2) {
+              console.warn(`[supervisor] Degenerate-turn nudge failed: ${String(error2)}`);
+            }
+          }
           writeUnifiedHandoff({
-            output: finalResult.output,
+            output: latestOutput || finalResult.output,
             model: finalResult.model,
             backend: finalResult.backend,
             status: "waiting",
@@ -29330,6 +29347,7 @@ ${appendError}
       } : undefined;
       const completePersisted = this.withSqliteOperation("upsertStatusWithEventAndResult:complete", (client) => {
         client.upsertStatusWithEventAndResult(statusSnapshot, createRunCompleteEvent("COMPLETE", elapsed, {
+          final: true,
           model: finalResult.model,
           backend: finalResult.backend,
           bead_id: finalResult.beadId,
@@ -29374,6 +29392,7 @@ ${appendError}
         tool_invocations: gitnexusAccumulator.tool_invocations
       } : undefined;
       const runCompleteEvent = appendTimelineEventFileOnly(createRunCompleteEvent("ERROR", elapsed, {
+        final: true,
         error: errorMsg,
         token_usage: runMetrics.token_usage,
         finish_reason: runMetrics.finish_reason,
@@ -45015,8 +45034,11 @@ function statusFromRunComplete(status) {
 function latestRunComplete(events) {
   for (let index = events.length - 1;index >= 0; index -= 1) {
     const event = events[index];
-    if (event?.type === "run_complete")
-      return event;
+    if (event?.type !== "run_complete")
+      continue;
+    if (event.final === false)
+      continue;
+    return event;
   }
   return;
 }
@@ -52872,6 +52894,7 @@ __export(exports_run, {
   readSafeSnapshotFile: () => readSafeSnapshotFile,
   readBeadSummary: () => readBeadSummary,
   formatBackgroundLaunchLine: () => formatBackgroundLaunchLine,
+  extractLaunchError: () => extractLaunchError,
   buildTmuxLiveFeedCommand: () => buildTmuxLiveFeedCommand,
   buildInjectedWriterDiffVariables: () => buildInjectedWriterDiffVariables,
   buildInjectedReviewerDiffVariables: () => buildInjectedReviewerDiffVariables,
@@ -52894,9 +52917,21 @@ function formatBackgroundLaunchLine(opts) {
     specialist: opts.specialist,
     detached: true,
     ...opts.tmuxSession ? { tmuxSession: opts.tmuxSession } : {},
-    ...opts.jobId ? {} : { pid: opts.pid ?? null }
+    ...opts.jobId ? {} : { pid: opts.pid ?? null },
+    ...opts.jobId || !opts.error ? {} : { error: opts.error }
   })}
 `;
+}
+function extractLaunchError(text) {
+  const trimmed = text.trim();
+  if (!trimmed)
+    return;
+  const errorCodeMatch = trimmed.match(/"error_code":"([^"]+)"/);
+  const fatalMatch = trimmed.match(/Fatal error:\s*(.+)$/m);
+  return {
+    ...errorCodeMatch ? { error_code: errorCodeMatch[1] } : {},
+    message: fatalMatch?.[1]?.slice(0, 2000) ?? trimmed.slice(-2000)
+  };
 }
 async function parseArgs9(argv) {
   const name = argv[0];
@@ -54226,6 +54261,7 @@ async function run20() {
     let childExitPromise;
     let handoffPath;
     let tmuxSessionName;
+    let childStderrText = "";
     const propagatedEnv = ambientRuntimeOrigin ? { [SPECIALISTS_RUNTIME_ORIGIN_V1]: encodePropagatedOrigin(ambientRuntimeOrigin) } : {};
     if (isTmuxAvailable()) {
       const suffix = randomBytes(3).toString("hex");
@@ -54251,6 +54287,7 @@ async function run20() {
       if (childStderr) {
         childStderr.setEncoding("utf8");
         childStderr.on("data", (chunk) => {
+          childStderrText += chunk;
           process.stderr.write(chunk);
         });
       }
@@ -54266,6 +54303,7 @@ async function run20() {
     const pollTimeoutMs = isTmuxAvailable() ? 15000 : 5000;
     const deadline = Date.now() + pollTimeoutMs;
     let jobId = "";
+    let sessionDied = false;
     while (Date.now() < deadline) {
       await Promise.race([
         new Promise((r) => setTimeout(r, 100)),
@@ -54287,11 +54325,37 @@ async function run20() {
           }
         } catch {}
       }
+      if (!jobId && tmuxSessionName && !isTmuxSessionAlive(tmuxSessionName)) {
+        sessionDied = true;
+        break;
+      }
       if (childExitCode !== undefined)
         break;
     }
-    if (!jobId && childExitCode !== undefined && childExitCode !== 0) {
-      process.exit(childExitCode);
+    const writeLaunch = (id, error2) => process.stdout.write(formatBackgroundLaunchLine({
+      jobId: id,
+      specialist: args.name,
+      outputMode: args.outputMode,
+      tmuxSession: tmuxSessionName,
+      pid: childPid,
+      ...error2 ? { error: error2 } : {}
+    }));
+    const launchErrorFor = () => {
+      if (handoffPath) {
+        try {
+          return extractLaunchError(readFileSync27(`${handoffPath}.log`, "utf-8").slice(-4096));
+        } catch {}
+      }
+      return extractLaunchError(childStderrText);
+    };
+    if (!jobId && (sessionDied || childExitCode !== undefined && childExitCode !== 0)) {
+      const launchError = launchErrorFor();
+      if (launchError) {
+        process.stderr.write(`[specialists] [ERROR] Background launch failed: ${launchError.message}
+`);
+        writeLaunch(null, launchError);
+      }
+      process.exit(childExitCode ?? 1);
     }
     if (!jobId) {
       jobId = resolveNewestJobIdFromDb(cwd, jobsDir2, args.name, oldLatest, launchStartedAt - 1000);
@@ -54299,13 +54363,6 @@ async function run20() {
     if (!jobId) {
       jobId = resolveNewestJobIdFromJobsDir(jobsDir2, oldLatest, launchStartedAt - 1000);
     }
-    const writeLaunch = (id) => process.stdout.write(formatBackgroundLaunchLine({
-      jobId: id,
-      specialist: args.name,
-      outputMode: args.outputMode,
-      tmuxSession: tmuxSessionName,
-      pid: childPid
-    }));
     if (jobId) {
       if (tmuxSessionName) {
         recordTmuxLiveFeedStarted({
@@ -54318,6 +54375,13 @@ async function run20() {
       }
       writeLaunch(jobId);
     } else {
+      const launchError = launchErrorFor();
+      if (launchError) {
+        process.stderr.write(`[specialists] [ERROR] Background launch failed: ${launchError.message}
+`);
+        writeLaunch(null, launchError);
+        process.exit(1);
+      }
       process.stderr.write(`Warning: job started but ID not yet available. Check specialists status.
 `);
       writeLaunch(null);
