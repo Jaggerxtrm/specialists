@@ -256,6 +256,12 @@ export interface TimelineEventRunComplete extends TimelineEventBase {
     status: 'COMPLETE' | 'ERROR' | 'CANCELLED';
     /** Elapsed time in seconds */
     elapsed_s: number;
+    /**
+     * False when the event marks a per-turn completion of a keep-alive session
+     * (non-terminal: the session stays alive and waiting). Absent on events from
+     * older builds, which readers must treat as terminal.
+     */
+    final?: boolean;
     /** Model ID */
     model?: string;
     /** Backend provider */
@@ -554,6 +560,7 @@ export declare function createRunCompleteEvent(status: 'COMPLETE' | 'ERROR' | 'C
     finish_reason?: string;
     tool_calls?: string[];
     exit_reason?: string;
+    final?: boolean;
     metrics?: TimelineRunMetrics;
     evidence?: TimelineEventEvidenceRef[];
     gitnexus_summary?: {

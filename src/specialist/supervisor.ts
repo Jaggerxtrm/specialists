@@ -1734,6 +1734,7 @@ export class Supervisor {
         : undefined;
 
       appendTimelineEvent(createRunCompleteEvent('COMPLETE', Math.round((Date.now() - startedAtMs) / 1000), {
+        final: false,
         model: result.model,
         backend: result.backend,
         bead_id: result.beadId,
@@ -2739,10 +2740,32 @@ export class Supervisor {
           // PASS turns waiting keep-alive chain into terminal job via same close path.
           await closeKeepAliveSession();
         } else {
+          // Degenerate-turn guard: a completion with no output text and no tool
+          // calls means the model ended the turn without doing any work. Nudge
+          // it once before parking the session in waiting (xtrm-5kwk2) so a
+          // keep-alive job does not silently stall with an empty result.
+          if (!finalResult.output?.trim() && toolCallNames.length === 0 && resumeFn) {
+            appendTimelineEvent(createMetaEvent('degenerate_empty_turn', 'supervisor'));
+            try {
+              const nudgeOutput = await resumeFn(
+                'Your previous turn produced no output and no tool calls. Continue the task now: investigate the issue and fix it.',
+              );
+              if (nudgeOutput?.trim()) {
+                latestOutput = nudgeOutput;
+                try {
+                  this.withSqliteOperation('upsertResult:degenerate_turn_nudge', (client) => client.upsertResult(id, nudgeOutput));
+                } catch (error: unknown) {
+                  console.warn(`[supervisor] SQLite upsertResult failed after degenerate-turn nudge: ${String(error)}`);
+                }
+              }
+            } catch (error: unknown) {
+              console.warn(`[supervisor] Degenerate-turn nudge failed: ${String(error)}`);
+            }
+          }
           // Inline bead-notes append on the waiting checkpoint so the input
           // bead reflects the turn's output immediately. Mirrors handleResumeTurn.
           writeUnifiedHandoff({
-            output: finalResult.output,
+            output: latestOutput || finalResult.output,
             model: finalResult.model,
             backend: finalResult.backend,
             status: 'waiting',
@@ -2866,6 +2889,7 @@ export class Supervisor {
 
       const completePersisted = this.withSqliteOperation('upsertStatusWithEventAndResult:complete', (client) => {
         client.upsertStatusWithEventAndResult(statusSnapshot, createRunCompleteEvent('COMPLETE', elapsed, {
+          final: true,
           model: finalResult.model,
           backend: finalResult.backend,
           bead_id: finalResult.beadId,
@@ -2921,6 +2945,7 @@ export class Supervisor {
 
       // Emit run_complete with ERROR status
       const runCompleteEvent = appendTimelineEventFileOnly(createRunCompleteEvent('ERROR', elapsed, {
+        final: true,
         error: errorMsg,
         token_usage: runMetrics.token_usage,
         finish_reason: runMetrics.finish_reason,

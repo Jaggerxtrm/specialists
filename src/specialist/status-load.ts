@@ -116,7 +116,12 @@ function statusFromRunComplete(status: TimelineEventRunComplete['status'] | unde
 function latestRunComplete(events: readonly TimelineEvent[]): TimelineEventRunComplete | undefined {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
-    if (event?.type === 'run_complete') return event as TimelineEventRunComplete;
+    if (event?.type !== 'run_complete') continue;
+    // Per-turn completions of keep-alive sessions are marked final:false and
+    // must not reconcile an active (waiting) job to a terminal status
+    // (xtrm-5kwk2). Events without the marker predate the fix → treat as final.
+    if ((event as TimelineEventRunComplete).final === false) continue;
+    return event as TimelineEventRunComplete;
   }
   return undefined;
 }

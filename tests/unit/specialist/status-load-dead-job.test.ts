@@ -188,4 +188,47 @@ describe('status-load dead-job reconciliation', () => {
     expect(xtmuxSpawnMock).not.toHaveBeenCalled();
     expect(store.eventsById.get('live01')).toBeUndefined();
   });
+
+  // xtrm-5kwk2 Layer 2: keep-alive jobs emit a per-turn run_complete (COMPLETE)
+  // while the session stays alive and waiting. That event must NOT reconcile the
+  // active job to a terminal status. Events without the final marker predate the
+  // fix and are treated as terminal for backward compatibility.
+  it('keeps a waiting keep-alive job waiting when its run_complete is marked final:false', () => {
+    store.statusById.set('ka01', {
+      id: 'ka01',
+      specialist: 'debugger',
+      status: 'waiting',
+      started_at_ms: Date.now() - 60_000,
+      last_event_at_ms: Date.now() - 5_000,
+      pid: process.pid,
+    });
+    store.eventsById.set('ka01', [{
+      type: 'run_complete', status: 'COMPLETE', elapsed_s: 5, t: Date.now() - 5_000,
+      output: 'first turn output', final: false,
+    }]);
+
+    const job = loadStatuses().find((status) => status.id === 'ka01');
+
+    expect(job?.status).toBe('waiting');
+    expect(xtmuxSpawnMock).not.toHaveBeenCalled();
+  });
+
+  it('still reconciles an unmarked run_complete to done (backward compat)', () => {
+    store.statusById.set('ka02', {
+      id: 'ka02',
+      specialist: 'debugger',
+      status: 'waiting',
+      started_at_ms: Date.now() - 60_000,
+      last_event_at_ms: Date.now() - 5_000,
+      pid: process.pid,
+    });
+    store.eventsById.set('ka02', [{
+      type: 'run_complete', status: 'COMPLETE', elapsed_s: 5, t: Date.now() - 5_000,
+      output: 'first turn output',
+    }]);
+
+    const job = loadStatuses().find((status) => status.id === 'ka02');
+
+    expect(job?.status).toBe('done');
+  });
 });

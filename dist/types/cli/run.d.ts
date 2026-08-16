@@ -56,7 +56,16 @@ export declare function formatBackgroundLaunchLine(opts: {
     outputMode: OutputMode;
     tmuxSession?: string;
     pid?: number;
+    error?: {
+        error_code?: string;
+        message?: string;
+    };
 }): string;
+/** Extract an actionable error from a failed background child's stderr/log text. */
+export declare function extractLaunchError(text: string): {
+    error_code?: string;
+    message?: string;
+} | undefined;
 interface BdBeadSummary {
     id?: string;
     parent?: string;
