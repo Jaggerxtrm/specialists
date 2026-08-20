@@ -75767,11 +75767,22 @@ async function run44() {
         "  specialists log 49adda",
         "  specialists log --bead unitAI-123 --limit 500",
         "  specialists log --specialist reviewer -f",
-        "  specialists log -f --json",
+        `  specialists log -f --json | jq 'select(.forensic_event.event_family == "job")'`,
         "",
         "Default output is runtime-only; use --all-events for raw agent internals.",
         "Use feed for compact human progress; use log for debugging crashes,",
         "dispatch/resume/steer/stop signals, and terminal error provenance.",
+        "",
+        "--json ROW ENVELOPE:",
+        "  Each line is an NDJSON row shaped as",
+        "    { timestamp, job_id, bead_id, repo, db_path, forensic_event: {...} }",
+        "  Filterable fields (event_family, event_name, severity, correlation, body)",
+        "  live INSIDE .forensic_event \u2014 top-level access silently matches nothing.",
+        '  Terminal event_names: "job.completed" | "job.failed" | "job.cancelled".',
+        '  "waiting" is a status transition, NOT a terminal state \u2014 keep-alive',
+        "  specialists sit in waiting between turns; treating waiting as done",
+        "  causes coordinators to declare success on jobs that never executed.",
+        "  See using-specialists/references/monitoring.md for full monitor recipes.",
         ""
       ].join(`
 `));
