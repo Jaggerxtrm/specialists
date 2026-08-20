@@ -93,6 +93,106 @@ Poll only when you must do other work meanwhile, and size the first sleep by rol
 
 You are not done until every dispatched job is terminal **and consumed**.
 
+## Event-Driven Monitoring For Keep-Alive Specialists
+
+`sp result <job-id> --wait` is the one-shot blocker for jobs that terminate on their own (single-turn or `--no-keep-alive`). It counts `waiting` as still active, so it hangs a `--keep-alive` job until timeout — `executor`, `debugger`, `reviewer`, `chain-coordinator`, and every other `[keep-alive]` role need an event-driven pattern instead.
+
+### The row envelope (read this before writing any filter)
+
+`sp log --json` emits NDJSON rows shaped as:
+
+```json
+{
+  "timestamp": "...",
+  "job_id": "d2ec71",
+  "bead_id": "unitAI-5ljfu",
+  "repo": "specialists",
+  "db_path": "...",
+  "forensic_event": {
+    "event_family": "job",
+    "event_name": "job.failed",
+    "severity": "error",
+    "correlation": { ... },
+    "body": { ... }
+  }
+}
+```
+
+**The filterable fields (`event_family`, `event_name`, `severity`, `correlation`, `body`) live nested inside `.forensic_event`.** Top-level access silently matches nothing — every filter reads empty strings, no notifications fire, and the coordinator sees silence exactly like "still running". Every recipe below reads through `row["forensic_event"]` / `.forensic_event.…` — never at top level.
+
+Verify shape once against a real job before trusting a recipe: `sp log <job-id> --json | head -1 | jq 'keys'` (top-level) vs `jq '.forensic_event | keys'` (nested).
+
+### Terminal vs attention (waiting is NOT terminal)
+
+Two distinct notification classes:
+
+| Class | event_name / signal | Meaning | Coordinator action |
+|---|---|---|---|
+| **TERMINAL** | `job.completed`, `job.failed`, `job.cancelled` | Job is done. Process exits. | `sp result` for authoritative payload; consume; close bead. |
+| **ATTENTION** | `process_health.stale_detected`, `error.rpc`, `error.extension`, any `severity == "error"`, or `sp ps` status transition to `waiting` | Job needs a look. Keep-alive job may be idle awaiting steer, or a subagent may have crashed. | Inspect with `sp feed` + `sp result`; steer / resume / stop as needed. Do NOT treat as done. |
+
+The recipe below distinguishes both. A monitor that treats `waiting` as terminal will declare success on jobs that never actually executed a productive turn — the failure mode the operator just hit with a keep-alive specialist at 24s / 0 tool calls.
+
+### 0-tool-calls-on-terminal sanity check
+
+Before declaring a job done from a TERMINAL notification, cross-check `sp ps <job-id> --json | jq '.flat[0] | {status, elapsed_s}'` and `sp result <job-id> --json`. A job that surfaces `job.completed` with 0 tool calls and no meaningful text payload did not execute — the process exited early (e.g., quota exhausted, launch error, empty prompt). Read `sp feed <job-id>` for turn payloads before promoting the result.
+
+### The recipe (Monitor + python filter)
+
+```text
+Monitor({
+  persistent: true,
+  command: "sp log --job <job-id> -f --json 2>&1 | python3 -u -c '
+import json, sys
+last = None
+TERMINAL  = {\"job.completed\", \"job.failed\", \"job.cancelled\"}
+ATTENTION = {\"process_health.stale_detected\", \"error.rpc\", \"error.extension\"}
+for line in sys.stdin:
+    try: row = json.loads(line)
+    except Exception: continue
+    fe   = row.get(\"forensic_event\") or {}           # nested — top-level is empty
+    name = (fe.get(\"event_name\")   or \"\").lower()
+    fam  = (fe.get(\"event_family\") or \"\").lower()
+    sev  = (fe.get(\"severity\")     or \"\").lower()
+    is_terminal  = name in TERMINAL
+    is_attention = (name in ATTENTION) or (fam == \"error\") or (sev == \"error\")
+    if (is_terminal or is_attention) and name != last:
+        last = name
+        kind = \"TERMINAL\" if is_terminal else \"ATTENTION\"
+        print(f\"job={row.get(\\\"job_id\\\")} {kind} {name} sev={sev}\", flush=True)
+'"
+})
+```
+
+Equivalent one-liner with `jq` (no python dep):
+
+```bash
+sp log --job <id> -f --json \
+  | jq --unbuffered -r '
+      select(
+        (.forensic_event.event_family | IN("job","error","process_health"))
+        or (.forensic_event.severity == "error")
+      )
+      | "\(.job_id) \(.forensic_event.event_name) sev=\(.forensic_event.severity)"'
+```
+
+### Rules
+
+- **Follow stream is `sp log --job <id> -f --json`** (or the per-job equivalent `sp feed <job-id> --json`). Not `sp forensic` — that command is a post-hoc query verb, has no `--follow`, and would print a snapshot once and exit. Both `sp log` and `sp feed` read the private observability DB through the supported consumer contract; direct `sqlite3` on `observability.db` is still off-limits (see the private-DB rule above).
+- **Read fields from `.forensic_event`, never top level.** The row envelope wraps every filterable field. A filter that reads `row["event_name"]` silently matches nothing; a coordinator built on it treats a crashloop as "still running" until wall-clock timeout.
+- **Terminal vocabulary is exact, not substring.** Match `event_name in {"job.completed","job.failed","job.cancelled"}` — not `"done" in event_name`. `sp ps` uses different words (`done`, `error`, `cancelled`, `waiting`, `running`, `starting`) than `sp log` event_names — do not mix them.
+- **Waiting is not terminal.** `sp ps` status `waiting` = specialist paused mid-turn awaiting input; keep-alive jobs sit there for hours. Treat `waiting` transitions as ATTENTION (may need steer / resume / stop), never as done.
+- **0-tool-calls-on-terminal = did-not-execute.** Cross-check with `sp result --json` and `sp feed`; a "terminal" notification with an empty payload means the process exited early.
+- **Deduplicate on transition.** A chatty run fires one notification per stdout line otherwise; the transition filter (`if name != last`) keeps the coordinator's inbox to one line per state change.
+- **On the notification, `sp result <job-id> --json` is the authoritative turn payload.** Then decide fix loop / next dispatch / merge — do not act on the Monitor line alone; a `waiting` transition still needs the payload before you can steer or resume.
+- **Fixed-cadence heartbeat is the complement, not the replacement.** `/loop 180s sp ps` under Claude Code catches hangs where the follow stream itself goes silent (specialist crashed before emitting a terminal event, or the log rotor stalled). Arm both when a silent hang would leave the coordinator unable to progress.
+- Under Pi or another runtime without `Monitor`, fall back to a detached `while true; do sp ps <job>; sleep 60; done` heartbeat plus `sp result --wait` for non-keep-alive jobs; the same terminal-matcher vocabulary applies.
+- **`--legacy` shape differs.** `sp log --legacy --json` emits a different row envelope (TimelineEvent-shaped). If you must monitor a legacy stream, verify shape with `--legacy --json | head -1 | jq 'keys'` first; the forensic filter above will not fire against legacy rows.
+
+### xtmux log --json shape (for cross-store monitors)
+
+`xtmux log query|follow --json` emits FLAT rows — no `.forensic_event` wrapper. Fields live at top level: `{ts, ts_epoch, type, state, session, pane, bead, source_event, ...}`. Filter directly (`select(.type == "agents.state.needs-input")`), no nesting. Do not copy the sp-log recipe wholesale to xtmux — the shape is different.
+
 ## Specialist Rebuttal As Routine
 
 Several roles default to an over-cautious verdict when an evidence gate looks unsatisfied. Challenging
