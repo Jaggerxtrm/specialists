@@ -175,6 +175,25 @@ function matches(status: SupervisorStatus, options: LogOptions): boolean {
   return true;
 }
 
+// Mirrors isRuntimeEvent for the forensic path. Agent-internal noise
+// (turn/tool/token_usage/finish_reason/meta/mcp.call.*) is hidden by
+// default; runtime families (job/control/error/git/command/review/chain/
+// worktree/process_health/retry/compaction, plus model.changed and
+// mcp.connected|disconnected|auth.failed|rate_limited) pass through.
+// --all-events restores the full firehose.
+export function isForensicAgentInternal(event: ForensicEvent): boolean {
+  if (event.event_family === 'turn') return true;
+  if (event.event_family === 'tool') return true;
+  const name = event.event_name;
+  return name === 'model.token_usage.recorded'
+    || name === 'model.finish_reason.recorded'
+    || name.startsWith('model.meta')
+    || name === 'mcp.call.started'
+    || name === 'mcp.call.completed'
+    || name === 'mcp.call.failed'
+    || name === 'mcp.latency.observed';
+}
+
 function isRuntimeEvent(event: TimelineEvent): boolean {
   if (RUNTIME_EVENT_TYPES.has(event.type)) return true;
   if (event.type === 'meta') {
@@ -535,6 +554,7 @@ export async function run(argv: readonly string[] = process.argv.slice(3)): Prom
         logForensicReadError(target.repo, error);
         continue;
       }
+      if (!options.allEvents && isForensicAgentInternal(event)) continue;
       const correlation = event.correlation ?? {};
       if (options.specialist && event.resource?.participant_role !== options.specialist) continue;
       if (options.beadId && correlation.bead_id !== options.beadId) continue;
