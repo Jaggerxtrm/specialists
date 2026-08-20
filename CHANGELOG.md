@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.21.5] - 2026-08-20
+
+Patch focused on observability truthfulness and Pi vendored-tooling parity. `sp log` default output now filters agent-internal events (turn/tool/model.token_usage) that were drowning the 2-3 real lifecycle rows per job; the corresponding monitor recipes in `using-specialists/references/monitoring.md` are corrected to read from `.forensic_event` and to distinguish terminal (`job.completed|failed|cancelled`) from attention (waiting, `process_health.stale_detected`, `error.*`) states — the prior recipe silently matched nothing and coordinators read the silence as "still running". Background specialist dispatch now surfaces launch errors instead of returning a misleading `ok` envelope. Two Pi extension vendored-fork fixes bring `read-line-numbers` behavior in line with the Core implementation (EOF model + real-blank-line handling).
+
+### Fixed
+- Mirror Core read-line-numbers blank-line fix in vendored fork (unitAI-nx80v) (#265) ([d2785cf](https://github.com/xtrm-dev/specialists/commit/d2785cfaa6b9cfcd5251bfbcc34bb5cfee0edca0))
+- Correct vendored read-line-numbers fork to Pi EOF model (unitAI-gajax) (#266) ([3760cf4](https://github.com/xtrm-dev/specialists/commit/3760cf429934f79739b628a967e78d495dbfd96d))
+- Surface launch errors in the background envelope (xtrm-5kwk2) (#267) ([daba619](https://github.com/xtrm-dev/specialists/commit/daba6198ba5d1f8fcc5f5314e21ca2d5860a1c42))
+- Sp log default forensic path emits every agent-internal event (unitAI-mkkjk) (#268) ([7a13d63](https://github.com/xtrm-dev/specialists/commit/7a13d638e92a7b3e3a9ef019eea75deedb150597))
+
+### Project maintenance
+- V3.21.4 release-path followups (unitAI-ip5jz) ([588593d](https://github.com/xtrm-dev/specialists/commit/588593d2380d5ff556cb6046d9d1b8f4434cba67))
+- Stop the boundary-rule test depending on bd + a real bead ([1ce1006](https://github.com/xtrm-dev/specialists/commit/1ce1006f7d82283c306a046dc2acea4c9742e70b))
+- Sp log --json envelope shape + correct monitor recipes (unitAI-nhl6x) (#269) ([bcdbd30](https://github.com/xtrm-dev/specialists/commit/bcdbd30cb8248155c0e57dd9243f6d32c612bab9))
+
 ## [3.21.4] - 2026-08-14
 
 ### Fixed
