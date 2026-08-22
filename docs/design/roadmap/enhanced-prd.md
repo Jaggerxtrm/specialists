@@ -1,5 +1,7 @@
 # Specialists Modernization: Prompt, Chain Context, Interactive Coordination, Observability and Evaluation
 
+> **2026-08-22:** WP continuity table maintained in [`wp-continuity.json`](wp-continuity.json); consolidation into a current canonical specialists-prd.md is tracked (see xtrm bead `xtrm-cn8` residuals). Until then this document remains the programme-scope canon.
+
 ## Product Requirements Document
 
 **Status:** Final consolidated implementation PRD v3.2; includes the 15–17 July Beads reconciliations, deterministic Specialist execution protocol integration, and the 24 July 2026 repository-state/roadmap-coordination reconciliation
@@ -3922,6 +3924,8 @@ The Epics below are capability groupings. For actual Beads decomposition and par
 10. Which coordinator model defaults are selected per formula during the bridge period.
 11. Exact memory retrieval CLI surface and provenance availability in Beads.
 12. Which deterministic graders may block in the first enforcement wave.
+13. Whether eval tables live in every per-repo observability DB or in a separate namespace within the same file; recommendation is the same per-repo DB initially. *(ported from chains-prompt-evals 2026-08-22)*
+14. How package and installation-local skill references are resolved and fingerprinted when they are not repository files. *(ported from chains-prompt-evals 2026-08-22)*
 
 ## 20.3 Decisions that do not block the current bridge program
 

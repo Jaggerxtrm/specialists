@@ -991,3 +991,51 @@ The following require code-level verification before dispatch:
 6. The exact atomic boundary between result persistence, Bead note and message publication.
 7. The durable event storage used during the bridge before Substrate state lands.
 8. Which evidence validators may enforce immediately and which begin in shadow mode.
+
+---
+
+## 23. Addendum 2026-08-22 — identity, grants and probes reconciliation
+
+This addendum reconciles the protocol with the accepted integrated runtime model in `xtrm-dev/xtrm:docs/runtime/` (runtime PRD + ADR-003/004/006). Sections 1–22 above are unchanged; where wording below differs, this addendum is the current reconciliation.
+
+### 23.1 Identity layers
+
+- `participant_id` is stable per `(scope, role)` for the membership of the participant; it does not change between retries of the same step.
+- `job_id` is new per activation; an activation may comprise multiple `attempt`s (crash/retry), each recorded in lineage.
+- The AgentSession (Pi session) identity is owned by Pi and is never conflated with participant or job identity. Participant ≠ activation ≠ AgentSession.
+- Consequence: replay/resume rebinds a fresh AgentSession to the same participant/job lineage; forensic events carry all layers per the telemetry contract §identity.
+
+### 23.2 Capability grants
+
+A requested capability is not a granted capability:
+
+```text
+ResolvedCapabilityGrant = f(specialist request,
+                            chain/step policy,
+                            operator policy,
+                            runtime/sandbox capabilities)
+```
+
+`required_tools` expresses requirement only. It must not expose unrestricted generic Pi built-ins; the current adapter posture (`noTools:"builtin"` plus explicit allowlist) remains the reference. A step contract cannot widen a grant beyond what the resolver emits.
+
+### 23.3 Probes taxonomy (replaces overloaded skills.scripts)
+
+The legacy `skills.scripts` field is retired as an overload point. Its responsibilities compile into typed ProbeDefinitions for compatibility:
+
+```text
+cognition            skills / prompt / procedures
+activation policy    model / timeout / retry
+prepare              prepare-probes, finalize-side validators, context resolvers
+result contract      schema / evidence requirements
+finalize             finalize-validators, projections, terminal effects
+```
+
+Shell scripts are never a privileged implicit preflight API. Every preflight check is a typed ProbeDefinition executed by the runtime-owned PREPARE phase; legacy scripts compile into that form and gain no authority they did not declare.
+
+### 23.4 ActivationSupervisor boundary
+
+The ActivationSupervisor owns exactly one activation lifecycle: start, settlement, heartbeat/timeout, retry-signal, cancel, disposal. It never decides chain progression — that belongs to the pure reducer/scheduler consuming validated evidence. External/interactive runtimes route through the xtmux RuntimeSupervisor via terminal backends (ADR-006); direct hosted AgentSessions do not.
+
+### 23.5 Effect receipts and uncertain state
+
+Every external effect carries an idempotency key; outcomes are completed / failed / uncertain. An uncertain outcome blocks blind replay until reconciliation records resolving evidence. Receipts are append-only. Normative source: xtrm ADR-002 (`xtrm-dev/xtrm:docs/runtime/adr/002-container-chainrun-durability.md`).

@@ -4,10 +4,10 @@
 
 ## 🛠 `roadmap/` — specialists runtime cleanup roadmap
 
-The specialists-runtime cleanup + substrate-alignment effort designed in the 2026-05-27/28 sessions. **Still the actionable work for the specialists package.** Reconciliation with `~/dev/xtrm/docs/temp_roadmap.md` tracked in bead `unitAI-sc03v`.
+The specialists-runtime cleanup + substrate-alignment effort designed in the 2026-05-27/28 sessions. **Still the actionable work for the specialists package.**
 
-- **[`roadmap/specialists-roadmap.md`](roadmap/specialists-roadmap.md)** — CANONICAL roadmap. 12 opportunities, 8 phases. Decisions D1–D30 in §0.
-- **[`roadmap/chain-templates/`](roadmap/chain-templates/)** — 13 evidence-backed `bd formula` files (verified vs `bd` binary). Phase 0.a installs them to `~/.beads/formulas/`.
+- **[`roadmap/specialists-roadmap.md`](roadmap/specialists-roadmap.md)** — CANONICAL roadmap (v3.3 baseline: single-Opportunity-19 deterministic execution framing, superseding the old 12-opportunity catalog). Decisions D1–D30 in §0.
+- **[`roadmap/chain-templates/`](roadmap/chain-templates/)** — 15 evidence-backed `bd formula` files (verified vs `bd` binary). Phase 0.a installs them to `~/.beads/formulas/`.
 - **[`roadmap/README.md`](roadmap/README.md)** — roadmap-area navigation.
 - **[`roadmap/history/`](roadmap/history/)** — context-only artifacts that produced the roadmap. Read for context, do NOT act on.
 

@@ -1,3 +1,5 @@
+> **HISTORICAL (superseded 2026-08-22).** This document is superseded by [`../enhanced-prd.md`](../enhanced-prd.md) — ~98% content overlap verified mechanically on 2026-08-22. Section 9 (evaluation platform) was the eval reference text; its successor is enhanced-prd Workstream E (`# 9. Workstream E — Evaluation platform`). The two unique open decisions from its §20 were ported into enhanced-prd §20.2 (items 13–14) before this move. Retained as history only; do not execute from this document.
+
 # Specialists Prompt, Chain Context, Observability and Evaluation Modernization
 
 ## Product Requirements Document

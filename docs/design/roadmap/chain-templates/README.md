@@ -2,7 +2,7 @@
 
 > **Status:** operator quick-start to the executable `.formula.json` files in this directory.
 >
-> **Canonical design canon** for chain templates lives in [`docs/design/chain-templates.md`](../../chain-templates.md). That is where the canonical pipeline every production-diff chain runs (§2), the per-template resolved canonical chains (§3), the pending DevOps-gates gap (§4), composition mechanism (§5), and evolution protocol (§6) live. **Consult the canon first for design questions.** A non-maintained editorial snapshot in `substrate.html` style is at `chain-templates.html`. This README covers the operator quick-start: schema notes, pour mechanism, search-path resolution, post-pour edge helper, per-repo extension example.
+> **Canonical design canon** for chain templates lives cross-repo: [xtrm-dev/xtrm docs/substrate/chain_templates.md](https://github.com/xtrm-dev/xtrm/blob/main/docs/substrate/chain_templates.md) (cross-repo: xtrm-dev/xtrm docs/substrate/chain_templates.md). That is where the canonical pipeline every production-diff chain runs (§2), the per-template resolved canonical chains (§3), the pending DevOps-gates gap (§4), composition mechanism (§5), and evolution protocol (§6) live. **Consult the canon first for design questions.** A non-maintained editorial snapshot in `substrate.html` style is archived in the xtrm repo (`docs/substrate/chain_templates.html`). This README covers the operator quick-start: schema notes, pour mechanism, search-path resolution, post-pour edge helper, per-repo extension example.
 >
 > **Schema:** verified `bd formula` schema. Pour mechanism creates a `molecule` parent issue (the chain identity) + one bd issue per formula step as children with `parent-child` edge. `needs` produces `blocks` edges between siblings. Per-step `labels` carry role identity for the post-pour edge-wiring helper (roadmap Opportunity 5).
 >
@@ -22,7 +22,7 @@ This boundary keeps promoted chain templates compact and domain-specific instead
 
 **2 templates are authored in the canon and now shipped as formula files**: `code-with-tests` (dual-writer for production+tests at high+ scrutiny) and `test-only` (single-writer test-engineer chain). Both are wired for the same `test-engineer` specialist via position-specific mandate text in the formula step description.
 
-Catalog table (for full per-template detail with mermaid step diagrams, severity floors, and the canonical pipeline that wraps production-diff chains, see [`chain-templates.md` §3](../../chain-templates.md#3-the-template-catalog)):
+Catalog table (for full per-template detail with mermaid step diagrams, severity floors, and the canonical pipeline that wraps production-diff chains, see [canon §3 (cross-repo: xtrm-dev/xtrm docs/substrate/chain_templates.md)](https://github.com/xtrm-dev/xtrm/blob/main/docs/substrate/chain_templates.md#3-the-template-catalog)):
 
 | File | Layer-1 roles (canonical pipeline §2 wraps production-diff chains) | Use case |
 |---|---|---|
@@ -39,10 +39,14 @@ Catalog table (for full per-template detail with mermaid step diagrams, severity
 | `premortem.formula.json` | root → overthinker | Devil's-advocate before risky decisions (pipeline N/A) |
 | `doc-sync.formula.json` | root → sync-docs | Single-document drift-aware update (pipeline N/A) |
 | `memory-hygiene.formula.json` | root → memory-processor | Stale memory consolidation (pipeline N/A) |
+| `code-with-tests.formula.json` | root → executor (production) + test-engineer-writer (tests) → reviewer | Dual-writer production+tests at high+ scrutiny (pipeline applies; same `test-engineer` specialist, position-specific mandate) |
+| `test-only.formula.json` | root → test-engineer-writer | Test-only change — single-writer test-engineer chain (pipeline N/A) |
 
-**Canonical pipeline.** The Layer-1 shapes above are what the formula files declare. On top of Layer-1, every production-diff chain runs the **canonical pipeline** described in [canon §2](../../chain-templates.md#2-the-canonical-pipeline) — `seconder → test-engineer → test-runner → security-auditor (if sensitive) → obligations-scanner → reviewer` with Release Checklist. The canonical pipeline is not opt-in; severity (`SCRUTINY: low|medium|high|critical`) modulates which steps fire. Each template's resolved canonical chain is in [canon §3](../../chain-templates.md#3-the-template-catalog).
+Formulas/templates are **ChainSource compatibility assets**: executable behavior poured from them remains fully supported; the semantic chain ontology lives in the xtrm runtime canon (`xtrm-dev/xtrm:docs/runtime/`).
 
-**Status today.** The Iron portion of the canonical pipeline (seconder gate + obligations-scanner + reviewer + auto-escalation) is **in production** via `config/skills/using-specialists/SKILL.md`. The QA portion (`test-engineer` + upgraded `test-runner`) is now **wired in formula files** via epic `unitAI-f9kku` (blocked on sfwe1.1/.2 at specialist layer). Once shipped, both are canonical pipeline behavior — not "overlays." The one currently-pending piece is **DevOps gates** for operational validation ([canon §4](../../chain-templates.md#4-devops-gates--design-pending)); design fill follows in a separate session segment.
+**Canonical pipeline.** The Layer-1 shapes above are what the formula files declare. On top of Layer-1, every production-diff chain runs the **canonical pipeline** described in [canon §2 (cross-repo: xtrm-dev/xtrm docs/substrate/chain_templates.md)](https://github.com/xtrm-dev/xtrm/blob/main/docs/substrate/chain_templates.md#2-the-canonical-pipeline) — `seconder → test-engineer → test-runner → security-auditor (if sensitive) → obligations-scanner → reviewer` with Release Checklist. The canonical pipeline is not opt-in; severity (`SCRUTINY: low|medium|high|critical`) modulates which steps fire. Each template's resolved canonical chain is in [canon §3 (cross-repo: xtrm-dev/xtrm docs/substrate/chain_templates.md)](https://github.com/xtrm-dev/xtrm/blob/main/docs/substrate/chain_templates.md#3-the-template-catalog).
+
+**Status today.** The Iron portion of the canonical pipeline (seconder gate + obligations-scanner + reviewer + auto-escalation) is **in production** via `config/skills/using-specialists/SKILL.md`. The QA portion (`test-engineer` + upgraded `test-runner`) is now **wired in formula files** via epic `unitAI-f9kku` (blocked on sfwe1.1/.2 at specialist layer). Once shipped, both are canonical pipeline behavior — not "overlays." The one currently-pending piece is **DevOps gates** for operational validation ([canon §4 (cross-repo: xtrm-dev/xtrm docs/substrate/chain_templates.md)](https://github.com/xtrm-dev/xtrm/blob/main/docs/substrate/chain_templates.md#4-devops-gates--design-pending)); design fill follows in a separate session segment.
 
 ## Shipping path
 
@@ -142,7 +146,7 @@ The child template's steps APPEND to parent's. Behavior: bd cook resolves parent
 
 ## Cross-reference
 
-- **Design canon (philosophy + canonical pipeline)** [`docs/design/chain-templates.md`](../../chain-templates.md) — the source-of-truth for the canonical pipeline (§2), template catalog (§3), DevOps gates design gap (§4), composition mechanism (§5), evolution protocol (§6). Non-maintained editorial snapshot: [`chain-templates.html`](../../chain-templates.html).
+- **Design canon (philosophy + canonical pipeline)** — [xtrm-dev/xtrm docs/substrate/chain_templates.md](https://github.com/xtrm-dev/xtrm/blob/main/docs/substrate/chain_templates.md) (cross-repo: xtrm-dev/xtrm docs/substrate/chain_templates.md) — the source-of-truth for the canonical pipeline (§2), template catalog (§3), DevOps gates design gap (§4), composition mechanism (§5), evolution protocol (§6). Non-maintained editorial snapshot: archived `chain_templates.html` in the same xtrm directory.
 - **Roadmap** `docs/design/roadmap/specialists-roadmap.md`:
   - §3 twelve alignment opportunities (Opp 4 `sp chain review/approve/insert`, Opp 5 step-bead conventions, Opp 10 `--chain` redesign, Opp 13 `sp stop --all` + `sp chain stop`, Opp 14 QA chain integration)
   - §12 `sp epic` decoration (chain ≡ bd molecule replaces the old chain ≡ bd epic mental model where molecule auto-creates)

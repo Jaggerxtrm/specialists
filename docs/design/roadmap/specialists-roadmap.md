@@ -18,6 +18,21 @@
 
 The source baselines are the corresponding `origin/master` heads verified on 30 July 2026. AC0 is closed. The released trio is no longer a source-only or coordinated-release dependency.
 
+> Versions are current as of the snapshot 0.11.4 / 0.2.3 / 3.21.x era above; [`current-release-snapshot.md`](current-release-snapshot.md) owns release-version truth. Re-check at write time before citing versions.
+
+### 2026-08-22 — integrated native runtime model
+
+The accepted cross-domain runtime model lives in the xtrm repository canon at text path `xtrm-dev/xtrm:docs/runtime/` (relative GitHub paths across repositories do not resolve; always cite the repo-qualified path). It defines the object model this roadmap's delivery sequence builds on:
+
+- Authored workflows are `ChainSource` (templates are one variant among Template/JSON/AdHoc/Imported), normalized to `ChainDefinition`, compiled/frozen to `ResolvedChain`, executed as durable `ChainRun`. A template is a compatibility ChainSource variant, not the ontology.
+- Identity: `participant_id` is stable per `(scope, role)`, a new `job_id` per activation, attempts within an activation, and the AgentSession identity owned by Pi. Participant ≠ activation ≠ AgentSession.
+- Supervision splits three ways: ActivationSupervisor owns exactly one direct participant activation lifecycle; the xtmux RuntimeSupervisor owns external/interactive runtimes via terminal backends; the pure reducer/scheduler owns chain progression. None of the three inherits another's authority.
+- Capabilities: `ResolvedCapabilityGrant = f(specialist request, chain/step policy, operator policy, runtime/sandbox capabilities)`; requested capability ≠ granted capability. Legacy `skills.scripts` compile into typed ProbeDefinitions within the prepare-probes/finalize-validators taxonomy; shell scripts are never a privileged implicit preflight API.
+- Channels: communication semantics stay canonical in `xtrm-dev/xtrm:docs/channels/channels.md`; this roadmap does not duplicate them.
+- Beads remains the work/evidence authority; chain materialization into Beads happens only after ResolvedChain freeze, and the materializer never invents a second dependency graph.
+
+Acceptance test for the integrated milestone unchanged: the SRE vertical-slice workflow runs fully data-defined through the generic loader/compiler/reducer/runtime with zero SRE-specific runtime topology code.
+
 ### 0.1 Release and changelog reconciliation
 
 #### Core

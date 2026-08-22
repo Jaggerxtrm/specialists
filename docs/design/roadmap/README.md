@@ -16,7 +16,7 @@ Do not infer current implementation state from document dates or old handoff Bea
 | **You need bridge-runtime architecture and accepted Opportunities** | [`specialists-roadmap.md`](specialists-roadmap.md) | Semantic decisions, substrate reads-forward and historical implementation rationale |
 | **You need canonical chain semantics** | [XTRM chain-template canon](https://github.com/xtrm-dev/xtrm/blob/main/docs/substrate/chain_templates.md) | Canonical pipeline, template semantics, composition and evolution rules |
 | **You need local formula/source mechanics** | [`chain-templates/README.md`](chain-templates/README.md) and the formula files | Beads formula mechanics, source catalog and bridge limitations; not the semantic canon |
-| **You need prompt/eval design detail** | [`chains-prompt-evals.md`](chains-prompt-evals.md) | Chain context, prompt experimentation and evaluation design |
+| **You need prompt/eval design detail** | [`history/chains-prompt-evals.md`](history/chains-prompt-evals.md) | Historical chain-context/prompt/eval design; superseded by [`enhanced-prd.md`](enhanced-prd.md) (2026-08-22) |
 | **You need historical substrate reconciliation** | [`history/substrate-reconciliation.md`](history/substrate-reconciliation.md) | Design-delta history already absorbed into the canonical roadmap |
 | **You need the original substrate handoff** | [`history/handoff-from-substrate-design.md`](history/handoff-from-substrate-design.md) | Historical handoff context only |
 
