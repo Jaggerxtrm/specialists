@@ -1,0 +1,1062 @@
+{
+ "schema": "lane-b-wp-continuity/v1",
+ "source_commit": "0253e3e4b823de419bf1acc54f07eb618e10a054",
+ "note": "Status claims are as stated in the defining documents; delivery evidence is documentary only (no code verification performed beyond named snapshots). WP-XX/WP-YY are contract-template placeholders in both PRDs and are excluded as non-work-packages.",
+ "work_packages": [
+  {
+   "wp_id": "WP-G00",
+   "title": "Patch canonical roadmap with Track C, dependency rules, status corrections and PRD reference",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "defined as documentation-gate package; superseded in practice by v3.3 roadmap rewrite (roadmap already carries Track/PRD references)",
+   "evidence_of_delivery": "Roadmap v3.3 exists and links PRD; no direct bead/git evidence tied to the id",
+   "residual_risk": "Low: outcome materially delivered by later docs; keep id as historical anchor",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-G01",
+   "title": "Add historical-snapshot banner to 2026-06-21 reconciliation and create new dated reconciliation",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "defined; owned by xtrm repo",
+   "evidence_of_delivery": "Not verifiable from specialists repo; snapshot supersedes dated reconciliations for current state",
+   "residual_risk": "Low",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-G02",
+   "title": "Produce binding Beads capability/reuse decision across embedded/direct-server/proxied-server modes",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "hard planning gate for chain-foundation implementation; claimed not closed in canon",
+   "evidence_of_delivery": "PRD \u00a70.5 records a 13 July audit and v3.1 revision records verified commits (849c05b etc.) \u2014 evidence of audit input, no closure record for the decision itself",
+   "residual_risk": "Medium: chain work (C01-C05) is gated on it; verify closure before dispatching chain WPs",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-G03",
+   "title": "Register PRD in roadmap/MOC indexes and map acceptance criteria to WPs",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "depends on G00,G01",
+   "evidence_of_delivery": "Roadmap links PRD; AC-to-WP map not found in repo docs",
+   "residual_risk": "Low-Medium",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-T01",
+   "title": "Correct unique tool-call accounting and lifecycle dedupe",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "required Phase-1 telemetry-integrity package",
+   "evidence_of_delivery": "not classified delivered in snapshot",
+   "residual_risk": "Medium: unverified against code in this audit",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-T02",
+   "title": "Add thinking start/end spans, segment identity and durations",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "required Phase-1 telemetry-integrity package",
+   "evidence_of_delivery": "not classified delivered in snapshot",
+   "residual_risk": "Medium: unverified against code in this audit",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-T03",
+   "title": "Add turn/message/tool timing and time-to-first-action metrics",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "required Phase-1 telemetry-integrity package",
+   "evidence_of_delivery": "not classified delivered in snapshot",
+   "residual_risk": "Medium: unverified against code in this audit",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-T04",
+   "title": "Correct activity/stall semantics including think/thinking",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "required Phase-1 telemetry-integrity package",
+   "evidence_of_delivery": "not classified delivered in snapshot",
+   "residual_risk": "Medium: unverified against code in this audit",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-T05",
+   "title": "Wire forensic events into live Prometheus projection",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "required Phase-1 telemetry-integrity package",
+   "evidence_of_delivery": "partial: snapshot lists 'forensic identity, structured feeds, Prometheus foundations' as delivered",
+   "residual_risk": "Medium: unverified against code in this audit",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-T06",
+   "title": "Persist candidate fingerprint: model, prompt, rule, skill, runtime, tool catalog hashes",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "required Phase-1 telemetry-integrity package",
+   "evidence_of_delivery": "not classified delivered in snapshot",
+   "residual_risk": "Medium: unverified against code in this audit",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-T07",
+   "title": "Ship telemetry-integrity-v1 suite and compatibility/version markers",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "required Phase-1 telemetry-integrity package",
+   "evidence_of_delivery": "not classified delivered in snapshot",
+   "residual_risk": "Medium: T07/S08 suite explicitly listed as residual in snapshot",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-E01",
+   "title": "Eval tables, migrations, DAO and versioned types",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "defined; evaluation gated to a later programme per roadmap README ('Evaluation... remain gated later programmes')",
+   "evidence_of_delivery": "snapshot: 'Not implemented as released runtime: Eval Core and sp eval'",
+   "residual_risk": "High: entire family unimplemented as released runtime",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-E02",
+   "title": "Eval forensic event catalog and shared writer",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "defined; evaluation gated to a later programme per roadmap README ('Evaluation... remain gated later programmes')",
+   "evidence_of_delivery": "snapshot: 'Not implemented as released runtime: Eval Core and sp eval'",
+   "residual_risk": "High: entire family unimplemented as released runtime",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-E03",
+   "title": "Grader interface, registry and deterministic assertion result schema",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "defined; evaluation gated to a later programme per roadmap README ('Evaluation... remain gated later programmes')",
+   "evidence_of_delivery": "snapshot: 'Not implemented as released runtime: Eval Core and sp eval'",
+   "residual_risk": "High: entire family unimplemented as released runtime",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-E04",
+   "title": "Data-completeness model and historical backfill",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "defined; evaluation gated to a later programme per roadmap README ('Evaluation... remain gated later programmes')",
+   "evidence_of_delivery": "snapshot: 'Not implemented as released runtime: Eval Core and sp eval'",
+   "residual_risk": "High: entire family unimplemented as released runtime",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-E05",
+   "title": "Post-run evaluator in observe-only mode",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "defined; evaluation gated to a later programme per roadmap README ('Evaluation... remain gated later programmes')",
+   "evidence_of_delivery": "snapshot: 'Not implemented as released runtime: Eval Core and sp eval'",
+   "residual_risk": "High: entire family unimplemented as released runtime",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-E06",
+   "title": "Post-chain evaluator over resolved shape",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "defined; evaluation gated to a later programme per roadmap README ('Evaluation... remain gated later programmes')",
+   "evidence_of_delivery": "snapshot: 'Not implemented as released runtime: Eval Core and sp eval'",
+   "residual_risk": "High: entire family unimplemented as released runtime",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-E07",
+   "title": "Paired experiment runner, randomization and candidate manifest",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "defined; evaluation gated to a later programme per roadmap README ('Evaluation... remain gated later programmes')",
+   "evidence_of_delivery": "snapshot: 'Not implemented as released runtime: Eval Core and sp eval'",
+   "residual_risk": "High: entire family unimplemented as released runtime",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-E08",
+   "title": "Statistics, pairwise judge records and promotion policy engine",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "defined; evaluation gated to a later programme per roadmap README ('Evaluation... remain gated later programmes')",
+   "evidence_of_delivery": "snapshot: 'Not implemented as released runtime: Eval Core and sp eval'",
+   "residual_risk": "High: entire family unimplemented as released runtime",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-E09",
+   "title": "sp eval CLI: suite/case/run/compare/inspect/backfill",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "defined; evaluation gated to a later programme per roadmap README ('Evaluation... remain gated later programmes')",
+   "evidence_of_delivery": "snapshot: 'Not implemented as released runtime: Eval Core and sp eval'",
+   "residual_risk": "High: entire family unimplemented as released runtime",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-E10",
+   "title": "Continuous eval scheduling and recursion exclusion",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "defined; evaluation gated to a later programme per roadmap README ('Evaluation... remain gated later programmes')",
+   "evidence_of_delivery": "snapshot: 'Not implemented as released runtime: Eval Core and sp eval'",
+   "residual_risk": "High: entire family unimplemented as released runtime",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-P01",
+   "title": "Resolved prompt manifest with component hashes/tokens and duplicate/conflict detection",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "prompt modernization classified partial in snapshot ('selected progressive-disclosure and contract cleanup'; residual: generated output contract and evidence-driven A/B promotion)",
+   "evidence_of_delivery": "snapshot partial-delivery row",
+   "residual_risk": "Medium: P02/P03 output contract and P09 A/B explicitly residual",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-P02",
+   "title": "Canonical base status/verdict vocabulary and formal merged JSON Schema",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "prompt modernization classified partial in snapshot ('selected progressive-disclosure and contract cleanup'; residual: generated output contract and evidence-driven A/B promotion)",
+   "evidence_of_delivery": "snapshot partial-delivery row",
+   "residual_risk": "Medium: P02/P03 output contract and P09 A/B explicitly residual",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-P03",
+   "title": "Replace duplicate manual handoff/output rules with generated contract as SSOT",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "prompt modernization classified partial in snapshot ('selected progressive-disclosure and contract cleanup'; residual: generated output contract and evidence-driven A/B promotion)",
+   "evidence_of_delivery": "snapshot partial-delivery row",
+   "residual_risk": "Medium: P02/P03 output contract and P09 A/B explicitly residual",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-P04",
+   "title": "Role-aware runner injections: style, GitNexus, Beads close, read-only/research behavior",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "prompt modernization classified partial in snapshot ('selected progressive-disclosure and contract cleanup'; residual: generated output contract and evidence-driven A/B promotion)",
+   "evidence_of_delivery": "snapshot partial-delivery row",
+   "residual_risk": "Medium: P02/P03 output contract and P09 A/B explicitly residual",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-P05",
+   "title": "Overthinker and researcher slim prompts plus procedures moved to skills",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "prompt modernization classified partial in snapshot ('selected progressive-disclosure and contract cleanup'; residual: generated output contract and evidence-driven A/B promotion)",
+   "evidence_of_delivery": "snapshot partial-delivery row",
+   "residual_risk": "Medium: P02/P03 output contract and P09 A/B explicitly residual",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-P06",
+   "title": "Seconder and test-engineer slim prompts; formal test-engineer schema and mode",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "prompt modernization classified partial in snapshot ('selected progressive-disclosure and contract cleanup'; residual: generated output contract and evidence-driven A/B promotion)",
+   "evidence_of_delivery": "snapshot partial-delivery row",
+   "residual_risk": "Medium: P02/P03 output contract and P09 A/B explicitly residual",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-P07",
+   "title": "Executor slim prompt and language/procedure skill separation",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "prompt modernization classified partial in snapshot ('selected progressive-disclosure and contract cleanup'; residual: generated output contract and evidence-driven A/B promotion)",
+   "evidence_of_delivery": "snapshot partial-delivery row",
+   "residual_risk": "Medium: P02/P03 output contract and P09 A/B explicitly residual",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-P08",
+   "title": "Reviewer slim prompt, upstream-evidence contract and false-PASS safeguards",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "prompt modernization classified partial in snapshot ('selected progressive-disclosure and contract cleanup'; residual: generated output contract and evidence-driven A/B promotion)",
+   "evidence_of_delivery": "snapshot partial-delivery row",
+   "residual_risk": "Medium: P02/P03 output contract and P09 A/B explicitly residual",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-P09",
+   "title": "Factorial prompt\u00d7model experiments and staged promotion for all six roles",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "prompt modernization classified partial in snapshot ('selected progressive-disclosure and contract cleanup'; residual: generated output contract and evidence-driven A/B promotion)",
+   "evidence_of_delivery": "snapshot partial-delivery row",
+   "residual_risk": "Medium: P02/P03 output contract and P09 A/B explicitly residual",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-XP01",
+   "title": "specialists.execution.v1 schemas, reusable profiles, protocol state and pure reducer/event catalog",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "observe/shadow permitted pre-AC0; XP06 enforcement blocked until relevant AC0 blockers close",
+   "evidence_of_delivery": "design fully specified in specialist-execution-protocol.md; no released-runtime delivery evidence",
+   "residual_risk": "Critical: protocol is the DO0 core; XP06 is the authoritative-finalization keystone",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-XP02",
+   "title": "Context resolver, seven-field structural contract gate and semantic readiness result",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "observe/shadow permitted pre-AC0; XP06 enforcement blocked until relevant AC0 blockers close",
+   "evidence_of_delivery": "design fully specified in specialist-execution-protocol.md; no released-runtime delivery evidence",
+   "residual_risk": "Critical: protocol is the DO0 core; XP06 is the authoritative-finalization keystone",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-XP03",
+   "title": "Mandatory-rule delivery receipt/acknowledgement plus conditional memory decision and telemetry",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "observe/shadow permitted pre-AC0; XP06 enforcement blocked until relevant AC0 blockers close",
+   "evidence_of_delivery": "design fully specified in specialist-execution-protocol.md; no released-runtime delivery evidence",
+   "residual_risk": "Critical: protocol is the DO0 core; XP06 is the authoritative-finalization keystone",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-XP04",
+   "title": "Typed activation-local plan, scope/capability validator and plan-deviation evidence",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "observe/shadow permitted pre-AC0; XP06 enforcement blocked until relevant AC0 blockers close",
+   "evidence_of_delivery": "design fully specified in specialist-execution-protocol.md; no released-runtime delivery evidence",
+   "residual_risk": "Critical: protocol is the DO0 core; XP06 is the authoritative-finalization keystone",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-XP05",
+   "title": "Evidence-requirement catalog and validators, including conditional GitNexus/current-diff evidence",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "observe/shadow permitted pre-AC0; XP06 enforcement blocked until relevant AC0 blockers close",
+   "evidence_of_delivery": "design fully specified in specialist-execution-protocol.md; no released-runtime delivery evidence",
+   "residual_risk": "Critical: protocol is the DO0 core; XP06 is the authoritative-finalization keystone",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-XP06",
+   "title": "Central commit \u2192 result \u2192 Bead note \u2192 parent message \u2192 forensic \u2192 cleanup finalization with idempotency",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "observe/shadow permitted pre-AC0; XP06 enforcement blocked until relevant AC0 blockers close; snapshot lists executable execution.v1 profiles and PREPARE/FINALIZE reducers as not implemented",
+   "evidence_of_delivery": "design fully specified in specialist-execution-protocol.md; no released-runtime delivery evidence",
+   "residual_risk": "Critical: protocol is the DO0 core; XP06 is the authoritative-finalization keystone",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-XP07",
+   "title": "specialist-execution-protocol-v1 simulation, failure-injection and role-profile rollout suite",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "observe/shadow permitted pre-AC0; XP06 enforcement blocked until relevant AC0 blockers close",
+   "evidence_of_delivery": "design fully specified in specialist-execution-protocol.md; no released-runtime delivery evidence",
+   "residual_risk": "Critical: protocol is the DO0 core; XP06 is the authoritative-finalization keystone",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-C01",
+   "title": "READ_ONLY path binding independent of owner liveness",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "critical chain-foundation packages; gated on G02",
+   "evidence_of_delivery": "not verified delivered; deterministic-context row of snapshot marks full chain position/gates as residual",
+   "residual_risk": "High: chain spine is the DO0 critical path",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-C02",
+   "title": "Persisted resolved chain shape with ordered steps/gates/status/job pointers",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "critical chain-foundation packages; gated on G02",
+   "evidence_of_delivery": "not implemented as released runtime (snapshot: sp chain commands, persisted ResolvedChain absent)",
+   "residual_risk": "High: chain spine is the DO0 critical path",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-C03",
+   "title": "sp chain review/approve/insert using resolved shape plus native Beads primitives",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "critical chain-foundation packages; gated on G02",
+   "evidence_of_delivery": "not implemented as released runtime (snapshot: sp chain commands, persisted ResolvedChain absent)",
+   "residual_risk": "High: chain spine is the DO0 critical path",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-C04",
+   "title": "Authoritative kind:step, root/step resolution and semantic-edge query helpers",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "critical chain-foundation packages; gated on G02",
+   "evidence_of_delivery": "not verified delivered; deterministic-context row of snapshot marks full chain position/gates as residual",
+   "residual_risk": "High: chain spine is the DO0 critical path",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-C05",
+   "title": "Chain-driven dispatch/workspace resolution with native claim/pool/lease semantics and flag deprecation bridge",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "critical chain-foundation packages; gated on G02",
+   "evidence_of_delivery": "not verified delivered; deterministic-context row of snapshot marks full chain position/gates as residual",
+   "residual_risk": "High: chain spine is the DO0 critical path",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-C06",
+   "title": "Deterministic <chain-context> envelope with completeness flags and upstream pointers",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "critical chain-foundation packages; gated on G02",
+   "evidence_of_delivery": "not verified delivered; deterministic-context row of snapshot marks full chain position/gates as residual",
+   "residual_risk": "High: chain spine is the DO0 critical path",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-C07",
+   "title": "Shared chain-participant rule and role-specific identity clauses",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "critical chain-foundation packages; gated on G02",
+   "evidence_of_delivery": "not verified delivered; deterministic-context row of snapshot marks full chain position/gates as residual",
+   "residual_risk": "High: chain spine is the DO0 critical path",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-C08",
+   "title": "Structured handoff extension for decisions, inputs consumed and downstream attention",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "critical chain-foundation packages; gated on G02",
+   "evidence_of_delivery": "not verified delivered; deterministic-context row of snapshot marks full chain position/gates as residual",
+   "residual_risk": "High: chain spine is the DO0 critical path",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-C09",
+   "title": "Minimal step_completed visibility/evidence/recommendation bridge; compatible with Channels",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "critical chain-foundation packages; gated on G02",
+   "evidence_of_delivery": "not verified delivered; deterministic-context row of snapshot marks full chain position/gates as residual",
+   "residual_risk": "High: chain spine is the DO0 critical path",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-C10",
+   "title": "chain-participation-v1 eval suite",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "critical chain-foundation packages; gated on G02",
+   "evidence_of_delivery": "not verified delivered; deterministic-context row of snapshot marks full chain position/gates as residual",
+   "residual_risk": "High: chain spine is the DO0 critical path",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-M01",
+   "title": "Audit bd memories/bd recall/guarded remember behavior, provenance gaps, filtering, ranking",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "pull-based memory program; gated later",
+   "evidence_of_delivery": "ARCHITECTURE.md documents shipped keyword-filtered eager injection (the behavior M03 targets); pull model not implemented; snapshot lists three-lens memory as not implemented",
+   "residual_risk": "Medium-High: eager injection still live; M01 audit precondition unresolved in canon",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-M02",
+   "title": "Targeted memory search/relevant interface or wrapper with bounded output",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "pull-based memory program; gated later",
+   "evidence_of_delivery": "ARCHITECTURE.md documents shipped keyword-filtered eager injection (the behavior M03 targets); pull model not implemented; snapshot lists three-lens memory as not implemented",
+   "residual_risk": "Medium-High: eager injection still live; M01 audit precondition unresolved in canon",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-M03",
+   "title": "Disable eager injection behind experiment flag and preserve rollback",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "pull-based memory program; gated later",
+   "evidence_of_delivery": "ARCHITECTURE.md documents shipped keyword-filtered eager injection (the behavior M03 targets); pull model not implemented; snapshot lists three-lens memory as not implemented",
+   "residual_risk": "Medium-High: eager injection still live; M01 audit precondition unresolved in canon",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-M04",
+   "title": "Memory-recall mandatory rule, role opt-outs and authority/provenance policy",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "pull-based memory program; gated later",
+   "evidence_of_delivery": "ARCHITECTURE.md documents shipped keyword-filtered eager injection (the behavior M03 targets); pull model not implemented; snapshot lists three-lens memory as not implemented",
+   "residual_risk": "Medium-High: eager injection still live; M01 audit precondition unresolved in canon",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-M05",
+   "title": "Memory query/recall telemetry and deterministic graders",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "pull-based memory program; gated later",
+   "evidence_of_delivery": "ARCHITECTURE.md documents shipped keyword-filtered eager injection (the behavior M03 targets); pull model not implemented; snapshot lists three-lens memory as not implemented",
+   "residual_risk": "Medium-High: eager injection still live; M01 audit precondition unresolved in canon",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-M06",
+   "title": "Role-by-role A/B rollout and promotion",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "pull-based memory program; gated later",
+   "evidence_of_delivery": "ARCHITECTURE.md documents shipped keyword-filtered eager injection (the behavior M03 targets); pull model not implemented; snapshot lists three-lens memory as not implemented",
+   "residual_risk": "Medium-High: eager injection still live; M01 audit precondition unresolved in canon",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-S01",
+   "title": "reviewer-regression-v1 eval suite",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "fixture/dataset packages after grader interface stabilizes",
+   "evidence_of_delivery": "no released eval runtime; snapshot lists Eval Core as not implemented",
+   "residual_risk": "High dependency on E-family",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-S02",
+   "title": "executor-swe-style-v1 eval suite",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "fixture/dataset packages after grader interface stabilizes",
+   "evidence_of_delivery": "no released eval runtime; snapshot lists Eval Core as not implemented",
+   "residual_risk": "High dependency on E-family",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-S03",
+   "title": "seconder-regression-v1 eval suite",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "fixture/dataset packages after grader interface stabilizes",
+   "evidence_of_delivery": "no released eval runtime; snapshot lists Eval Core as not implemented",
+   "residual_risk": "High dependency on E-family",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-S04",
+   "title": "test-engineer-regression-v1 eval suite",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "fixture/dataset packages after grader interface stabilizes",
+   "evidence_of_delivery": "no released eval runtime; snapshot lists Eval Core as not implemented",
+   "residual_risk": "High dependency on E-family",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-S05",
+   "title": "researcher-regression-v1 eval suite",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "fixture/dataset packages after grader interface stabilizes",
+   "evidence_of_delivery": "no released eval runtime; snapshot lists Eval Core as not implemented",
+   "residual_risk": "High dependency on E-family",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-S06",
+   "title": "overthinker-capability-v1 eval suite",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "fixture/dataset packages after grader interface stabilizes",
+   "evidence_of_delivery": "no released eval runtime; snapshot lists Eval Core as not implemented",
+   "residual_risk": "High dependency on E-family",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-S07",
+   "title": "chain-participation-v1 eval suite",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "fixture/dataset packages after grader interface stabilizes",
+   "evidence_of_delivery": "no released eval runtime; snapshot lists Eval Core as not implemented",
+   "residual_risk": "High dependency on E-family",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-S08",
+   "title": "telemetry-integrity-v1 eval suite",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "fixture/dataset packages after grader interface stabilizes",
+   "evidence_of_delivery": "no released eval runtime; snapshot lists Eval Core as not implemented",
+   "residual_risk": "High dependency on E-family",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-U01",
+   "title": "Materialize eval summaries, completeness and evidence refs",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "Console packages; console repo ownership",
+   "evidence_of_delivery": "console repo not audited here; upstream E-family unimplemented",
+   "residual_risk": "Medium: blocked on E01/E02",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-U02",
+   "title": "Eval query APIs and DTOs",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "Console packages; console repo ownership",
+   "evidence_of_delivery": "console repo not audited here; upstream E-family unimplemented",
+   "residual_risk": "Medium: blocked on E01/E02",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-U03",
+   "title": "Eval overview, experiment, case and trial routes",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "Console packages; console repo ownership",
+   "evidence_of_delivery": "console repo not audited here; upstream E-family unimplemented",
+   "residual_risk": "Medium: blocked on E01/E02",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-U04",
+   "title": "Trial timeline with thinking/tool/text/evidence drilldown",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "Console packages; console repo ownership",
+   "evidence_of_delivery": "console repo not audited here; upstream E-family unimplemented",
+   "residual_risk": "Medium: blocked on E01/E02",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-U05",
+   "title": "Historical mining and case-promotion workflow",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "Console packages; console repo ownership",
+   "evidence_of_delivery": "console repo not audited here; upstream E-family unimplemented",
+   "residual_risk": "Medium: blocked on E01/E02",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-U06",
+   "title": "Live eval updates, adjudication and promotion UX",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "Console packages; console repo ownership",
+   "evidence_of_delivery": "console repo not audited here; upstream E-family unimplemented",
+   "residual_risk": "Medium: blocked on E01/E02",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-IC01",
+   "title": "Audit every using-specialists heading; content migration and prompt-envelope parity matrices",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "interactive coordinator bridge family",
+   "evidence_of_delivery": "partial at best: snapshot residual column notes coordinator reducer input/bounded authority/incident-close-recovery semantics outstanding",
+   "residual_risk": "Medium",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-IC02",
+   "title": "Compact progressive-disclosure using-specialists tree and global recursive installation",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "interactive coordinator bridge family",
+   "evidence_of_delivery": "partial at best: snapshot residual column notes coordinator reducer input/bounded authority/incident-close-recovery semantics outstanding",
+   "residual_risk": "Medium",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-IC03",
+   "title": "Rewrite chain-coordinator stable prompt; remove hardcoded chain sequence",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "interactive coordinator bridge family",
+   "evidence_of_delivery": "partial at best: snapshot residual column notes coordinator reducer input/bounded authority/incident-close-recovery semantics outstanding",
+   "residual_risk": "Medium",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-IC04",
+   "title": "Coordinator-specific chain-template/scope/conflict/close guidance via native bd queries",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "interactive coordinator bridge family",
+   "evidence_of_delivery": "partial at best: snapshot residual column notes coordinator reducer input/bounded authority/incident-close-recovery semantics outstanding",
+   "residual_risk": "Medium",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-IC05",
+   "title": "Pure interactive task/standby renderer reusing sp run task-side assembly",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "interactive coordinator bridge family",
+   "evidence_of_delivery": "partial at best: snapshot residual column notes coordinator reducer input/bounded authority/incident-close-recovery semantics outstanding",
+   "residual_risk": "Medium",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-IC06",
+   "title": "Audit/deduplicate coordinator task_template Bead rendering",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "interactive coordinator bridge family",
+   "evidence_of_delivery": "partial at best: snapshot residual column notes coordinator reducer input/bounded authority/incident-close-recovery semantics outstanding",
+   "residual_risk": "Medium",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-IC07",
+   "title": "Startup starting \u2192 agent.ready \u2192 idle handshake for Pi and Claude",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "interactive coordinator bridge family",
+   "evidence_of_delivery": "likely delivered: snapshot released list includes interactive chain-coordinator bridge persona, terminal parent notifications, xtmux reply/monitor semantics",
+   "residual_risk": "Medium",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-IC08",
+   "title": "Extend xtmux handoff for existing prompt file, readiness wait and monitor integration",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "interactive coordinator bridge family",
+   "evidence_of_delivery": "likely delivered: snapshot released list includes interactive chain-coordinator bridge persona, terminal parent notifications, xtmux reply/monitor semantics",
+   "residual_risk": "Medium",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-IC09",
+   "title": "Core direct --bead auto-assignment through Specialists renderer + xtmux secure delivery",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "interactive coordinator bridge family",
+   "evidence_of_delivery": "likely delivered: snapshot released list includes interactive chain-coordinator bridge persona, terminal parent notifications, xtmux reply/monitor semantics",
+   "residual_risk": "Medium",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-IC10",
+   "title": "Preheated standby bootstrap, role.ready, xt role assign, one-epic lifecycle with anti-steal claim semantics",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "interactive coordinator bridge family",
+   "evidence_of_delivery": "partial at best: snapshot residual column notes coordinator reducer input/bounded authority/incident-close-recovery semantics outstanding",
+   "residual_risk": "Medium",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-IC11",
+   "title": "Coordinator message vocabulary, conflict-matrix artifact and peer/orchestrator protocol",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "interactive coordinator bridge family",
+   "evidence_of_delivery": "partial at best: snapshot residual column notes coordinator reducer input/bounded authority/incident-close-recovery semantics outstanding",
+   "residual_risk": "Medium",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-IC12",
+   "title": "Deterministic/live coordinator evals, Pi/Claude/direct comparison and no-leak tests",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "interactive coordinator bridge family",
+   "evidence_of_delivery": "partial at best: snapshot residual column notes coordinator reducer input/bounded authority/incident-close-recovery semantics outstanding",
+   "residual_risk": "Medium",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-IC13",
+   "title": "Integrate coordinator with resolved chain shape/composition APIs rather than manual DAG reconstruction",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "interactive coordinator bridge family",
+   "evidence_of_delivery": "blocked: depends on persisted resolved shape (C02/C03) which snapshot lists as not implemented",
+   "residual_risk": "High",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-H01",
+   "title": "Shared pure Bead/chain policy kernel for readiness, SCRUTINY and template recommendation",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "policy-hook family; independently valuable, shadow-first",
+   "evidence_of_delivery": "no delivery evidence in snapshot; ARCHITECTURE.md shows runner keyword-filter injection pipeline but not the policy kernel",
+   "residual_risk": "Medium: verify against src before treating as open",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-H02",
+   "title": "Claude cheap prefilter plus Pre/PostToolUse adapters",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "policy-hook family; independently valuable, shadow-first",
+   "evidence_of_delivery": "no delivery evidence in snapshot; ARCHITECTURE.md shows runner keyword-filter injection pipeline but not the policy kernel",
+   "residual_risk": "Medium: verify against src before treating as open",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-H03",
+   "title": "Pi in-process adapter using the same kernel",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "policy-hook family; independently valuable, shadow-first",
+   "evidence_of_delivery": "no delivery evidence in snapshot; ARCHITECTURE.md shows runner keyword-filter injection pipeline but not the policy kernel",
+   "residual_risk": "Medium: verify against src before treating as open",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-H04",
+   "title": "Durable policy findings, stable fingerprints and reconciliation",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "policy-hook family; independently valuable, shadow-first",
+   "evidence_of_delivery": "no delivery evidence in snapshot; ARCHITECTURE.md shows runner keyword-filter injection pipeline but not the policy kernel",
+   "residual_risk": "Medium: verify against src before treating as open",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-H05",
+   "title": "Shadow/warn/enforce parity, latency and false-positive evaluation",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md"
+   ],
+   "current_status_claimed": "policy-hook family; independently valuable, shadow-first",
+   "evidence_of_delivery": "no delivery evidence in snapshot; ARCHITECTURE.md shows runner keyword-filter injection pipeline but not the policy kernel",
+   "residual_risk": "Medium: verify against src before treating as open",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-X01",
+   "title": "Stage 0 detail spec: daemon, state.db, socket, schema registry, registration",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "deferred Track B (xtrm-owned), linked future epics, off critical path",
+   "evidence_of_delivery": "outside specialists repo; roadmap \u00a74 keeps Substrate/Channels as future replacement surfaces only",
+   "residual_risk": "Low for specialists runway; becomes critical when Channels cutover starts",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-X02",
+   "title": "Resolve canonical Channels storage/ownership in packages/channels",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "deferred Track B (xtrm-owned), linked future epics, off critical path",
+   "evidence_of_delivery": "outside specialists repo; roadmap \u00a74 keeps Substrate/Channels as future replacement surfaces only",
+   "residual_risk": "Low for specialists runway; becomes critical when Channels cutover starts",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-X03",
+   "title": "Channels 0.1 autonomous chain path",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "deferred Track B (xtrm-owned), linked future epics, off critical path",
+   "evidence_of_delivery": "outside specialists repo; roadmap \u00a74 keeps Substrate/Channels as future replacement surfaces only",
+   "residual_risk": "Low for specialists runway; becomes critical when Channels cutover starts",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-X04",
+   "title": "xtmux notification adapter over canonical message/handoff events",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "deferred Track B (xtrm-owned), linked future epics, off critical path",
+   "evidence_of_delivery": "outside specialists repo; roadmap \u00a74 keeps Substrate/Channels as future replacement surfaces only",
+   "residual_risk": "Low for specialists runway; becomes critical when Channels cutover starts",
+   "keep_identifier": true
+  },
+  {
+   "wp_id": "WP-X05",
+   "title": "Channels 0.2 freeform/node activation and collaboration evals",
+   "source_files": [
+    "docs/design/roadmap/enhanced-prd.md",
+    "docs/design/roadmap/chains-prompt-evals.md"
+   ],
+   "current_status_claimed": "deferred Track B (xtrm-owned), linked future epics, off critical path",
+   "evidence_of_delivery": "outside specialists repo; roadmap \u00a74 keeps Substrate/Channels as future replacement surfaces only",
+   "residual_risk": "Low for specialists runway; becomes critical when Channels cutover starts",
+   "keep_identifier": true
+  }
+ ]
+}
