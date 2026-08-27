@@ -1,5 +1,5 @@
 export type ToolTier = 'READ_ONLY' | 'LOW' | 'MEDIUM' | 'HIGH';
-export type ToolCatalogName = 'native' | 'gitnexus' | 'python-kernel';
+export type ToolCatalogName = 'native' | 'gitnexus' | 'python-kernel' | 'service-knowledge';
 export type ExtensionHealth = 'not_installed' | 'disabled' | 'loaded_healthy' | 'loaded_unhealthy' | 'unknown';
 export type DeniedNativesMode = 'soft' | 'hard';
 export type EffectiveExtensionStatus = 'available' | 'disabled' | 'not_installed' | 'loaded_unhealthy' | 'unknown' | 'catalog_incompatible';

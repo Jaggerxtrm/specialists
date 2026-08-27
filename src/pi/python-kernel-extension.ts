@@ -57,3 +57,36 @@ export function resolvePiExtensionsPythonKernelPath(): string | null {
 export function __resetPiExtensionsPythonKernelPathCacheForTest(): void {
   cached = undefined;
 }
+
+// service-knowledge ext (relocated xtrm-6z6.5): resolves the index.ts entry of
+// the @jaggerxtrm/pi-service-knowledge npm package (global node_modules). The
+// ext self-gates (no registry -> zero surface), so injecting it when present
+// is safe in every session. Same candidate-dir walk as the python-kernel
+// resolver above.
+const SK_PACKAGE_DIR = join('@jaggerxtrm', 'pi-service-knowledge');
+
+let skCached: string | null | undefined;
+
+export function getServiceKnowledgeExtensionPath(): string | null {
+  if (skCached !== undefined) return skCached;
+  const globalDir = resolveGlobalNodeModulesDir();
+  if (globalDir) {
+    const candidate = join(globalDir, SK_PACKAGE_DIR, 'index.ts');
+    if (existsSync(candidate)) {
+      skCached = resolve(candidate);
+      return skCached;
+    }
+  }
+  skCached = null;
+  return skCached;
+}
+
+/** Alias used by session.ts injection site. */
+export function resolveServiceKnowledgeExtensionPath(): string | null {
+  return getServiceKnowledgeExtensionPath();
+}
+
+/** Test-only reset for the service-knowledge path cache. */
+export function __resetServiceKnowledgeExtensionPathCacheForTest(): void {
+  skCached = undefined;
+}
