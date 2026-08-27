@@ -16,7 +16,7 @@ const SPECIALIST = {
 };
 
 const CATALOG_INDEX = {
-  precedence_order: ['native', 'gitnexus'],
+  precedence_order: ['native', 'gitnexus', 'python-kernel'],
   catalogs: [
     {
       catalog: 'native',
@@ -31,6 +31,13 @@ const CATALOG_INDEX = {
       version: '0.6.1',
       precedence: 1,
       source_tiers: { READ_ONLY: ['gitnexus_list_repos'], LOW: ['gitnexus_list_repos'], MEDIUM: ['gitnexus_list_repos'], HIGH: ['gitnexus_list_repos'] },
+    },
+    {
+      catalog: 'python-kernel',
+      package: '@jaggerxtrm/pi-extensions',
+      version: '0.11.7',
+      precedence: 2,
+      source_tiers: { READ_ONLY: [], LOW: [], MEDIUM: ['python'], HIGH: ['python'] },
     },
   ],
 };

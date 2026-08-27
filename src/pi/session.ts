@@ -40,6 +40,7 @@ export class StallTimeoutError extends Error {
 import { createHash } from 'node:crypto';
 import { getReadLineNumbersExtensionPath } from './read-line-numbers-extension.js';
 import { getExtensionToolPolicyExtensionPath, NATIVE_TOOLS_ENV_KEY } from './extension-tool-policy-extension.js';
+import { resolvePiExtensionsPythonKernelPath } from './python-kernel-extension.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -301,6 +302,62 @@ function resolveGitnexusRuntime(options: { catalogIndex: ToolCatalogIndex; exclu
   };
 }
 
+function resolvePiExtensionsPythonKernelRuntime(options: { catalogIndex: ToolCatalogIndex; excludeExtensions?: readonly string[] }): {
+  packageName: string;
+  packagePath?: string;
+  extensionState: ExtensionState;
+} {
+  const catalog = options.catalogIndex.catalogs.find((c) => c.catalog === 'python-kernel');
+  const packageName = catalog?.package ?? '@jaggerxtrm/pi-extensions';
+  if ((options.excludeExtensions ?? []).includes(packageName)) {
+    return {
+      packageName,
+      extensionState: { enabled: false, health: 'disabled', catalogCompatible: true },
+    };
+  }
+
+  const globalDir = resolveGlobalNodeModulesDir();
+  if (!globalDir) {
+    return {
+      packageName,
+      extensionState: { enabled: true, health: 'not_installed', catalogCompatible: false },
+    };
+  }
+
+  const packagePath = join(globalDir, packageName);
+  const packageJsonPath = join(packagePath, 'package.json');
+  if (!existsSync(packageJsonPath)) {
+    return {
+      packageName,
+      extensionState: { enabled: true, health: 'not_installed', catalogCompatible: false },
+    };
+  }
+
+  const installedVersion = readPackageVersion(packageJsonPath);
+  const extPath = join(packagePath, 'extensions', 'python-kernel', 'index.ts');
+  if (!installedVersion || !existsSync(extPath)) {
+    return {
+      packageName,
+      packagePath,
+      extensionState: { enabled: true, health: 'loaded_unhealthy', catalogCompatible: false },
+    };
+  }
+
+  if (catalog && installedVersion !== catalog.version) {
+    return {
+      packageName,
+      packagePath,
+      extensionState: { enabled: true, health: 'loaded_unhealthy', catalogCompatible: false },
+    };
+  }
+
+  return {
+    packageName,
+    packagePath,
+    extensionState: { enabled: true, health: 'loaded_healthy', catalogCompatible: true },
+  };
+}
+
 export function resolveRuntimeToolContract(options: {
   level?: string;
   specialistName?: string;
@@ -322,6 +379,10 @@ export function resolveRuntimeToolContract(options: {
     catalogIndex,
     excludeExtensions: options.excludeExtensions,
   });
+  const pythonKernelRuntime = resolvePiExtensionsPythonKernelRuntime({
+    catalogIndex,
+    excludeExtensions: options.excludeExtensions,
+  });
 
   const runtimeCatalogs = toRuntimeToolCatalogs(catalogIndex);
 
@@ -339,11 +400,16 @@ export function resolveRuntimeToolContract(options: {
       extensionSources: options.extensionSources,
       extensionState: {
         gitnexus: gitnexusRuntime.extensionState,
+        'python-kernel': pythonKernelRuntime.extensionState,
       },
       extensionPackages: {
         gitnexus: {
           packageName: gitnexusRuntime.packageName,
           packagePath: gitnexusRuntime.packagePath,
+        },
+        'python-kernel': {
+          packageName: pythonKernelRuntime.packageName,
+          packagePath: pythonKernelRuntime.packagePath,
         },
       },
     });
@@ -876,6 +942,21 @@ export class PiAgentSession {
       const qgPath = join(piExtDir, 'quality-gates');
       if (existsSync(qgPath)) args.push('-e', qgPath);
     }
+    const ssPath = join(piExtDir, 'service-skills');
+    if (existsSync(ssPath)) args.push('-e', ssPath);
+
+    // python-kernel: persistent python3 tool (skillbridge/audit/QoL). Resolved
+    // from the @jaggerxtrm/pi-extensions package (global node_modules) like the
+    // gitnexus package — not from ~/.pi/agent/extensions (those loose copies
+    // are not managed). Injecting `python` gives specialists an in-kernel
+    // python REPL (e.g. service_knowledge machinery) instead of only bash.
+    // Audits (kernel-side file mutations) are surfaced in tool details when
+    // PI_KERNEL_AUDIT_POLICY=1 (set in hookEnv below).
+    const pyKernelPath = resolvePiExtensionsPythonKernelPath();
+    if (pyKernelPath && permLevel !== 'READ_ONLY') {
+      args.push('-e', pyKernelPath);
+    }
+
     // Caveman extension — terse output for agent-to-agent communication
     const cavemanPath = join(piExtDir, 'caveman');
     if (existsSync(cavemanPath)) args.push('-e', cavemanPath);
@@ -930,6 +1011,10 @@ export class PiAgentSession {
       ...(this.options.env ?? {}),
       ...policyEnv,
       CAVEMAN_LEVEL: 'full',
+      // python-kernel audit seam: surface kernel-side file mutations in tool
+      // details (report-only policy hook) so specialists that rebuild indexes
+      // or write from the kernel leave a visible audit trail.
+      PI_KERNEL_AUDIT_POLICY: '1',
     };
 
     const sessionCwd = resolve(this.options.cwd ?? process.cwd());

@@ -1,0 +1,16 @@
+{
+ "catalog": "python-kernel",
+ "package": "@jaggerxtrm/pi-extensions",
+ "version": "0.11.7",
+ "precedence": 2,
+ "source_tiers": {
+  "READ_ONLY": [],
+  "LOW": [],
+  "MEDIUM": [
+   "python"
+  ],
+  "HIGH": [
+   "python"
+  ]
+ }
+}

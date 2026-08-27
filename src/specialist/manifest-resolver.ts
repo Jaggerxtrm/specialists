@@ -1,5 +1,5 @@
 export type ToolTier = 'READ_ONLY' | 'LOW' | 'MEDIUM' | 'HIGH';
-export type ToolCatalogName = 'native' | 'gitnexus';
+export type ToolCatalogName = 'native' | 'gitnexus' | 'python-kernel';
 export type ExtensionHealth = 'not_installed' | 'disabled' | 'loaded_healthy' | 'loaded_unhealthy' | 'unknown';
 export type DeniedNativesMode = 'soft' | 'hard';
 export type EffectiveExtensionStatus = 'available' | 'disabled' | 'not_installed' | 'loaded_unhealthy' | 'unknown' | 'catalog_incompatible';
@@ -151,6 +151,13 @@ export function resolveManifestTools(input: ResolverInput): ResolverResult {
     : [];
   const requestedGitnexusTools = uniqueOrdered([...gitnexusBase, ...gitnexusExtras]);
 
+  // python-kernel: optional extension tool (persistent `python` REPL). Its
+  // tools join the list only when the extension state is available (package
+  // installed and catalog-compatible), mirroring the gitnexus gate below.
+  const pythonKernelTools = getTierTools(input.catalogs, 'python-kernel', input.tier);
+  const pythonKernelState = input.extensionState?.['python-kernel'];
+  const effectivePythonKernelState = resolveEffectiveExtensionState(pythonKernelState);
+
   const gitnexusState = input.specialistExclusions?.disabledExtensions?.includes('gitnexus')
     ? { ...input.extensionState?.gitnexus, enabled: false, health: 'disabled' as const }
     : input.extensionState?.gitnexus;
@@ -167,17 +174,21 @@ export function resolveManifestTools(input: ResolverInput): ResolverResult {
   const toolsList = uniqueOrdered([
     ...finalNativeTools,
     ...(effectiveGitnexusState.includeTools ? requestedGitnexusTools : []),
+    ...(effectivePythonKernelState.includeTools ? pythonKernelTools : []),
   ]);
 
   if (!effectiveGitnexusState.includeTools && requestedGitnexusTools.length > 0) {
     warnings.push(`gitnexus tools excluded by extension state: ${effectiveGitnexusState.status}`);
+  }
+  if (!effectivePythonKernelState.includeTools && pythonKernelTools.length > 0) {
+    warnings.push(`python-kernel tools excluded by extension state: ${effectivePythonKernelState.status}`);
   }
   if ((input.specialistExclusions?.disabledExtensions ?? []).length > 0) {
     warnings.push(`specialist exclusions: ${(input.specialistExclusions?.disabledExtensions ?? []).join(', ')}`);
     attribution.push({ layer: 'specialist_exclusion', source: 'specialist.json', tools: [] });
   }
 
-  attribution.push({ layer: 'catalog', source: 'tool catalogs', tools: uniqueOrdered([...nativeTools, ...requestedGitnexusTools]) });
+  attribution.push({ layer: 'catalog', source: 'tool catalogs', tools: uniqueOrdered([...nativeTools, ...requestedGitnexusTools, ...pythonKernelTools]) });
   if (input.catalogDefaultOverrides?.[input.tier]) {
     attribution.push({
       layer: 'catalog_default',
