@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Repair bun observability baseline gate ([441558c](https://github.com/xtrm-dev/specialists/commit/441558ca021af24fc6385a7694c24a7a902b13ea))
+- Prevent forensic event seq overwrite ([91f2186](https://github.com/xtrm-dev/specialists/commit/91f2186dd708107bb9bb2d34554232dc347a04ef))
+
 ### Other changes
 - Support dynamic execution extension sources ([479d2b6](https://github.com/xtrm-dev/specialists/commit/479d2b69bce86b28c9556d21ecc00d27d10f2a74))
 - Remove retired loose service-skills injections ([d7ebe5b](https://github.com/xtrm-dev/specialists/commit/d7ebe5bea5431071dc25ebec3bd81992f0bf3802))

@@ -13046,7 +13046,8 @@ function migrateToV11(db) {
     const metricsColumns = new Set(db.query("PRAGMA table_info(specialist_job_metrics)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
     for (const column of [
       { name: "active_runtime_ms", definition: "INTEGER" },
-      { name: "waiting_ms", definition: "INTEGER" }
+      { name: "waiting_ms", definition: "INTEGER" },
+      { name: "startup_payload_json", definition: "TEXT" }
     ]) {
       if (!metricsColumns.has(column.name)) {
         db.run(`ALTER TABLE specialist_job_metrics ADD COLUMN ${column.name} ${column.definition}`);
@@ -13079,6 +13080,7 @@ function migrateToV11(db) {
       context_trajectory_json TEXT NOT NULL,
       stall_gaps_json TEXT NOT NULL,
       run_complete_json TEXT,
+      startup_payload_json TEXT,
       updated_at_ms INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_job_metrics_spec_model_updated ON specialist_job_metrics(specialist, model, updated_at_ms DESC);
@@ -13710,6 +13712,10 @@ class SqliteClient {
     const row = this.db.query("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM specialist_events WHERE job_id = ?").get(jobId);
     return row?.next_seq ?? 1;
   }
+  getNextForensicEventSeq(jobId) {
+    const row = this.db.query("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM specialist_forensic_events WHERE job_id = ?").get(jobId);
+    return row?.next_seq ?? 1;
+  }
   getNextNodeEventSeq(nodeRunId) {
     const row = this.db.query("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM node_events WHERE node_run_id = ?").get(nodeRunId);
     return row?.next_seq ?? 1;
@@ -13782,7 +13788,7 @@ class SqliteClient {
   }
   insertForensicEventRow(jobId, seq, forensicEvent) {
     this.db.run(`
-      INSERT OR REPLACE INTO specialist_forensic_events (
+      INSERT INTO specialist_forensic_events (
         job_id, seq, t, schema_version, event_family, event_name,
         participant_kind, participant_role, participant_id, redaction_status, event_json
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -14074,7 +14080,7 @@ class SqliteClient {
   }
   appendForensicEvent(jobId, specialist, beadId, forensicEvent) {
     withRetry(() => {
-      const seq = typeof forensicEvent.seq === "number" && forensicEvent.seq > 0 ? forensicEvent.seq : this.getNextSpecialistEventSeq(jobId);
+      const seq = typeof forensicEvent.seq === "number" && forensicEvent.seq > 0 ? forensicEvent.seq : this.getNextForensicEventSeq(jobId);
       this.insertForensicEventRow(jobId, seq, forensicEvent);
     }, "appendForensicEvent");
   }
@@ -14872,8 +14878,8 @@ class SqliteClient {
           job_id, specialist, model, status, chain_kind, chain_id, bead_id, node_id, epic_id,
           started_at_ms, completed_at_ms, elapsed_ms, active_runtime_ms, waiting_ms, total_turns, total_tools,
           tool_call_counts_json, token_trajectory_json, context_trajectory_json, stall_gaps_json,
-          run_complete_json, updated_at_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          run_complete_json, startup_payload_json, updated_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(job_id) DO UPDATE SET
           specialist = excluded.specialist,
           model = excluded.model,
@@ -14895,6 +14901,7 @@ class SqliteClient {
           context_trajectory_json = excluded.context_trajectory_json,
           stall_gaps_json = excluded.stall_gaps_json,
           run_complete_json = excluded.run_complete_json,
+          startup_payload_json = excluded.startup_payload_json,
           updated_at_ms = excluded.updated_at_ms;
       `, [
         record.job_id,
@@ -14918,6 +14925,7 @@ class SqliteClient {
         record.context_trajectory_json,
         record.stall_gaps_json,
         record.run_complete_json,
+        record.startup_payload_json,
         record.updated_at_ms
       ]);
       return record;
