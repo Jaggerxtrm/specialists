@@ -9,8 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [3.21.6] - 2026-08-28
-
 ### Other changes
 - Support dynamic execution extension sources ([479d2b6](https://github.com/xtrm-dev/specialists/commit/479d2b69bce86b28c9556d21ecc00d27d10f2a74))
 - Remove retired loose service-skills injections ([d7ebe5b](https://github.com/xtrm-dev/specialists/commit/d7ebe5bea5431071dc25ebec3bd81992f0bf3802))
