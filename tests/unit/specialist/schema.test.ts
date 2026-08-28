@@ -83,9 +83,8 @@ describe('override allowlist contract', () => {
       expect(result.specialist.stall_detection?.waiting_auto_close_ms).toBeNull();
     });
 
-    it('includes new nested execution extension leaf paths in OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS', () => {
-      expect(OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS).toContain('extensions.serena');
-      expect(OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS).toContain('extensions.gitnexus');
+    it('includes execution.extensions object path in OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS', () => {
+      expect(OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS).toContain('extensions');
     });
 
     it('includes system_prompt_mode in OVERRIDE_ALLOWED_PROMPT_FIELDS', () => {
@@ -220,10 +219,14 @@ describe('parseSpecialist', () => {
     (spec.specialist.execution as Record<string, unknown>).extensions = {
       serena: false,
       gitnexus: false,
+      'npm:@jaggerxtrm/pi-service-knowledge': true,
+      './relative-extension': true,
     };
     const result = await parseSpecialist(toJson(spec));
     expect(result.specialist.execution.extensions?.serena).toBe(false);
     expect(result.specialist.execution.extensions?.gitnexus).toBe(false);
+    expect(result.specialist.execution.extensions?.['npm:@jaggerxtrm/pi-service-knowledge']).toBe(true);
+    expect(result.specialist.execution.extensions?.['./relative-extension']).toBe(true);
   });
 
   it('accepts specialist.permissions manifest overrides', async () => {

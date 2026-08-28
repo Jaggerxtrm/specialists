@@ -6,7 +6,7 @@ This guide is the canonical reference for `~/.config/specialists/user.json`, cre
 
 The global override surface includes:
 
-- KAN-91 allowlisted user-environment fields: `prompt.system_prompt_mode`, `execution.extensions.gitnexus`, `notes_mode`, `output_file`, `execution.prompt_limit_bytes`, and `execution.stdout_limit_bytes`. The retired `execution.extensions.serena` field remains accepted only for legacy files and is ignored.
+- KAN-91 allowlisted user-environment fields: `prompt.system_prompt_mode`, `execution.extensions`, `notes_mode`, `output_file`, `execution.prompt_limit_bytes`, and `execution.stdout_limit_bytes`. `execution.extensions.gitnexus` remains opt-out, arbitrary trusted source-string keys are allowed, and retired `execution.extensions.serena` remains accepted only for legacy files and is ignored.
 - Additional runtime-default knobs: `execution.interactive` (default keep-alive behavior) and `stall_detection.waiting_auto_close_ms` (opt-in waiting auto-close threshold).
 - Fallback chains via `execution.fallback_models` while keeping legacy `execution.fallback_model`.
 - Preset references like `@preset/cheap` for model and fallback entries.
@@ -64,6 +64,32 @@ Pitfall: CLI flags still win. Effective precedence is `--no-keep-alive` > `--kee
 ```
 
 The value has no runtime effect. Specialists no longer probes, loads, or starts Serena.
+
+### `execution.extensions`
+
+- Type: `Record<string, boolean | null> | null`
+- Trust boundary: keys are executable extension sources. Set them only from reviewed config files, never prompts or untrusted payloads.
+- Merge semantics: package/global/repo layers merge per key; siblings are preserved.
+- Runtime semantics:
+  - `gitnexus: false` disables default GitNexus injection.
+  - `serena` is deprecated and ignored.
+  - any other key with value `true` is forwarded to Pi as `-e <key>` in insertion order.
+  - `false` or `null` skips that source.
+  - remote `npm:`, `git:`, and `http(s):` sources disable `--offline` for that run.
+- Example:
+
+```json
+{
+  "service-knowledge-sync": {
+    "execution": {
+      "extensions": {
+        "gitnexus": false,
+        "npm:@jaggerxtrm/pi-service-knowledge": true
+      }
+    }
+  }
+}
+```
 
 ### `execution.extensions.gitnexus`
 

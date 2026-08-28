@@ -347,7 +347,14 @@ describe('SpecialistRunner', () => {
   it('passes execution.extensions opt-out to PiAgentSession, ignoring retired serena flag', async () => {
     const sessionFactory = vi.fn().mockResolvedValue(mockSession);
     const runner = new SpecialistRunner({
-      loader: makeLoader({ extensions: { serena: false, gitnexus: false } }),
+      loader: makeLoader({
+        extensions: {
+          serena: false,
+          gitnexus: false,
+          'npm:@jaggerxtrm/pi-service-knowledge': true,
+          './local-extension': false,
+        },
+      }),
       hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
       circuitBreaker: new CircuitBreaker(),
       sessionFactory,
@@ -355,10 +362,10 @@ describe('SpecialistRunner', () => {
 
     await runner.run({ name: 'test-spec', prompt: 'do thing' });
 
-    // Serena injection is retired: the legacy serena:false flag parses but maps
-    // to nothing; only the gitnexus opt-out produces an exclusion.
     expect(sessionFactory).toHaveBeenCalledWith(expect.objectContaining({
       excludeExtensions: ['pi-gitnexus'],
+      extensionSources: ['npm:@jaggerxtrm/pi-service-knowledge'],
+      offline: false,
     }));
   });
 

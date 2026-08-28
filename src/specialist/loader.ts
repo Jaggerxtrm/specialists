@@ -229,11 +229,11 @@ export class SpecialistLoader {
       if (overrideValue === null || overrideValue === undefined) continue;
       baseExecution[field] = this.resolveOverrideValue(name, `specialist.execution.${field}`, overrideValue);
     }
-    for (const path of OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS) {
-      const overrideValue = readDottedPath(overrideExecution, path);
-      if (overrideValue === null || overrideValue === undefined) continue;
-      writeDottedPath(baseExecution, path, this.resolveOverrideValue(name, `specialist.execution.${path}`, overrideValue));
-    }
+    mergeExecutionExtensionOverrides({
+      baseExecution,
+      overrideExecution,
+      resolveValue: (path, value) => this.resolveOverrideValue(name, `specialist.execution.${path}`, value),
+    });
     baseSpec.execution = baseExecution;
 
     // 3. Apply allowed prompt fields.
@@ -381,11 +381,11 @@ export class SpecialistLoader {
       if (value === null || value === undefined) continue;
       execution[field] = this.resolveOverrideValue(name, `specialist.execution.${field}`, value);
     }
-    for (const path of OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS) {
-      const value = readDottedPath(execution, path);
-      if (value === null || value === undefined) continue;
-      writeDottedPath(execution, path, this.resolveOverrideValue(name, `specialist.execution.${path}`, value));
-    }
+    mergeExecutionExtensionOverrides({
+      baseExecution: execution,
+      overrideExecution: execution,
+      resolveValue: (path, value) => this.resolveOverrideValue(name, `specialist.execution.${path}`, value),
+    });
   }
 
   async list(category?: string): Promise<SpecialistSummary[]> {
@@ -516,6 +516,27 @@ const PROTOTYPE_POLLUTION_KEYS = new Set(['__proto__', 'constructor', 'prototype
 // indexed read. Current callers pass static keys from BLOCKED_OVERRIDE_FIELDS (constant strings,
 // not user-controlled). Semgrep's prototype-pollution-loop rule fires on the AST shape regardless,
 // so the indexed read carries an inline `nosemgrep:` waiver on the same line.
+function mergeExecutionExtensionOverrides(options: {
+  baseExecution: Record<string, unknown>;
+  overrideExecution: Record<string, unknown>;
+  resolveValue: (path: string, value: unknown) => unknown;
+}): void {
+  for (const path of OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS) {
+    if (path !== 'extensions') continue;
+    const overrideValue = readDottedPath(options.overrideExecution, path);
+    if (!overrideValue || typeof overrideValue !== 'object' || Array.isArray(overrideValue)) continue;
+    const baseValue = readDottedPath(options.baseExecution, path);
+    const mergedExtensions = {
+      ...(baseValue && typeof baseValue === 'object' && !Array.isArray(baseValue) ? baseValue as Record<string, unknown> : {}),
+    };
+    for (const [key, value] of Object.entries(overrideValue as Record<string, unknown>)) {
+      if (value === null || value === undefined) continue;
+      mergedExtensions[key] = options.resolveValue(`${path}.${key}`, value);
+    }
+    writeDottedPath(options.baseExecution, path, mergedExtensions);
+  }
+}
+
 function readDottedPath(obj: Record<string, unknown>, dotted: string): unknown {
   const parts = dotted.split('.');
   let cur: unknown = obj;

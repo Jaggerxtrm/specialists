@@ -20,7 +20,7 @@ const KNOWN = {
   specialist: new Set(['metadata','execution','prompt','skills','capabilities','communication','validation','beads_integration','beads_write_notes','stall_detection','heartbeat','mandatory_rules','output_file']),
   metadata: new Set(['name','version','description','category','author','created','updated','tags']),
   execution: new Set(['mode','model','fallback_model','timeout_ms','stall_timeout_ms','max_retries','interactive','response_format','output_type','permission_required','requires_worktree','thinking_level','auto_commit','extensions','preferred_profile','approval_mode']),
-  'execution.extensions': new Set(['serena','gitnexus']),
+  'execution.extensions': null,
   prompt: new Set(['system','task_template','normalize_template','output_schema','examples','skill_inherit']),
   skills: new Set(['paths','scripts']),
   'skills.scripts.item': new Set(['run','path','phase','inject_output']),
@@ -45,7 +45,7 @@ function audit(file) {
   findings.push(...unknownKeys(s, KNOWN.specialist, 'specialist'));
   if (s.metadata) findings.push(...unknownKeys(s.metadata, KNOWN.metadata, 'specialist.metadata'));
   if (s.execution) findings.push(...unknownKeys(s.execution, KNOWN.execution, 'specialist.execution'));
-  if (s.execution?.extensions) findings.push(...unknownKeys(s.execution.extensions, KNOWN['execution.extensions'], 'specialist.execution.extensions'));
+  if (s.execution?.extensions && KNOWN['execution.extensions']) findings.push(...unknownKeys(s.execution.extensions, KNOWN['execution.extensions'], 'specialist.execution.extensions'));
   if (s.prompt) findings.push(...unknownKeys(s.prompt, KNOWN.prompt, 'specialist.prompt'));
   if (s.skills) findings.push(...unknownKeys(s.skills, KNOWN.skills, 'specialist.skills'));
   if (Array.isArray(s.skills?.scripts)) for (const [i, sc] of s.skills.scripts.entries()) findings.push(...unknownKeys(sc, KNOWN['skills.scripts.item'], `specialist.skills.scripts[${i}]`));

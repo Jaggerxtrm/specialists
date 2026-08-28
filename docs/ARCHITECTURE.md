@@ -83,15 +83,11 @@ The FTS cache is a SQLite table (`specialist_memories_cache`) populated from `bd
 
 ### Extension opt-out
 
-Specialists can opt out of the GitNexus npm extension via `execution.extensions`:
-
-```typescript
-const excludeExtensions = [
-  execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
-].filter(Boolean);
-```
-
-Excluded extensions are passed to `PiAgentSession` via `excludeExtensions` option and skipped during `-e` assembly. The legacy `execution.extensions.serena` key remains parseable but is ignored — Serena injection was retired with the K4 Serena retirement (unitAI-e67up.8).
+Specialists can tune injected extensions via `execution.extensions`.
+`gitnexus: false` still maps to `excludeExtensions: ['pi-gitnexus']`.
+Any other trusted source-string key with value `true` becomes `-e <source>` in insertion order.
+Remote `npm:`, `git:`, and `http(s):` sources omit `--offline`; local-only sources keep it.
+Legacy `execution.extensions.serena` remains parseable but ignored after K4 Serena retirement (unitAI-e67up.8).
 
 ### Retired: serena-pool pre-spawn hook
 

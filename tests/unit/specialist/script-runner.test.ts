@@ -21,6 +21,7 @@ import {
   applyOutputContract,
   runScriptSpecialist,
 } from '../../../src/specialist/script-runner.js';
+import { resolveExecutionExtensionSelection } from '../../../src/pi/session.js';
 import { createObservabilitySqliteClientAtPath } from '../../../src/specialist/observability-sqlite.js';
 
 const { spawnMock, spawnSyncMock, piSessionCreateMock, resolveGlobalNodeModulesDirMock, resolveRuntimeToolContractMock, sqliteClients } = vi.hoisted(() => ({
@@ -41,6 +42,23 @@ vi.mock('../../../src/pi/session.js', () => ({
   PiAgentSession: { create: piSessionCreateMock },
   resolveGlobalNodeModulesDir: resolveGlobalNodeModulesDirMock,
   resolveRuntimeToolContract: resolveRuntimeToolContractMock,
+  resolveExecutionExtensionSelection: vi.fn((extensions?: Record<string, boolean | null | undefined>) => {
+    const excludeExtensions: string[] = [];
+    const extensionSources: string[] = [];
+    for (const [source, enabled] of Object.entries(extensions ?? {})) {
+      if (source === 'serena') continue;
+      if (source === 'gitnexus') {
+        if (enabled === false) excludeExtensions.push('pi-gitnexus');
+        continue;
+      }
+      if (enabled === true) extensionSources.push(source);
+    }
+    return {
+      excludeExtensions,
+      extensionSources,
+      offline: !extensionSources.some((source) => source.startsWith('npm:') || source.startsWith('git:') || source.startsWith('http://') || source.startsWith('https://')),
+    };
+  }),
   resolvePermissionTools: vi.fn((options?: { level?: string }) => {
     const contract = resolveRuntimeToolContractMock(options);
     return contract?.toolsFlag;
@@ -935,6 +953,23 @@ describe('runScriptSpecialist skill forwarding', () => {
   });
 });
 
+describe('resolveExecutionExtensionSelection', () => {
+  it('keeps ordered true source keys and omits offline for remote sources', () => {
+    expect(resolveExecutionExtensionSelection({
+      serena: false,
+      gitnexus: false,
+      'npm:@jaggerxtrm/pi-service-knowledge': true,
+      './local-extension': true,
+      'http://example.test/ext': true,
+      disabled: false,
+    })).toEqual({
+      excludeExtensions: ['pi-gitnexus'],
+      extensionSources: ['npm:@jaggerxtrm/pi-service-knowledge', './local-extension', 'http://example.test/ext'],
+      offline: false,
+    });
+  });
+});
+
 describe('runScriptSpecialist system prompt forwarding', () => {
   it('isolates script-class pi calls from project context, skills, prompt templates, and themes', async () => {
     const child = createSpawnMock();
@@ -993,6 +1028,46 @@ describe('runScriptSpecialist system prompt forwarding', () => {
     const result = await resultPromise;
 
     expect(result).toMatchObject({ success: false, error: 'broken pipe' });
+  });
+
+  it('passes repeated -e args for ordered execution.extensions true source keys', async () => {
+    const child = createSpawnMock();
+    const spec = {
+      ...baseSpec,
+      specialist: {
+        ...baseSpec.specialist,
+        execution: {
+          ...baseSpec.specialist.execution,
+          extensions: {
+            serena: false,
+            gitnexus: false,
+            'npm:@jaggerxtrm/pi-service-knowledge': true,
+            './local-extension': true,
+            disabled: false,
+          },
+        },
+      },
+    };
+    const resultPromise = runScriptSpecialist(
+      { specialist: 'changelog-keeper', variables: { name: 'release notes' } },
+      { loader: makeLoader(spec as never) as never, projectDir: '.' },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    child.stdout.emit('data', Buffer.from(`${JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'output' }] } })}\n`));
+    child.emit('close', 0);
+
+    await resultPromise;
+
+    const spawnArgs: string[] = spawnMock.mock.calls[0][1];
+    expect(spawnArgs).not.toContain('--offline');
+    const extensionPairs = spawnArgs
+      .map((arg, index) => (arg === '-e' ? spawnArgs[index + 1] : null))
+      .filter((value): value is string => Boolean(value));
+    expect(extensionPairs).toEqual([
+      'npm:@jaggerxtrm/pi-service-knowledge',
+      './local-extension',
+    ]);
   });
 
   it('passes --system-prompt to pi when spec.prompt.system is set', async () => {

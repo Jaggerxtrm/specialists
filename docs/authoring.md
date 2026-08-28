@@ -164,10 +164,13 @@ Effective keep-alive order is:
 3. JSON `execution.interactive`
 4. default one-shot (`false`)
 
-### Extension opt-out
+### Extension sources and opt-out
 
-Use `execution.extensions` only when specialist must skip default extension injection.
-`false` disables injection for that specialist only.
+Use `execution.extensions` only for trusted executable extension config.
+- `gitnexus: false` skips default GitNexus injection for that specialist.
+- any other source-string key with value `true` adds repeated `-e <source>` pairs in insertion order.
+- remote `npm:`, `git:`, and `http(s):` sources disable `--offline`; local paths keep it.
+- legacy `serena` key still parses and is ignored.
 
 ## `specialist.prompt` (required)
 
