@@ -1498,7 +1498,7 @@ class SqliteClient implements ObservabilitySqliteClient {
 
   private insertForensicEventRow(jobId: string, seq: number, forensicEvent: ForensicEvent): void {
     this.db.run(`
-      INSERT OR REPLACE INTO specialist_forensic_events (
+      INSERT INTO specialist_forensic_events (
         job_id, seq, t, schema_version, event_family, event_name,
         participant_kind, participant_role, participant_id, redaction_status, event_json
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
