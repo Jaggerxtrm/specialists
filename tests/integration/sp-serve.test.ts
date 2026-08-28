@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { countArg, getExtensionArgs, readLoggedPiArgv } from './helpers/fake-pi';
 
 const originalCwd = process.cwd();
 let tempRoot = '';
@@ -71,7 +72,11 @@ beforeEach(() => {
 
 afterEach(() => {
   if (server && !server.killed) server.kill('SIGTERM');
+  delete process.env.PI_ARGV_LOG;
+  delete process.env.PI_FAKE_EXIT_CODE;
+  delete process.env.PI_FAKE_STDERR;
   process.chdir(originalCwd);
+  if (tempRoot) rmSync(tempRoot, { recursive: true, force: true });
 });
 
 describe('sp serve', () => {
@@ -221,6 +226,74 @@ describe('sp serve', () => {
     expect(body.events[0].body).toEqual({ tool_name: 'bash' });
     expect(body.events[0].redaction).toEqual({ status: 'clean' });
     expect(body.next_cursor).toEqual({ t: 1_780_000_000_000, seq: 1 });
+  });
+
+  it('forwards ordered enabled extension sources on serve generate and keeps offline for local-only sources', async () => {
+    const argvLog = join(tempRoot, 'pi-argv.jsonl');
+    mkdirSync(join(tempRoot, 'workspace', 'local-extension'), { recursive: true });
+    writeFileSync(
+      join(tempRoot, '.specialists', 'user', 'serve-ext.specialist.json'),
+      JSON.stringify({
+        specialist: {
+          metadata: { name: 'serve-ext', version: '1.0.0', description: 'echo', category: 'test' },
+          execution: {
+            mode: 'auto',
+            model: 'mock/model',
+            timeout_ms: 1000,
+            interactive: false,
+            response_format: 'json',
+            output_type: 'custom',
+            permission_required: 'READ_ONLY',
+            requires_worktree: false,
+            max_retries: 0,
+            extensions: {
+              serena: false,
+              './local-extension': true,
+              './second-local-extension': true,
+              'https://example.test/disabled': false,
+            },
+          },
+          prompt: {
+            task_template: 'say hi to $name',
+            output_schema: { type: 'object', required: ['message'] },
+            examples: [],
+          },
+          skills: {},
+        },
+      }),
+    );
+    mkdirSync(join(tempRoot, 'workspace', 'second-local-extension'), { recursive: true });
+
+    writeFileSync(
+      join(tempRoot, 'bin', 'pi'),
+      '#!/usr/bin/env node\nconst { appendFileSync } = require("node:fs");\nappendFileSync(process.env.PI_ARGV_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");\nprocess.stdin.resume();\nprocess.stdin.on("end", () => {\n  setTimeout(() => {\n    const event = { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: JSON.stringify({ message: "hello", cwd: process.cwd() }) }] } };\n    process.stdout.write(JSON.stringify(event) + "\\n");\n  }, 25);\n});\n',
+      { mode: 0o755 },
+    );
+    process.env.PI_ARGV_LOG = argvLog;
+
+    const port = 8133;
+    await startServer(port);
+    const response = await fetch(`http://127.0.0.1:${port}/v1/generate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ specialist: 'serve-ext', variables: { name: 'world' }, trace: true }),
+    });
+    const body = await response.json() as { success: boolean };
+    const [argv] = readLoggedPiArgv(argvLog);
+    const extensionArgs = getExtensionArgs(argv);
+
+    expect(response.status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(argv).toContain('--offline');
+    expect(extensionArgs.filter((value) => ['./local-extension', './second-local-extension'].includes(value))).toEqual([
+      './local-extension',
+      './second-local-extension',
+    ]);
+    expect(countArg(extensionArgs, './local-extension')).toBe(1);
+    expect(countArg(extensionArgs, './second-local-extension')).toBe(1);
+    expect(extensionArgs).not.toContain('https://example.test/disabled');
+    expect(extensionArgs).not.toContain('serena');
+    expect(extensionArgs.join(' ')).not.toContain('service-skills');
   });
 
   it('metrics responds with Prometheus text regardless of readiness', async () => {

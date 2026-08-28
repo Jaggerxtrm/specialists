@@ -61,7 +61,12 @@ describe('integration: specialists init --global', () => {
 
     firstParsed._doc = GLOBAL_USER_CONFIG_DOC;
     (firstParsed[shippedNames[0]] as Record<string, unknown>).beads_write_notes = false;
-    ((firstParsed[shippedNames[0]] as Record<string, unknown>).execution as Record<string, unknown>).model = 'openai-codex/gpt-5.4-mini';
+    const execution = (firstParsed[shippedNames[0]] as Record<string, unknown>).execution as Record<string, unknown>;
+    execution.model = 'openai-codex/gpt-5.4-mini';
+    execution.extensions = {
+      gitnexus: false,
+      'npm:@jaggerxtrm/pi-service-knowledge': true,
+    };
     await writeFile(userConfigPath, `${JSON.stringify(firstParsed, null, 2)}\n`, 'utf-8');
 
     const second = runInitGlobal(tempHome);
@@ -71,9 +76,12 @@ describe('integration: specialists init --global', () => {
     const secondParsed = JSON.parse(await readFile(userConfigPath, 'utf-8')) as Record<string, unknown>;
     expect(secondParsed._doc).toBe(GLOBAL_USER_CONFIG_DOC);
     expect((secondParsed[shippedNames[0]] as Record<string, unknown>).beads_write_notes).toBe(false);
-    expect(
-      ((secondParsed[shippedNames[0]] as Record<string, unknown>).execution as Record<string, unknown>).model,
-    ).toBe('openai-codex/gpt-5.4-mini');
+    const secondExecution = ((secondParsed[shippedNames[0]] as Record<string, unknown>).execution as Record<string, unknown>);
+    expect(secondExecution.model).toBe('openai-codex/gpt-5.4-mini');
+    expect(secondExecution.extensions).toEqual({
+      gitnexus: false,
+      'npm:@jaggerxtrm/pi-service-knowledge': true,
+    });
     expect(Object.keys(secondParsed).filter(name => name === '_doc')).toHaveLength(1);
   });
 });

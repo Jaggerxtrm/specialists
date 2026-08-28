@@ -77,6 +77,10 @@ export interface PiSessionOptions {
     model: string;
     systemPrompt?: string;
     systemPromptMode?: 'append' | 'replace';
+    /** Additional extension sources forwarded as repeated `-e <source>` pairs. */
+    extensionSources?: readonly string[];
+    /** Controls whether Pi starts with `--offline`. Defaults true. */
+    offline?: boolean;
     /** Absolute path boundary for write-side tools; undefined disables enforcement */
     worktreeBoundary?: string;
     /** Permission level from specialist YAML — controls which pi tools are enabled */
@@ -147,6 +151,11 @@ export declare function resolvePermissionTools(options: {
     specialistPermissions?: ManifestPolicy['permissions'];
     excludeExtensions?: readonly string[];
 }): string | undefined;
+export declare function resolveExecutionExtensionSelection(extensions: Readonly<Record<string, boolean | null | undefined>> | undefined): {
+    excludeExtensions: string[];
+    extensionSources: string[];
+    offline: boolean;
+};
 export declare function resolveGlobalNodeModulesDir(): string | undefined;
 export declare function validateWriteToolPathAgainstBoundary(toolName: string, toolArgs: Record<string, unknown> | undefined, worktreeBoundary: string | undefined): string | undefined;
 export declare class PiAgentSession {

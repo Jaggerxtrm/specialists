@@ -34,16 +34,7 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         max_retries: z.ZodNullable<z.ZodNumber>;
         prompt_limit_bytes: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
         stdout_limit_bytes: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
-        extensions: z.ZodOptional<z.ZodObject<{
-            serena: z.ZodOptional<z.ZodNullable<z.ZodBoolean>>;
-            gitnexus: z.ZodNullable<z.ZodBoolean>;
-        }, "strict", z.ZodTypeAny, {
-            gitnexus: boolean | null;
-            serena?: boolean | null | undefined;
-        }, {
-            gitnexus: boolean | null;
-            serena?: boolean | null | undefined;
-        }>>;
+        extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodNullable<z.ZodBoolean>>>;
     }, "strict", z.ZodTypeAny, {
         model: string | null;
         fallback_model: string | null;
@@ -55,10 +46,7 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena?: boolean | null | undefined;
-        } | undefined;
+        extensions?: Record<string, boolean | null> | undefined;
     }, {
         model: string | null;
         fallback_model: string | null;
@@ -70,10 +58,7 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena?: boolean | null | undefined;
-        } | undefined;
+        extensions?: Record<string, boolean | null> | undefined;
     }>;
     prompt: z.ZodOptional<z.ZodObject<{
         system_prompt_mode: z.ZodNullable<z.ZodEnum<["append", "replace"]>>;
@@ -111,10 +96,7 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena?: boolean | null | undefined;
-        } | undefined;
+        extensions?: Record<string, boolean | null> | undefined;
     };
     skills: {
         paths: string[];
@@ -140,10 +122,7 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena?: boolean | null | undefined;
-        } | undefined;
+        extensions?: Record<string, boolean | null> | undefined;
     };
     skills: {
         paths: string[];
@@ -173,16 +152,7 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         max_retries: z.ZodNullable<z.ZodNumber>;
         prompt_limit_bytes: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
         stdout_limit_bytes: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
-        extensions: z.ZodOptional<z.ZodObject<{
-            serena: z.ZodOptional<z.ZodNullable<z.ZodBoolean>>;
-            gitnexus: z.ZodNullable<z.ZodBoolean>;
-        }, "strict", z.ZodTypeAny, {
-            gitnexus: boolean | null;
-            serena?: boolean | null | undefined;
-        }, {
-            gitnexus: boolean | null;
-            serena?: boolean | null | undefined;
-        }>>;
+        extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodNullable<z.ZodBoolean>>>;
     }, "strict", z.ZodTypeAny, {
         model: string | null;
         fallback_model: string | null;
@@ -194,10 +164,7 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena?: boolean | null | undefined;
-        } | undefined;
+        extensions?: Record<string, boolean | null> | undefined;
     }, {
         model: string | null;
         fallback_model: string | null;
@@ -209,10 +176,7 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena?: boolean | null | undefined;
-        } | undefined;
+        extensions?: Record<string, boolean | null> | undefined;
     }>;
     prompt: z.ZodOptional<z.ZodObject<{
         system_prompt_mode: z.ZodNullable<z.ZodEnum<["append", "replace"]>>;
@@ -250,10 +214,7 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena?: boolean | null | undefined;
-        } | undefined;
+        extensions?: Record<string, boolean | null> | undefined;
     };
     skills: {
         paths: string[];
@@ -279,10 +240,7 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena?: boolean | null | undefined;
-        } | undefined;
+        extensions?: Record<string, boolean | null> | undefined;
     };
     skills: {
         paths: string[];
@@ -308,10 +266,7 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
-        extensions?: {
-            gitnexus: boolean | null;
-            serena?: boolean | null | undefined;
-        } | undefined;
+        extensions?: Record<string, boolean | null> | undefined;
     };
     skills: {
         paths: string[];
