@@ -16,7 +16,7 @@
     },
     {
       "path": "config/skills/specialists-creator/scripts/audit-spec-uniformity.mjs",
-      "sha256": "0ada06784cfd5c3adfa9c9908a9cd23380e8278fb57329fc616a83140a47fb33"
+      "sha256": "7ef232521ff123377c4a9637c2f5712bfb4c9f1454a310966c58cb2cc8dc4216"
     },
     {
       "path": "config/skills/specialists-creator/scripts/scaffold-specialist.ts",
@@ -28,7 +28,7 @@
     },
     {
       "path": "config/skills/specialists-creator/SKILL.md",
-      "sha256": "59fe74927988a339ea3ba2b73ebf7fa06e57b73a1e07ef288c306177f99a14f7"
+      "sha256": "690a3d709500c74722493e9b2e0b832435fad5b5ae855f742546e8c1370d8a98"
     },
     {
       "path": "config/skills/update-specialists/SKILL.md",

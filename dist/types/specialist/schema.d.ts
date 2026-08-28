@@ -1,5 +1,6 @@
 import * as z from 'zod';
 import type { ManifestPolicyTier } from './manifest-resolver.js';
+export declare const ExtensionToggleSchema: z.ZodBoolean;
 export declare const SpecialistSchema: z.ZodObject<{
     specialist: z.ZodObject<{
         metadata: z.ZodObject<{
@@ -52,19 +53,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -99,19 +92,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -146,19 +131,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -418,19 +395,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -465,19 +434,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -512,19 +473,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -784,19 +737,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -831,19 +776,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -878,19 +815,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -1152,19 +1081,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -1199,19 +1120,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -1246,19 +1159,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -1518,19 +1423,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -1565,19 +1462,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -1612,19 +1501,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -1884,19 +1765,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -1931,19 +1804,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -1978,19 +1843,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -2252,19 +2109,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -2299,19 +2148,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -2346,19 +2187,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -2618,19 +2451,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -2665,19 +2490,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -2712,19 +2529,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -2984,19 +2793,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -3031,19 +2832,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -3078,19 +2871,11 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
             thinking_level: z.ZodOptional<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
             auto_commit: z.ZodDefault<z.ZodEnum<["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]>>;
-            /** Optional per-session extension toggles. `false` disables injection of extension.
+            /** Optional per-session extension toggles. `false` disables legacy gitnexus injection.
+             *  Arbitrary source-string keys with value `true` are passed to Pi as repeated `-e <source>` pairs.
              *  `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): accepted for
              *  backward compatibility but ignored — Specialists no longer injects pi-serena-tools. */
-            extensions: z.ZodOptional<z.ZodObject<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
-                serena: z.ZodOptional<z.ZodBoolean>;
-                gitnexus: z.ZodOptional<z.ZodBoolean>;
-            }, z.ZodTypeAny, "passthrough">>>;
+            extensions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodBoolean>>;
             /** Required JSON keys the assistant output must contain. Triggers a required-keys
              *  check independent of `response_format`. Use for specs that ship their JSON
              *  contract inline in `task_template` and run with `response_format: text` so the
@@ -3313,7 +3098,7 @@ export declare const OVERRIDE_ALLOWED_EXECUTION_FIELDS: readonly ["model", "fall
 /** Nested execution leaf paths an override layer may set. Relative to `specialist.execution`.
  *  `extensions.serena` stays allowlisted so legacy overrides keep validating; the
  *  runtime ignores it (Serena retired, unitAI-e67up.8). */
-export declare const OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS: readonly ["extensions.serena", "extensions.gitnexus"];
+export declare const OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS: readonly ["extensions"];
 /** Nested stall-detection leaf paths an override layer may set. Relative to `specialist.stall_detection`. */
 export declare const OVERRIDE_ALLOWED_STALL_DETECTION_PATHS: readonly ["waiting_auto_close_ms"];
 /** Prompt sub-fields an override layer may set. Relative to `specialist.prompt`. */
