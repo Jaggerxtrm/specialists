@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "package_version": "3.21.5",
+  "package_version": "3.21.6",
   "shipped_skills": [
     {
       "path": "config/skills/memory-audit-transaction/scripts/pre-bulk-export.sh",
