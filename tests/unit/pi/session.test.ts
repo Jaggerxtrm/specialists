@@ -1,8 +1,8 @@
 // tests/unit/pi/session.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { resolve, join } from 'node:path';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { mapSpecialistBackend, getProviderArgs } from '../../../src/pi/backendMap.js';
 
 // ── Mock node:child_process before importing session ──────────────────────────
@@ -115,6 +115,16 @@ async function withGitnexusInstall<T>(version: string, run: (npmGlobalDir: strin
     mkdirSync(join(npmGlobalDir, 'pi-gitnexus'), { recursive: true });
     writeFileSync(join(npmGlobalDir, 'pi-gitnexus', 'package.json'), JSON.stringify({ name: 'pi-gitnexus', version }));
   }, run);
+}
+
+async function withPiExtensionPaths<T>(paths: readonly string[], run: () => Promise<T>): Promise<T> {
+  const createdPaths = paths.filter((path) => !existsSync(path));
+  try {
+    for (const path of createdPaths) mkdirSync(path, { recursive: true });
+    return await run();
+  } finally {
+    for (const path of createdPaths) rmSync(path, { recursive: true, force: true });
+  }
 }
 
 
@@ -503,23 +513,34 @@ describe('PiAgentSession', () => {
     expect(args.indexOf('--no-themes')).toBeGreaterThan(args.indexOf('--no-prompt-templates'));
   });
 
-  it('omits --offline and forwards ordered custom extension sources', async () => {
-    const session = await PiAgentSession.create({
-      model: 'gemini',
-      extensionSources: ['npm:@jaggerxtrm/pi-service-knowledge', './local-extension'],
-      offline: false,
-    });
-    await session.start();
+  it('omits retired service-skills injection even when directory exists', async () => {
+    const homeDir = homedir();
+    await withPiExtensionPaths([
+      join(homeDir, '.pi', 'agent', 'extensions', 'quality-gates'),
+      join(homeDir, '.pi', 'agent', 'extensions', 'service-skills'),
+      join(homeDir, '.pi', 'agent', 'extensions', 'caveman'),
+    ], async () => {
+      const session = await PiAgentSession.create({
+        model: 'gemini',
+        permissionLevel: 'MEDIUM',
+        extensionSources: ['npm:@jaggerxtrm/pi-service-knowledge', './local-extension'],
+        offline: false,
+      });
+      await session.start();
 
-    const args: string[] = mockSpawn.mock.calls[0][1];
-    expect(args).not.toContain('--offline');
-    const extensionPairs = args
-      .map((arg, index) => (arg === '-e' ? args[index + 1] : null))
-      .filter((value): value is string => Boolean(value));
-    expect(extensionPairs).toEqual(expect.arrayContaining([
-      'npm:@jaggerxtrm/pi-service-knowledge',
-      './local-extension',
-    ]));
+      const args: string[] = mockSpawn.mock.calls[0][1];
+      expect(args).not.toContain('--offline');
+      const extensionPairs = args
+        .map((arg, index) => (arg === '-e' ? args[index + 1] : null))
+        .filter((value): value is string => Boolean(value));
+      expect(extensionPairs).toContain(join(homeDir, '.pi', 'agent', 'extensions', 'quality-gates'));
+      expect(extensionPairs).toContain(join(homeDir, '.pi', 'agent', 'extensions', 'caveman'));
+      expect(extensionPairs).not.toContain(join(homeDir, '.pi', 'agent', 'extensions', 'service-skills'));
+      expect(extensionPairs).toEqual(expect.arrayContaining([
+        'npm:@jaggerxtrm/pi-service-knowledge',
+        './local-extension',
+      ]));
+    });
   });
 
   it('keeps package runner system prompt appended instead of replacing Pi system prompt', async () => {

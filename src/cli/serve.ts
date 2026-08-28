@@ -34,7 +34,7 @@ interface ServeArgs {
 }
 
 const AUDIT_WINDOW_MS = 60_000;
-// NOTE: `-e <path>` extensions (read-line-numbers, quality-gates, service-skills,
+// NOTE: `-e <path>` extensions (read-line-numbers, quality-gates,
 // caveman, worktree-boundary) are wired at spawn time in session.ts / script-runner.ts.
 // This list enumerates flags that MUST be present for readiness; it is not an
 // exhaustive allowlist. read-line-numbers: bundled at config/pi-extensions/.

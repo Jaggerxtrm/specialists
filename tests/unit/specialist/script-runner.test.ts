@@ -1,7 +1,7 @@
 // ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -144,6 +144,16 @@ function createSpawnMock(): FakeChild {
   const child = new FakeChild();
   spawnMock.mockReturnValue(child as never);
   return child;
+}
+
+async function withPiExtensionPaths<T>(paths: readonly string[], run: () => Promise<T>): Promise<T> {
+  const createdPaths = paths.filter((path) => !existsSync(path));
+  try {
+    for (const path of createdPaths) mkdirSync(path, { recursive: true });
+    return await run();
+  } finally {
+    for (const path of createdPaths) rmSync(path, { recursive: true, force: true });
+  }
 }
 
 function createResolvedToolContract(overrides: Partial<{
@@ -1030,44 +1040,51 @@ describe('runScriptSpecialist system prompt forwarding', () => {
     expect(result).toMatchObject({ success: false, error: 'broken pipe' });
   });
 
-  it('passes repeated -e args for ordered execution.extensions true source keys', async () => {
-    const child = createSpawnMock();
-    const spec = {
-      ...baseSpec,
-      specialist: {
-        ...baseSpec.specialist,
-        execution: {
-          ...baseSpec.specialist.execution,
-          extensions: {
-            serena: false,
-            gitnexus: false,
-            'npm:@jaggerxtrm/pi-service-knowledge': true,
-            './local-extension': true,
-            disabled: false,
+  it('passes repeated -e args without retired service-skills injection even when directory exists', async () => {
+    const homeDir = homedir();
+    await withPiExtensionPaths([
+      join(homeDir, '.pi', 'agent', 'extensions', 'quality-gates'),
+      join(homeDir, '.pi', 'agent', 'extensions', 'service-skills'),
+      join(homeDir, '.pi', 'agent', 'extensions', 'caveman'),
+    ], async () => {
+      const child = createSpawnMock();
+      const spec = {
+        ...baseSpec,
+        specialist: {
+          ...baseSpec.specialist,
+          execution: {
+            ...baseSpec.specialist.execution,
+            extensions: {
+              serena: false,
+              gitnexus: false,
+              'npm:@jaggerxtrm/pi-service-knowledge': true,
+              './local-extension': true,
+              disabled: false,
+            },
           },
         },
-      },
-    };
-    const resultPromise = runScriptSpecialist(
-      { specialist: 'changelog-keeper', variables: { name: 'release notes' } },
-      { loader: makeLoader(spec as never) as never, projectDir: '.' },
-    );
+      };
+      const resultPromise = runScriptSpecialist(
+        { specialist: 'changelog-keeper', variables: { name: 'release notes' } },
+        { loader: makeLoader(spec as never) as never, projectDir: '.' },
+      );
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    child.stdout.emit('data', Buffer.from(`${JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'output' }] } })}\n`));
-    child.emit('close', 0);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      child.stdout.emit('data', Buffer.from(`${JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'output' }] } })}\n`));
+      child.emit('close', 0);
 
-    await resultPromise;
+      await resultPromise;
 
-    const spawnArgs: string[] = spawnMock.mock.calls[0][1];
-    expect(spawnArgs).not.toContain('--offline');
-    const extensionPairs = spawnArgs
-      .map((arg, index) => (arg === '-e' ? spawnArgs[index + 1] : null))
-      .filter((value): value is string => Boolean(value));
-    expect(extensionPairs).toEqual([
-      'npm:@jaggerxtrm/pi-service-knowledge',
-      './local-extension',
-    ]);
+      const spawnArgs: string[] = spawnMock.mock.calls[0][1];
+      expect(spawnArgs).not.toContain('--offline');
+      const extensionPairs = spawnArgs
+        .map((arg, index) => (arg === '-e' ? spawnArgs[index + 1] : null))
+        .filter((value): value is string => Boolean(value));
+      expect(extensionPairs).toContain(join(homeDir, '.pi', 'agent', 'extensions', 'caveman'));
+      expect(extensionPairs).not.toContain(join(homeDir, '.pi', 'agent', 'extensions', 'service-skills'));
+      expect(extensionPairs).toContain('npm:@jaggerxtrm/pi-service-knowledge');
+      expect(extensionPairs).toContain('./local-extension');
+    });
   });
 
   it('passes --system-prompt to pi when spec.prompt.system is set', async () => {

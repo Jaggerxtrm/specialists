@@ -980,9 +980,6 @@ function appendExtensionArgs(
     if (existsSync(qualityGatesPath)) args.push('-e', qualityGatesPath);
   }
 
-  const serviceSkillsPath = join(piExtDir, 'service-skills');
-  if (existsSync(serviceSkillsPath)) args.push('-e', serviceSkillsPath);
-
   const cavemanPath = join(piExtDir, 'caveman');
   if (existsSync(cavemanPath)) args.push('-e', cavemanPath);
 

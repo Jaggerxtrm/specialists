@@ -781,9 +781,6 @@ export class PiAgentSession {
       const qgPath = join(piExtDir, 'quality-gates');
       if (existsSync(qgPath)) args.push('-e', qgPath);
     }
-    const ssPath = join(piExtDir, 'service-skills');
-    if (existsSync(ssPath)) args.push('-e', ssPath);
-
     // Caveman extension — terse output for agent-to-agent communication
     const cavemanPath = join(piExtDir, 'caveman');
     if (existsSync(cavemanPath)) args.push('-e', cavemanPath);
