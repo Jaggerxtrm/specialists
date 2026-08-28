@@ -198,6 +198,7 @@ function migrateToV11(db: BunDb): void {
     for (const column of [
       { name: 'active_runtime_ms', definition: 'INTEGER' },
       { name: 'waiting_ms', definition: 'INTEGER' },
+      { name: 'startup_payload_json', definition: 'TEXT' },
     ]) {
       if (!metricsColumns.has(column.name)) {
         db.run(`ALTER TABLE specialist_job_metrics ADD COLUMN ${column.name} ${column.definition}`);
@@ -232,6 +233,7 @@ function migrateToV11(db: BunDb): void {
       context_trajectory_json TEXT NOT NULL,
       stall_gaps_json TEXT NOT NULL,
       run_complete_json TEXT,
+      startup_payload_json TEXT,
       updated_at_ms INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_job_metrics_spec_model_updated ON specialist_job_metrics(specialist, model, updated_at_ms DESC);
@@ -1391,6 +1393,11 @@ class SqliteClient implements ObservabilitySqliteClient {
     return row?.next_seq ?? 1;
   }
 
+  private getNextForensicEventSeq(jobId: string): number {
+    const row = this.db.query('SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM specialist_forensic_events WHERE job_id = ?').get(jobId) as { next_seq?: number } | undefined;
+    return row?.next_seq ?? 1;
+  }
+
   private getNextNodeEventSeq(nodeRunId: string): number {
     const row = this.db.query('SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM node_events WHERE node_run_id = ?').get(nodeRunId) as { next_seq?: number } | undefined;
     return row?.next_seq ?? 1;
@@ -1806,7 +1813,7 @@ class SqliteClient implements ObservabilitySqliteClient {
 
   appendForensicEvent(jobId: string, specialist: string, beadId: string | undefined, forensicEvent: ForensicEvent): void {
     withRetry(() => {
-      const seq = typeof forensicEvent.seq === 'number' && forensicEvent.seq > 0 ? forensicEvent.seq : this.getNextSpecialistEventSeq(jobId);
+      const seq = typeof forensicEvent.seq === 'number' && forensicEvent.seq > 0 ? forensicEvent.seq : this.getNextForensicEventSeq(jobId);
       this.insertForensicEventRow(jobId, seq, forensicEvent);
     }, 'appendForensicEvent');
   }
@@ -2709,8 +2716,8 @@ class SqliteClient implements ObservabilitySqliteClient {
           job_id, specialist, model, status, chain_kind, chain_id, bead_id, node_id, epic_id,
           started_at_ms, completed_at_ms, elapsed_ms, active_runtime_ms, waiting_ms, total_turns, total_tools,
           tool_call_counts_json, token_trajectory_json, context_trajectory_json, stall_gaps_json,
-          run_complete_json, updated_at_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          run_complete_json, startup_payload_json, updated_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(job_id) DO UPDATE SET
           specialist = excluded.specialist,
           model = excluded.model,
@@ -2732,12 +2739,13 @@ class SqliteClient implements ObservabilitySqliteClient {
           context_trajectory_json = excluded.context_trajectory_json,
           stall_gaps_json = excluded.stall_gaps_json,
           run_complete_json = excluded.run_complete_json,
+          startup_payload_json = excluded.startup_payload_json,
           updated_at_ms = excluded.updated_at_ms;
       `, [
         record.job_id, record.specialist, record.model, record.status, record.chain_kind, record.chain_id, record.bead_id, record.node_id, record.epic_id,
         record.started_at_ms, record.completed_at_ms, record.elapsed_ms, record.active_runtime_ms, record.waiting_ms, record.total_turns, record.total_tools,
         record.tool_call_counts_json, record.token_trajectory_json, record.context_trajectory_json, record.stall_gaps_json,
-        record.run_complete_json, record.updated_at_ms,
+        record.run_complete_json, record.startup_payload_json, record.updated_at_ms,
       ]);
 
       return record;

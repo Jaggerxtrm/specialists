@@ -323,7 +323,8 @@ describe('observability-sqlite', () => {
         body: event.body,
       }));
 
-      const rows = db!.query('SELECT seq, event_json FROM specialist_forensic_events WHERE job_id = ? ORDER BY seq').all('epic-1') as Array<{ seq: number; event_json: string }>;
+      db = new Database(resolveObservabilityDbLocation(tempRoot).dbPath);
+      const rows = db.query('SELECT seq, event_json FROM specialist_forensic_events WHERE job_id = ? ORDER BY seq').all('epic-1') as Array<{ seq: number; event_json: string }>;
       expect(rows).toHaveLength(2);
       expect(rows[0].seq).toBeLessThan(rows[1].seq);
       expect(rows.map((row) => JSON.parse(row.event_json) as { correlation?: { job_id?: string } }).every((payload) => payload.correlation?.job_id === 'epic-1')).toBe(true);
