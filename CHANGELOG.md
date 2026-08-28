@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.21.6] - 2026-08-28
+
+### Other changes
+- Support dynamic execution extension sources ([479d2b6](https://github.com/xtrm-dev/specialists/commit/479d2b69bce86b28c9556d21ecc00d27d10f2a74))
+- Remove retired loose service-skills injections ([d7ebe5b](https://github.com/xtrm-dev/specialists/commit/d7ebe5bea5431071dc25ebec3bd81992f0bf3802))
+
+### Project maintenance
+- Reconcile Specialists canon with native XTRM runtime (#270) ([e200b17](https://github.com/xtrm-dev/specialists/commit/e200b175523aa4c755a1c270350038e2b163c105))
+- Consolidate current Specialists programme canon (#271) ([79dbecc](https://github.com/xtrm-dev/specialists/commit/79dbecc82789e8cbc02b733c50cd4c7d867043e1))
+- Finish extension integration coverage ([47ae461](https://github.com/xtrm-dev/specialists/commit/47ae461859901f4d16df374ba727341ec48f4b66))
+
 ## [3.21.5] - 2026-08-20
 
 Patch focused on observability truthfulness and Pi vendored-tooling parity. `sp log` default output now filters agent-internal events (turn/tool/model.token_usage) that were drowning the 2-3 real lifecycle rows per job; the corresponding monitor recipes in `using-specialists/references/monitoring.md` are corrected to read from `.forensic_event` and to distinguish terminal (`job.completed|failed|cancelled`) from attention (waiting, `process_health.stale_detected`, `error.*`) states — the prior recipe silently matched nothing and coordinators read the silence as "still running". Background specialist dispatch now surfaces launch errors instead of returning a misleading `ok` envelope. Two Pi extension vendored-fork fixes bring `read-line-numbers` behavior in line with the Core implementation (EOF model + real-blank-line handling).
