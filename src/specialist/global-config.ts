@@ -21,6 +21,7 @@ import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import * as z from 'zod';
 import {
+  ExtensionToggleSchema,
   OVERRIDE_ALLOWED_EXECUTION_FIELDS,
   OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS,
   OVERRIDE_ALLOWED_PROMPT_FIELDS,
@@ -79,12 +80,7 @@ export function getGlobalUserConfigPath(): GlobalUserConfigPath {
 // Mirrors the override-allowed field set from the loader contract.
 // null / [] = "inherit from the layer below".
 
-const OverrideExtensionsSchema = z.object({
-  // `serena` is DEPRECATED (K4 Serena retirement, unitAI-e67up.8): kept so
-  // existing global override files keep validating; the runtime ignores it.
-  serena: z.boolean().nullable().optional(),
-  gitnexus: z.boolean().nullable(),
-}).strict();
+const OverrideExtensionsSchema = z.record(z.string(), ExtensionToggleSchema.nullable());
 
 const OverrideExecutionSchema = z.object({
   model: z.string().nullable(),

@@ -906,6 +906,50 @@ describe('KAN-90 — global override layer + null-model hard fail', () => {
     expect(loader.getBlockedFieldWarnings('demo').map(warning => warning.field)).not.toContain('execution.extensions.gitnexus');
   });
 
+  it('merges execution.extensions per key across package, global, and repo layers', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      BASE_SPEC({
+        extensions: {
+          gitnexus: true,
+          'npm:@pkg/base': true,
+        },
+      }),
+    );
+    await writeGlobalUserJson({
+      demo: {
+        execution: {
+          extensions: {
+            gitnexus: false,
+            'npm:@global/keep': true,
+          },
+        },
+      },
+    });
+    await mkdir(join(tmpProject, '.specialists', 'user'), { recursive: true });
+    await writeFile(
+      join(tmpProject, '.specialists', 'user', 'demo.specialist.json'),
+      JSON.stringify({
+        specialist: {
+          execution: {
+            extensions: {
+              'npm:@repo/last': true,
+            },
+          },
+        },
+      }),
+    );
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.execution.extensions).toEqual({
+      gitnexus: false,
+      'npm:@pkg/base': true,
+      'npm:@global/keep': true,
+      'npm:@repo/last': true,
+    });
+  });
+
   it('global layer overrides notes_mode without blocked warnings', async () => {
     await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
     await writeGlobalUserJson({ demo: { notes_mode: 'final-only' } });

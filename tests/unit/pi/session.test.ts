@@ -12,7 +12,7 @@ vi.mock('node:child_process', () => ({
 }));
 
 import { execFileSync, spawn } from 'node:child_process';
-import { PiAgentSession, StallTimeoutError, resolveRuntimeToolContract, validateWriteToolPathAgainstBoundary } from '../../../src/pi/session.js';
+import { PiAgentSession, StallTimeoutError, resolveExecutionExtensionSelection, resolveRuntimeToolContract, validateWriteToolPathAgainstBoundary } from '../../../src/pi/session.js';
 
 const mockSpawn = spawn as ReturnType<typeof vi.fn>;
 const mockExecFileSync = execFileSync as ReturnType<typeof vi.fn>;
@@ -119,6 +119,31 @@ async function withGitnexusInstall<T>(version: string, run: (npmGlobalDir: strin
 
 
 // ── RPC protocol parsing tests ────────────────────────────────────────────────
+
+describe('resolveExecutionExtensionSelection', () => {
+  it('preserves source order, filters legacy keys, and disables offline for remote sources', () => {
+    expect(resolveExecutionExtensionSelection({
+      serena: false,
+      gitnexus: false,
+      'npm:@jaggerxtrm/pi-service-knowledge': true,
+      './local-extension': true,
+      'https://example.test/ext': true,
+      disabled: false,
+    })).toEqual({
+      excludeExtensions: ['pi-gitnexus'],
+      extensionSources: ['npm:@jaggerxtrm/pi-service-knowledge', './local-extension', 'https://example.test/ext'],
+      offline: false,
+    });
+  });
+
+  it('keeps offline when only local sources are enabled', () => {
+    expect(resolveExecutionExtensionSelection({ './local-extension': true })).toEqual({
+      excludeExtensions: [],
+      extensionSources: ['./local-extension'],
+      offline: true,
+    });
+  });
+});
 
 describe('validateWriteToolPathAgainstBoundary', () => {
   const boundary = '/tmp/worktrees/elhl';
@@ -476,6 +501,25 @@ describe('PiAgentSession', () => {
     expect(args.indexOf('--no-context-files')).toBeGreaterThan(args.indexOf('--offline'));
     expect(args.indexOf('--no-prompt-templates')).toBeGreaterThan(args.indexOf('--no-context-files'));
     expect(args.indexOf('--no-themes')).toBeGreaterThan(args.indexOf('--no-prompt-templates'));
+  });
+
+  it('omits --offline and forwards ordered custom extension sources', async () => {
+    const session = await PiAgentSession.create({
+      model: 'gemini',
+      extensionSources: ['npm:@jaggerxtrm/pi-service-knowledge', './local-extension'],
+      offline: false,
+    });
+    await session.start();
+
+    const args: string[] = mockSpawn.mock.calls[0][1];
+    expect(args).not.toContain('--offline');
+    const extensionPairs = args
+      .map((arg, index) => (arg === '-e' ? args[index + 1] : null))
+      .filter((value): value is string => Boolean(value));
+    expect(extensionPairs).toEqual(expect.arrayContaining([
+      'npm:@jaggerxtrm/pi-service-knowledge',
+      './local-extension',
+    ]));
   });
 
   it('keeps package runner system prompt appended instead of replacing Pi system prompt', async () => {

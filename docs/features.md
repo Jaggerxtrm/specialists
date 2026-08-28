@@ -574,7 +574,7 @@ Blocked fields are still guarded:
 
 Allowed override fields include:
 - `execution.model`, `execution.fallback_model`, `execution.timeout_ms`, `execution.stall_timeout_ms`, `execution.interactive`, `execution.thinking_level`, `execution.max_retries`, `execution.response_format`
-- `execution.extensions.gitnexus` (`execution.extensions.serena` remains allowlisted for legacy configs but is deprecated and ignored)
+- `execution.extensions` (`gitnexus: false` remains legacy opt-out; arbitrary trusted source-string keys are allowed; `execution.extensions.serena` remains allowlisted for legacy configs but is deprecated and ignored)
 - `specialist.stall_detection.waiting_auto_close_ms`
 - `specialist.prompt.system_prompt_mode`
 

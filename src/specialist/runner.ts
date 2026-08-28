@@ -7,6 +7,7 @@ import { MandatoryRulesBudgetError } from './mandatory-rules.js';
 import {
   PiAgentSession,
   SessionKilledError,
+  resolveExecutionExtensionSelection,
   resolveRuntimeToolContract,
   type PiSessionOptions,
   type SessionMetricEvent,
@@ -1022,11 +1023,8 @@ export class SpecialistRunner {
     const effectiveKeepAlive = options.noKeepAlive
       ? false
       : (options.keepAlive ?? execution.interactive ?? false);
-    // Serena extension injection retired (unitAI-e67up.8): legacy
-    // execution.extensions.serena config stays parseable but is ignored.
-    const excludeExtensions = [
-      execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
-    ].filter((value): value is string => Boolean(value));
+    const extensionSelection = resolveExecutionExtensionSelection(execution.extensions);
+    const excludeExtensions = extensionSelection.excludeExtensions;
     const resolvedToolContract = resolveRuntimeToolContract({
       level: permissionLevel,
       specialistName: options.specialistName ?? metadata.name,
@@ -1443,6 +1441,8 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
           cwd: runCwd,
           worktreeBoundary: options.worktreeBoundary,
           ...(excludeExtensions.length > 0 ? { excludeExtensions } : {}),
+          ...(extensionSelection.extensionSources.length > 0 ? { extensionSources: extensionSelection.extensionSources } : {}),
+          ...(extensionSelection.offline === false ? { offline: false } : {}),
           ...(Object.keys(envVars).length > 0 ? { env: envVars } : {}),
           onToken:     (delta) => onProgress?.(delta),
           onThinking:  (delta) => onProgress?.(`💭 ${delta}`),

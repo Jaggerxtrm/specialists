@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { PiAgentSession, resolveRuntimeToolContract } from '../pi/session.js';
+import { PiAgentSession, resolveExecutionExtensionSelection, resolveRuntimeToolContract } from '../pi/session.js';
 import { getReadLineNumbersExtensionPath } from '../pi/read-line-numbers-extension.js';
 import { SpecialistLoader } from './loader.js';
 import { buildMandatoryRulesInjection } from './mandatory-rules.js';
@@ -676,14 +676,12 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
     const permissionLevel = spec.specialist.execution.permission_required;
     const specialistName = spec.specialist.metadata?.name ?? resolvedSpecialist;
     const specialistPermissions = spec.specialist.permissions;
-    const excludeExtensions = [
-      spec.specialist.execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
-    ].filter((value): value is string => Boolean(value));
+    const extensionSelection = resolveExecutionExtensionSelection(spec.specialist.execution.extensions);
     const resolvedToolContract = resolveRuntimeToolContract({
       level: permissionLevel,
       specialistName,
       specialistPermissions,
-      excludeExtensions,
+      excludeExtensions: extensionSelection.excludeExtensions,
     });
     const resolvedToolContractBlock = resolvedToolContract ? formatResolvedToolContract(resolvedToolContract) : '';
 
@@ -966,7 +964,12 @@ export function collectModelCandidates(input: ScriptGenerateRequest, spec: Speci
 
 type AttemptFailureReason = 'assistant_text_too_large' | 'stderr_too_large' | 'malformed_line_too_large';
 
-function appendExtensionArgs(args: string[], spec: Specialist, resolvedToolContract?: ResolvedToolContract): void {
+function appendExtensionArgs(
+  args: string[],
+  spec: Specialist,
+  resolvedToolContract?: ResolvedToolContract,
+  extensionSources: readonly string[] = [],
+): void {
   const permissionLevel = spec.specialist.execution.permission_required.toUpperCase();
   // Always-on: numbered read output. Safe for every permission level.
   const readLineNumbersPath = getReadLineNumbersExtensionPath();
@@ -987,6 +990,9 @@ function appendExtensionArgs(args: string[], spec: Specialist, resolvedToolContr
   if (gitnexusContract?.status === 'available' && gitnexusContract.packagePath && existsSync(gitnexusContract.packagePath)) {
     args.push('-e', gitnexusContract.packagePath);
   }
+  for (const source of extensionSources) {
+    args.push('-e', source);
+  }
 }
 
 async function runSingleAttempt(
@@ -1004,6 +1010,8 @@ async function runSingleAttempt(
   resolvedToolContract?: ResolvedToolContract,
   appendTimelineEvent?: ScriptTimelineAppender,
 ): Promise<{ model: string; text: string; stderr: string; exitCode: number; timedOut: boolean; outputTooLarge: boolean; outputTooLargeReason?: AttemptFailureReason }> {
+  const extensionSelection = resolveExecutionExtensionSelection(spec.specialist.execution.extensions);
+
   if (options.surface === 'script' && spec.specialist.execution.permission_required !== 'READ_ONLY') {
     const session = await PiAgentSession.create({
       model,
@@ -1016,9 +1024,9 @@ async function runSingleAttempt(
       thinkingLevel,
       cwd: options.projectDir ?? process.cwd(),
       stallTimeoutMs: spec.specialist.execution.stall_timeout_ms ?? timeoutMs,
-      excludeExtensions: [
-        spec.specialist.execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
-      ].filter((value): value is string => Boolean(value)),
+      ...(extensionSelection.excludeExtensions.length > 0 ? { excludeExtensions: extensionSelection.excludeExtensions } : {}),
+      ...(extensionSelection.extensionSources.length > 0 ? { extensionSources: extensionSelection.extensionSources } : {}),
+      ...(extensionSelection.offline === false ? { offline: false } : {}),
       resolvedToolContract,
       onToken: (delta) => {
         recordAssistantDelta(delta);
@@ -1133,14 +1141,16 @@ async function runSingleAttempt(
   }
 
   return await new Promise((resolve, reject) => {
-    const args = ['--mode', 'json', '--no-session', '--no-extensions', '--no-skills', '--offline', '--no-context-files', '--no-prompt-templates', '--no-themes'];
+    const args = ['--mode', 'json', '--no-session', '--no-extensions', '--no-skills'];
+    if (extensionSelection.offline !== false) args.push('--offline');
+    args.push('--no-context-files', '--no-prompt-templates', '--no-themes');
     const toolsFlag = resolvedToolContract?.toolsFlag;
     if (toolsFlag) args.push('--tools', toolsFlag);
     for (const skillPath of skillPaths) args.push('--skill', skillPath);
     args.push('--model', model);
     if (thinkingLevel) args.push('--thinking', thinkingLevel);
     if (systemPrompt) args.push(systemPromptMode === 'append' ? '--append-system-prompt' : '--system-prompt', systemPrompt);
-    appendExtensionArgs(args, spec, resolvedToolContract);
+    appendExtensionArgs(args, spec, resolvedToolContract, extensionSelection.extensionSources);
 
     const pi = spawn('pi', args, { stdio: ['pipe', 'pipe', 'pipe'], cwd: options.projectDir ?? process.cwd() });
     options.onChild?.(pi);

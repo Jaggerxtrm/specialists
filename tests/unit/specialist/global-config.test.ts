@@ -76,6 +76,9 @@ describe('global specialist override config', () => {
           stall_timeout_ms: null,
           thinking_level: null,
           max_retries: null,
+          extensions: {
+            'npm:@jaggerxtrm/pi-service-knowledge': true,
+          },
         },
         beads_write_notes: false,
         skills: { paths: ['/custom'] },
@@ -98,6 +101,7 @@ describe('global specialist override config', () => {
         prompt_limit_bytes: null,
         stdout_limit_bytes: null,
         extensions: {
+          'npm:@jaggerxtrm/pi-service-knowledge': true,
           gitnexus: null,
         },
       },
@@ -231,21 +235,23 @@ describe('global specialist override config', () => {
     expect(result.errors.some(error => error.path === 'demo.prompt.bogus')).toBe(true);
   });
 
-  it('validateGlobalUserConfig rejects unknown nested execution sub-keys with leaf path', () => {
-    const invalid = {
+  it('validateGlobalUserConfig accepts arbitrary execution.extensions source keys', () => {
+    const valid = {
       demo: {
         ...buildSpecialistOverrideTemplate(),
         execution: {
           ...buildSpecialistOverrideTemplate().execution,
-          extensions: { serena: null, gitnexus: null, bogus: true },
+          extensions: {
+            serena: null,
+            gitnexus: null,
+            'npm:@jaggerxtrm/pi-service-knowledge': true,
+            './local-extension': false,
+          },
         },
       },
     };
 
-    const result = validateGlobalUserConfig(JSON.stringify(invalid));
-
-    expect(result.valid).toBe(false);
-    expect(result.errors.some(error => error.path === 'demo.execution.extensions.bogus')).toBe(true);
+    expect(validateGlobalUserConfig(JSON.stringify(valid))).toEqual({ valid: true, errors: [] });
   });
 
   it('validates the complete global overrides guide example', () => {

@@ -65,6 +65,7 @@ const PRIMITIVE_HINT: Record<string, string> = {
   'execution.max_retries': 'count · transient-error retries; e.g. 3',
   'execution.prompt_limit_bytes': 'bytes · prompt cap; e.g. 4194304 (4 MiB)',
   'execution.stdout_limit_bytes': 'bytes · stdout cap; e.g. 33554432 (32 MiB)',
+  'execution.extensions': 'object · keys are trusted extension sources; true adds repeated -e pairs, false/null skips; remote npm:/git:/http(s): sources disable --offline',
   'execution.extensions.serena': 'deprecated · accepted but ignored (Serena retired)',
   'execution.extensions.gitnexus': 'true|false · false disables GitNexus MCP',
   'stall_detection.waiting_auto_close_ms': 'ms · waiting auto-close; e.g. 3600000 (1h)',
@@ -339,14 +340,29 @@ export function getLeafSchema(path: string): z.ZodTypeAny | undefined {
     let node: z.ZodTypeAny | undefined = rootShape[parts[0]!];
     for (let i = 1; i < parts.length; i += 1) {
       if (!node) return undefined;
-      const innerShape = extractShape(node);
-      if (!innerShape) return undefined;
-      node = innerShape[parts[i]!];
+      const unwrappedNode = unwrapNullableOptional(node).inner;
+      const innerShape = extractShape(unwrappedNode);
+      if (innerShape) {
+        node = innerShape[parts[i]!];
+        continue;
+      }
+      if (isZodRecord(unwrappedNode)) return getZodRecordValueType(unwrappedNode);
+      return undefined;
     }
     return node;
   } catch {
     return undefined;
   }
+}
+
+function isZodRecord(node: z.ZodTypeAny): boolean {
+  const def = (node as unknown as { _def?: Record<string, unknown> })._def;
+  return def?.typeName === 'ZodRecord';
+}
+
+function getZodRecordValueType(node: z.ZodTypeAny): z.ZodTypeAny | undefined {
+  const def = (node as unknown as { _def?: Record<string, unknown> })._def;
+  return def?.valueType as z.ZodTypeAny | undefined;
 }
 
 function unwrapNullableOptional(node: z.ZodTypeAny): { inner: z.ZodTypeAny; nullable: boolean } {

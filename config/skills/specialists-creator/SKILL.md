@@ -200,6 +200,7 @@ sp edit my-specialist specialist.execution.model anthropic/claude-sonnet-4-6
 sp edit my-specialist specialist.execution.fallback_model google-gemini-cli/gemini-3.1-pro-preview
 sp edit my-specialist specialist.execution.permission_required READ_ONLY
 sp edit my-specialist specialist.execution.extensions.gitnexus false
+sp edit my-specialist specialist.execution.extensions."npm:@scope/pkg" true
 
 # 4. Use --file only for multiline prompt fields
 sp edit my-specialist specialist.prompt.system --file .tmp/system.prompt.txt
@@ -273,6 +274,7 @@ Avoid vague descriptions like "general purpose assistant" or "helps with code". 
 | `thinking_level` | enum | — | `off` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` |
 | `extensions.serena` | boolean | — | DEPRECATED, ignored (Serena retired); kept only so legacy specs keep validating |
 | `extensions.gitnexus` | boolean | `true` | set `false` to opt out of GitNexus extension injection for this specialist |
+| `extensions.<source>` | boolean | — | trusted executable source string; `true` forwards `-e <source>` in insertion order |
 
 **When to use `execution.interactive`**
 
@@ -338,8 +340,8 @@ See [docs/manifest.md](../../../docs/manifest.md) for full deny-mode semantics, 
 
 **Per-specialist extension opt-out**
 
-Use `execution.extensions` only when this specialist must suppress default extension injection.
-This flag defaults to `true`, so omit this block unless opt-out is required.
+Use `execution.extensions` only for trusted executable extension config.
+`gitnexus: false` suppresses default GitNexus injection. Any other source-string key with value `true` forwards `-e <source>` in insertion order. Remote `npm:`, `git:`, and `http(s):` sources disable `--offline`. Omit block unless specialist needs opt-out or extra trusted source.
 
 ```json
 {

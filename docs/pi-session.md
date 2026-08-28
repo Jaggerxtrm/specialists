@@ -69,7 +69,7 @@ execution:
 
 ## Extension opt-out
 
-Specialists can opt out of the GitNexus npm extension via `execution.extensions` in their config:
+Specialists can tune extension injection via `execution.extensions` in their config:
 
 ```json
 {
@@ -81,7 +81,7 @@ Specialists can opt out of the GitNexus npm extension via `execution.extensions`
 }
 ```
 
-When `false`, the extension is excluded from the `-e` args passed to Pi spawn. This is useful for specialists where GitNexus tools add overhead without value.
+`gitnexus: false` excludes default GitNexus from `-e` args. Any other trusted source-string key with value `true` is forwarded as `-e <source>` in insertion order. Remote `npm:`, `git:`, and `http(s):` sources also omit `--offline`; local paths keep it.
 
 > **Deprecated:** `execution.extensions.serena` was retired with the K4 Serena
 > retirement (unitAI-e67up.8). Legacy configs that still carry the key keep

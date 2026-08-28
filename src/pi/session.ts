@@ -104,6 +104,10 @@ export interface PiSessionOptions {
   model: string;
   systemPrompt?: string;
   systemPromptMode?: 'append' | 'replace';
+  /** Additional extension sources forwarded as repeated `-e <source>` pairs. */
+  extensionSources?: readonly string[];
+  /** Controls whether Pi starts with `--offline`. Defaults true. */
+  offline?: boolean;
   /** Absolute path boundary for write-side tools; undefined disables enforcement */
   worktreeBoundary?: string;
   /** Permission level from specialist YAML — controls which pi tools are enabled */
@@ -309,6 +313,33 @@ export function resolvePermissionTools(options: {
   excludeExtensions?: readonly string[];
 }): string | undefined {
   return resolveRuntimeToolContract(options)?.toolsFlag || undefined;
+}
+
+function isRemoteExtensionSource(source: string): boolean {
+  return source.startsWith('npm:') || source.startsWith('git:') || source.startsWith('http://') || source.startsWith('https://');
+}
+
+export function resolveExecutionExtensionSelection(
+  extensions: Readonly<Record<string, boolean | null | undefined>> | undefined,
+): { excludeExtensions: string[]; extensionSources: string[]; offline: boolean } {
+  const excludeExtensions: string[] = [];
+  const extensionSources: string[] = [];
+
+  for (const [source, enabled] of Object.entries(extensions ?? {})) {
+    if (source === 'serena') continue;
+    if (source === 'gitnexus') {
+      if (enabled === false) excludeExtensions.push('pi-gitnexus');
+      continue;
+    }
+    if (enabled !== true) continue;
+    extensionSources.push(source);
+  }
+
+  return {
+    excludeExtensions,
+    extensionSources,
+    offline: !extensionSources.some(isRemoteExtensionSource),
+  };
 }
 
 export function resolveGlobalNodeModulesDir(): string | undefined {
@@ -717,7 +748,7 @@ export class PiAgentSession {
       '--no-skills',       // isolate: discovery pool == declared skills.paths only (re-added below via --skill)
       ...providerArgs,
       '--no-session',
-      '--offline',
+      ...(this.options.offline === false ? [] : ['--offline']),
       '--no-context-files',
       '--no-prompt-templates',
       '--no-themes',
@@ -770,6 +801,9 @@ export class PiAgentSession {
     const gitnexusContract = resolvedToolContract?.extensions.gitnexus;
     if (gitnexusContract?.status === 'available' && gitnexusContract.packagePath && existsSync(gitnexusContract.packagePath)) {
       args.push('-e', gitnexusContract.packagePath);
+    }
+    for (const source of this.options.extensionSources ?? []) {
+      args.push('-e', source);
     }
 
     if (this.options.systemPrompt) {
