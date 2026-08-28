@@ -329,6 +329,47 @@ describe('observability-sqlite', () => {
       expect(rows[0].seq).toBeLessThan(rows[1].seq);
       expect(rows.map((row) => JSON.parse(row.event_json) as { correlation?: { job_id?: string } }).every((payload) => payload.correlation?.job_id === 'epic-1')).toBe(true);
     });
+
+    it('fails visible on explicit seq collision and preserves the original row', () => {
+      const client = createClient();
+      const original = createForensicEvent({
+        seq: 7,
+        event_family: 'chain',
+        event_name: 'chain.ready_for_review',
+        resource: {
+          service_namespace: 'xtrm',
+          service_name: 'specialists',
+          service_component: 'epic',
+          deployment_environment: 'local',
+          repo: 'specialists',
+          participant_kind: 'specialist',
+          participant_role: 'epic',
+        },
+        correlation: { job_id: 'epic-2', participant_id: 'epic::2' },
+        body: { marker: 'original' },
+      });
+      const colliding = createForensicEvent({
+        seq: 7,
+        event_family: original.event_family,
+        event_name: original.event_name,
+        resource: original.resource,
+        correlation: original.correlation,
+        body: { marker: 'colliding' },
+      });
+
+      client.appendForensicEvent('epic-2', 'specialist', undefined, original);
+
+      expect(() => client.appendForensicEvent('epic-2', 'specialist', undefined, colliding)).toThrow(/appendForensicEvent/i);
+
+      db = new Database(resolveObservabilityDbLocation(tempRoot).dbPath);
+      const rows = db.query('SELECT seq, event_json FROM specialist_forensic_events WHERE job_id = ? ORDER BY seq').all('epic-2') as Array<{ seq: number; event_json: string }>;
+      expect(rows).toHaveLength(1);
+      expect(rows[0].seq).toBe(7);
+      expect(JSON.parse(rows[0].event_json)).toMatchObject({
+        seq: 7,
+        body: { marker: 'original' },
+      });
+    });
   });
 
   describe('upsertNodeMemory', () => {
