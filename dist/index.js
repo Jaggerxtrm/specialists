@@ -21955,11 +21955,18 @@ async function writeJobFileOutput(path, content, mode) {
 }
 
 // src/specialist/templateEngine.ts
+function extractTemplateTokens(template) {
+  return [...template.matchAll(PLACEHOLDER_RE)].map((match) => match[1]);
+}
 function renderTemplate(template, variables) {
-  return template.replace(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g, (match, key) => {
+  return template.replace(PLACEHOLDER_RE, (match, key) => {
     return variables[key] !== undefined ? variables[key] : match;
   });
 }
+var PLACEHOLDER_RE;
+var init_templateEngine = __esm(() => {
+  PLACEHOLDER_RE = /\$([a-zA-Z_][a-zA-Z0-9_]*)/g;
+});
 
 // src/specialist/memory-retrieval.ts
 import { execSync } from "child_process";
@@ -22479,7 +22486,7 @@ var init_mandatory_rules = __esm(() => {
 // src/specialist/beads.ts
 import { spawnSync as spawnSync3 } from "child_process";
 function buildBeadContext(bead, completedBlockers = []) {
-  const lines = [`# Task: ${bead.title}`];
+  const lines = [`# Task: ${bead.title}`, `## Bead id: ${bead.id}`];
   if (bead.description?.trim()) {
     lines.push(bead.description.trim());
   }
@@ -22747,6 +22754,13 @@ ${buildBeadBoundaryInstruction(cwd, input.worktreeBoundary)}`.trim() : input.fal
     ...input.variables ?? {},
     ...beadVariables
   };
+  for (const name of OPTIONALLY_ABSENT_PLACEHOLDERS) {
+    if (variables[name] === undefined)
+      variables[name] = "";
+  }
+  const unresolvedTokens = extractTemplateTokens(prompt.task_template).filter((name) => variables[name] === undefined);
+  if (unresolvedTokens.length > 0)
+    throw new TemplatePlaceholderError(unresolvedTokens);
   let renderedTask = renderTemplate(prompt.task_template, variables);
   const taskTemplateComponent = measurePayloadComponent("task_template", "task_template", renderedTask);
   let mandatoryRulesBlock = "";
@@ -22790,11 +22804,30 @@ ${mandatoryRulesBlock}`;
     resolvedPrompt
   };
 }
-var MANDATORY_RULES_TOKEN_LIMIT = 2000, SKILL_NAME_PATTERN;
+var MANDATORY_RULES_TOKEN_LIMIT = 2000, SKILL_NAME_PATTERN, OPTIONALLY_ABSENT_PLACEHOLDERS, TemplatePlaceholderError;
 var init_task_prompt = __esm(() => {
+  init_templateEngine();
   init_mandatory_rules();
   init_beads();
   SKILL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+  OPTIONALLY_ABSENT_PLACEHOLDERS = new Set([
+    "bead_context",
+    "gitnexus_summary",
+    "obligations_diff",
+    "resolved_tool_contract",
+    "reused_worktree_awareness",
+    "reviewed_job_id",
+    "writer_diff",
+    "writer_job_id"
+  ]);
+  TemplatePlaceholderError = class TemplatePlaceholderError extends Error {
+    unresolved;
+    constructor(unresolved) {
+      super(`task_template references unresolved placeholder(s): ${unresolved.map((n) => `$${n}`).join(", ")}`);
+      this.name = "TemplatePlaceholderError";
+      this.unresolved = unresolved;
+    }
+  };
 });
 
 // src/pi/read-line-numbers-extension.ts
@@ -25490,6 +25523,7 @@ ${outputContractWarnings.map((msg) => `  \u26A0 ${msg}`).join(`
 }
 var SHELL_BUILTINS, PERMISSION_GATED_TOOLS, RETRY_BASE_DELAY_MS = 1000, RETRY_MAX_JITTER = 0.2, BASE_OUTPUT_SCHEMA, IMPACT_REPORT_SCHEMA, OUTPUT_TYPE_SCHEMA_EXTENSIONS, OUTPUT_TYPE_GUIDANCE;
 var init_runner = __esm(() => {
+  init_templateEngine();
   init_task_prompt();
   init_mandatory_rules();
   init_session();
@@ -33815,6 +33849,7 @@ var init_script_runner = __esm(() => {
   init_observability_sqlite();
   init_runner();
   init_resolved_tool_contract();
+  init_templateEngine();
   init_timeline_events();
   CompatGuardError = class CompatGuardError extends Error {
     field;

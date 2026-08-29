@@ -15788,11 +15788,24 @@ function dedupeModels(models) {
 }
 
 // src/specialist/templateEngine.ts
+var PLACEHOLDER_RE = /\$([a-zA-Z_][a-zA-Z0-9_]*)/g;
 function renderTemplate(template, variables) {
-  return template.replace(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g, (match, key) => {
+  return template.replace(PLACEHOLDER_RE, (match, key) => {
     return variables[key] !== undefined ? variables[key] : match;
   });
 }
+
+// src/specialist/task-prompt.ts
+var OPTIONALLY_ABSENT_PLACEHOLDERS = new Set([
+  "bead_context",
+  "gitnexus_summary",
+  "obligations_diff",
+  "resolved_tool_contract",
+  "reused_worktree_awareness",
+  "reviewed_job_id",
+  "writer_diff",
+  "writer_job_id"
+]);
 
 // src/utils/circuitBreaker.ts
 class CircuitBreaker {
