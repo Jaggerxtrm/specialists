@@ -46,6 +46,7 @@ describe('resolution diagnostics', () => {
     const toolContract: ResolvedToolContract = {
       effectiveTier: 'LOW',
       toolsFlag: 'read,ls,gitnexus_query',
+      exposedExtensionSources: [],
       toolsList: ['read', 'ls', 'gitnexus_query'],
       nativeTools: ['read', 'ls'],
       extensionTools: ['gitnexus_query'],

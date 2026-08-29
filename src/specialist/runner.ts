@@ -316,6 +316,7 @@ export function validateBeforeRun(
   }
 
   // Validate required_tools are enabled by the selected permission level
+  const exposingExtensions = (resolvedToolContract?.exposedExtensionSources.length ?? 0) > 0;
   for (const tool of spec.specialist.capabilities?.required_tools ?? []) {
     if (!isToolAvailable(tool, permissionLevel)) {
       errors.push(
@@ -324,9 +325,16 @@ export function validateBeforeRun(
       continue;
     }
     if (resolvedToolContract && !resolvedToolContract.toolsList.some((availableTool) => availableTool.toLowerCase() === tool.toLowerCase())) {
-      errors.push(
-        `  ✗ capabilities.required_tools: tool "${tool}" missing from resolved runtime contract (${resolvedToolContract.toolsFlag || '(none)'})`,
-      );
+      if (exposingExtensions) {
+        // Extension-registered tool names cannot be enumerated ahead of
+        // launch; with an enabled extension source the deny-list gate exposes
+        // them (unitAI-34pyf). Validation of native tools still applies.
+        warnings.push(`capabilities.required_tools: tool "${tool}" is expected from an enabled extension source; it is not in the native contract (${resolvedToolContract.toolsFlag || '(none)'})`);
+      } else {
+        errors.push(
+          `  ✗ capabilities.required_tools: tool "${tool}" missing from resolved runtime contract (${resolvedToolContract.toolsFlag || '(none)'})`,
+        );
+      }
     }
   }
 
@@ -1030,6 +1038,7 @@ export class SpecialistRunner {
       specialistName: options.specialistName ?? metadata.name,
       specialistPermissions,
       excludeExtensions,
+      extensionSources: extensionSelection.extensionSources,
     });
     const resolvedToolContractBlock = resolvedToolContract ? formatResolvedToolContract(resolvedToolContract) : '';
     const promptVariables = {
