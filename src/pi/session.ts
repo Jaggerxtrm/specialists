@@ -39,6 +39,7 @@ export class StallTimeoutError extends Error {
 //
 import { createHash } from 'node:crypto';
 import { getReadLineNumbersExtensionPath } from './read-line-numbers-extension.js';
+import { getExtensionToolPolicyExtensionPath, NATIVE_TOOLS_ENV_KEY } from './extension-tool-policy-extension.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -316,6 +317,30 @@ export function resolvePermissionTools(options: {
   extensionSources?: readonly string[];
 }): string | undefined {
   return resolveRuntimeToolContract(options)?.toolsFlag || undefined;
+}
+
+/**
+ * Applies the extension tool-policy gate to a spawn arg list (unitAI-34pyf).
+ * When the resolved contract exposes enabled extension sources:
+ *   - the session starts `--no-builtin-tools` (nothing active by default),
+ *   - the Specialists-owned policy extension is appended LAST to `-e` and, at
+ *     session_start, re-activates the tier's granted natives (bounded env
+ *     channel) plus every tool registered by the enabled extension sources.
+ * Native restrictions stay fail-closed: anything not explicitly granted is
+ * never activated, and Pi rejects inactive tools at call time. When no
+ * extension source is enabled this is a no-op and the caller keeps the strict
+ * `--tools` allowlist — byte-identical legacy behavior.
+ */
+export function applyExtensionToolPolicyGate(
+  args: string[],
+  contract: ResolvedToolContract | undefined,
+  env: Record<string, string>,
+): void {
+  if (!contract || (contract.exposedExtensionSources?.length ?? 0) === 0) return;
+  args.push('--no-builtin-tools');
+  const policyPath = getExtensionToolPolicyExtensionPath();
+  if (policyPath) args.push('-e', policyPath);
+  env[NATIVE_TOOLS_ENV_KEY] = contract.nativeTools.join(',');
 }
 
 function isRemoteExtensionSource(source: string): boolean {
@@ -766,8 +791,9 @@ export class PiAgentSession {
       excludeExtensions: this.options.excludeExtensions,
       extensionSources: this.options.extensionSources,
     });
-    if (resolvedToolContract?.excludeToolsFlag) args.push('--exclude-tools', resolvedToolContract.excludeToolsFlag);
-    else if (resolvedToolContract?.toolsFlag) args.push('--tools', resolvedToolContract.toolsFlag);
+    if (resolvedToolContract?.toolsFlag && (resolvedToolContract.exposedExtensionSources?.length ?? 0) === 0) {
+      args.push('--tools', resolvedToolContract.toolsFlag);
+    }
 
     // Thinking level (models that don't support it ignore the flag)
     if (this.options.thinkingLevel) {
@@ -829,9 +855,16 @@ export class PiAgentSession {
     const readLineNumbersPath = getReadLineNumbersExtensionPath();
     if (readLineNumbersPath) args.push('-e', readLineNumbersPath);
 
+    // Extension tool policy (unitAI-34pyf): appended LAST (-e) so every
+    // configured source is registered before session_start. Re-activates the
+    // granted natives + all extension-registered tools under --no-builtin-tools.
+    const policyEnv: Record<string, string> = {};
+    applyExtensionToolPolicyGate(args, resolvedToolContract, policyEnv);
+
     const hookEnv = {
       ...process.env,
       ...(this.options.env ?? {}),
+      ...policyEnv,
       CAVEMAN_LEVEL: 'full',
     };
 

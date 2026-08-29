@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 var __commonJS = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
-// node_modules/yaml/dist/nodes/identity.js
+// ../../../node_modules/yaml/dist/nodes/identity.js
 var require_identity = __commonJS((exports) => {
   var ALIAS = Symbol.for("yaml.alias");
   var DOC = Symbol.for("yaml.document");
@@ -56,7 +56,7 @@ var require_identity = __commonJS((exports) => {
   exports.isSeq = isSeq;
 });
 
-// node_modules/yaml/dist/visit.js
+// ../../../node_modules/yaml/dist/visit.js
 var require_visit = __commonJS((exports) => {
   var identity = require_identity();
   var BREAK = Symbol("break visit");
@@ -211,7 +211,7 @@ var require_visit = __commonJS((exports) => {
   exports.visitAsync = visitAsync;
 });
 
-// node_modules/yaml/dist/doc/directives.js
+// ../../../node_modules/yaml/dist/doc/directives.js
 var require_directives = __commonJS((exports) => {
   var identity = require_identity();
   var visit = require_visit();
@@ -363,7 +363,7 @@ var require_directives = __commonJS((exports) => {
   exports.Directives = Directives;
 });
 
-// node_modules/yaml/dist/doc/anchors.js
+// ../../../node_modules/yaml/dist/doc/anchors.js
 var require_anchors = __commonJS((exports) => {
   var identity = require_identity();
   var visit = require_visit();
@@ -425,7 +425,7 @@ var require_anchors = __commonJS((exports) => {
   exports.findNewAnchor = findNewAnchor;
 });
 
-// node_modules/yaml/dist/doc/applyReviver.js
+// ../../../node_modules/yaml/dist/doc/applyReviver.js
 var require_applyReviver = __commonJS((exports) => {
   function applyReviver(reviver, obj, key, val) {
     if (val && typeof val === "object") {
@@ -472,7 +472,7 @@ var require_applyReviver = __commonJS((exports) => {
   exports.applyReviver = applyReviver;
 });
 
-// node_modules/yaml/dist/nodes/toJS.js
+// ../../../node_modules/yaml/dist/nodes/toJS.js
 var require_toJS = __commonJS((exports) => {
   var identity = require_identity();
   function toJS(value, arg, ctx) {
@@ -499,7 +499,7 @@ var require_toJS = __commonJS((exports) => {
   exports.toJS = toJS;
 });
 
-// node_modules/yaml/dist/nodes/Node.js
+// ../../../node_modules/yaml/dist/nodes/Node.js
 var require_Node = __commonJS((exports) => {
   var applyReviver = require_applyReviver();
   var identity = require_identity();
@@ -536,7 +536,7 @@ var require_Node = __commonJS((exports) => {
   exports.NodeBase = NodeBase;
 });
 
-// node_modules/yaml/dist/nodes/Alias.js
+// ../../../node_modules/yaml/dist/nodes/Alias.js
 var require_Alias = __commonJS((exports) => {
   var anchors = require_anchors();
   var visit = require_visit();
@@ -646,7 +646,7 @@ var require_Alias = __commonJS((exports) => {
   exports.Alias = Alias;
 });
 
-// node_modules/yaml/dist/nodes/Scalar.js
+// ../../../node_modules/yaml/dist/nodes/Scalar.js
 var require_Scalar = __commonJS((exports) => {
   var identity = require_identity();
   var Node = require_Node();
@@ -674,7 +674,7 @@ var require_Scalar = __commonJS((exports) => {
   exports.isScalarValue = isScalarValue;
 });
 
-// node_modules/yaml/dist/doc/createNode.js
+// ../../../node_modules/yaml/dist/doc/createNode.js
 var require_createNode = __commonJS((exports) => {
   var Alias = require_Alias();
   var identity = require_identity();
@@ -746,7 +746,7 @@ var require_createNode = __commonJS((exports) => {
   exports.createNode = createNode;
 });
 
-// node_modules/yaml/dist/nodes/Collection.js
+// ../../../node_modules/yaml/dist/nodes/Collection.js
 var require_Collection = __commonJS((exports) => {
   var createNode = require_createNode();
   var identity = require_identity();
@@ -861,7 +861,7 @@ var require_Collection = __commonJS((exports) => {
   exports.isEmptyPath = isEmptyPath;
 });
 
-// node_modules/yaml/dist/stringify/stringifyComment.js
+// ../../../node_modules/yaml/dist/stringify/stringifyComment.js
 var require_stringifyComment = __commonJS((exports) => {
   var stringifyComment = (str) => str.replace(/^(?!$)(?: $)?/gm, "#");
   function indentComment(comment, indent) {
@@ -878,7 +878,7 @@ var require_stringifyComment = __commonJS((exports) => {
   exports.stringifyComment = stringifyComment;
 });
 
-// node_modules/yaml/dist/stringify/foldFlowLines.js
+// ../../../node_modules/yaml/dist/stringify/foldFlowLines.js
 var require_foldFlowLines = __commonJS((exports) => {
   var FOLD_FLOW = "flow";
   var FOLD_BLOCK = "block";
@@ -1015,7 +1015,7 @@ ${indent}${text.slice(fold + 1, end2)}`;
   exports.foldFlowLines = foldFlowLines;
 });
 
-// node_modules/yaml/dist/stringify/stringifyString.js
+// ../../../node_modules/yaml/dist/stringify/stringifyString.js
 var require_stringifyString = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var foldFlowLines = require_foldFlowLines();
@@ -1313,7 +1313,7 @@ ${indent}`);
   exports.stringifyString = stringifyString;
 });
 
-// node_modules/yaml/dist/stringify/stringify.js
+// ../../../node_modules/yaml/dist/stringify/stringify.js
 var require_stringify = __commonJS((exports) => {
   var anchors = require_anchors();
   var identity = require_identity();
@@ -1434,7 +1434,7 @@ ${ctx.indent}${str}`;
   exports.stringify = stringify;
 });
 
-// node_modules/yaml/dist/stringify/stringifyPair.js
+// ../../../node_modules/yaml/dist/stringify/stringifyPair.js
 var require_stringifyPair = __commonJS((exports) => {
   var identity = require_identity();
   var Scalar = require_Scalar();
@@ -1570,7 +1570,7 @@ ${ctx.indent}`;
   exports.stringifyPair = stringifyPair;
 });
 
-// node_modules/yaml/dist/log.js
+// ../../../node_modules/yaml/dist/log.js
 var require_log = __commonJS((exports) => {
   var node_process = __require("process");
   function debug(logLevel, ...messages) {
@@ -1589,7 +1589,7 @@ var require_log = __commonJS((exports) => {
   exports.warn = warn;
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/merge.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/merge.js
 var require_merge = __commonJS((exports) => {
   var identity = require_identity();
   var Scalar = require_Scalar();
@@ -1646,7 +1646,7 @@ var require_merge = __commonJS((exports) => {
   exports.merge = merge;
 });
 
-// node_modules/yaml/dist/nodes/addPairToJSMap.js
+// ../../../node_modules/yaml/dist/nodes/addPairToJSMap.js
 var require_addPairToJSMap = __commonJS((exports) => {
   var log = require_log();
   var merge = require_merge();
@@ -1707,7 +1707,7 @@ var require_addPairToJSMap = __commonJS((exports) => {
   exports.addPairToJSMap = addPairToJSMap;
 });
 
-// node_modules/yaml/dist/nodes/Pair.js
+// ../../../node_modules/yaml/dist/nodes/Pair.js
 var require_Pair = __commonJS((exports) => {
   var createNode = require_createNode();
   var stringifyPair = require_stringifyPair();
@@ -1745,7 +1745,7 @@ var require_Pair = __commonJS((exports) => {
   exports.createPair = createPair;
 });
 
-// node_modules/yaml/dist/stringify/stringifyCollection.js
+// ../../../node_modules/yaml/dist/stringify/stringifyCollection.js
 var require_stringifyCollection = __commonJS((exports) => {
   var identity = require_identity();
   var stringify = require_stringify();
@@ -1897,7 +1897,7 @@ ${indent}${end}`;
   exports.stringifyCollection = stringifyCollection;
 });
 
-// node_modules/yaml/dist/nodes/YAMLMap.js
+// ../../../node_modules/yaml/dist/nodes/YAMLMap.js
 var require_YAMLMap = __commonJS((exports) => {
   var stringifyCollection = require_stringifyCollection();
   var addPairToJSMap = require_addPairToJSMap();
@@ -2024,7 +2024,7 @@ var require_YAMLMap = __commonJS((exports) => {
   exports.findPair = findPair;
 });
 
-// node_modules/yaml/dist/schema/common/map.js
+// ../../../node_modules/yaml/dist/schema/common/map.js
 var require_map = __commonJS((exports) => {
   var identity = require_identity();
   var YAMLMap = require_YAMLMap();
@@ -2043,7 +2043,7 @@ var require_map = __commonJS((exports) => {
   exports.map = map;
 });
 
-// node_modules/yaml/dist/nodes/YAMLSeq.js
+// ../../../node_modules/yaml/dist/nodes/YAMLSeq.js
 var require_YAMLSeq = __commonJS((exports) => {
   var createNode = require_createNode();
   var stringifyCollection = require_stringifyCollection();
@@ -2136,7 +2136,7 @@ var require_YAMLSeq = __commonJS((exports) => {
   exports.YAMLSeq = YAMLSeq;
 });
 
-// node_modules/yaml/dist/schema/common/seq.js
+// ../../../node_modules/yaml/dist/schema/common/seq.js
 var require_seq = __commonJS((exports) => {
   var identity = require_identity();
   var YAMLSeq = require_YAMLSeq();
@@ -2155,7 +2155,7 @@ var require_seq = __commonJS((exports) => {
   exports.seq = seq;
 });
 
-// node_modules/yaml/dist/schema/common/string.js
+// ../../../node_modules/yaml/dist/schema/common/string.js
 var require_string = __commonJS((exports) => {
   var stringifyString = require_stringifyString();
   var string = {
@@ -2171,7 +2171,7 @@ var require_string = __commonJS((exports) => {
   exports.string = string;
 });
 
-// node_modules/yaml/dist/schema/common/null.js
+// ../../../node_modules/yaml/dist/schema/common/null.js
 var require_null = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var nullTag = {
@@ -2186,7 +2186,7 @@ var require_null = __commonJS((exports) => {
   exports.nullTag = nullTag;
 });
 
-// node_modules/yaml/dist/schema/core/bool.js
+// ../../../node_modules/yaml/dist/schema/core/bool.js
 var require_bool = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var boolTag = {
@@ -2207,7 +2207,7 @@ var require_bool = __commonJS((exports) => {
   exports.boolTag = boolTag;
 });
 
-// node_modules/yaml/dist/stringify/stringifyNumber.js
+// ../../../node_modules/yaml/dist/stringify/stringifyNumber.js
 var require_stringifyNumber = __commonJS((exports) => {
   function stringifyNumber({ format, minFractionDigits, tag, value }) {
     if (typeof value === "bigint")
@@ -2231,7 +2231,7 @@ var require_stringifyNumber = __commonJS((exports) => {
   exports.stringifyNumber = stringifyNumber;
 });
 
-// node_modules/yaml/dist/schema/core/float.js
+// ../../../node_modules/yaml/dist/schema/core/float.js
 var require_float = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var stringifyNumber = require_stringifyNumber();
@@ -2274,7 +2274,7 @@ var require_float = __commonJS((exports) => {
   exports.floatNaN = floatNaN;
 });
 
-// node_modules/yaml/dist/schema/core/int.js
+// ../../../node_modules/yaml/dist/schema/core/int.js
 var require_int = __commonJS((exports) => {
   var stringifyNumber = require_stringifyNumber();
   var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
@@ -2316,7 +2316,7 @@ var require_int = __commonJS((exports) => {
   exports.intOct = intOct;
 });
 
-// node_modules/yaml/dist/schema/core/schema.js
+// ../../../node_modules/yaml/dist/schema/core/schema.js
 var require_schema = __commonJS((exports) => {
   var map = require_map();
   var _null = require_null();
@@ -2341,7 +2341,7 @@ var require_schema = __commonJS((exports) => {
   exports.schema = schema;
 });
 
-// node_modules/yaml/dist/schema/json/schema.js
+// ../../../node_modules/yaml/dist/schema/json/schema.js
 var require_schema2 = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var map = require_map();
@@ -2405,7 +2405,7 @@ var require_schema2 = __commonJS((exports) => {
   exports.schema = schema;
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/binary.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/binary.js
 var require_binary = __commonJS((exports) => {
   var node_buffer = __require("buffer");
   var Scalar = require_Scalar();
@@ -2460,7 +2460,7 @@ var require_binary = __commonJS((exports) => {
   exports.binary = binary;
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/pairs.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/pairs.js
 var require_pairs = __commonJS((exports) => {
   var identity = require_identity();
   var Pair = require_Pair();
@@ -2535,7 +2535,7 @@ ${cn.comment}` : item.comment;
   exports.resolvePairs = resolvePairs;
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/omap.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/omap.js
 var require_omap = __commonJS((exports) => {
   var identity = require_identity();
   var toJS = require_toJS();
@@ -2607,7 +2607,7 @@ var require_omap = __commonJS((exports) => {
   exports.omap = omap;
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/bool.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/bool.js
 var require_bool2 = __commonJS((exports) => {
   var Scalar = require_Scalar();
   function boolStringify({ value, source }, ctx) {
@@ -2636,7 +2636,7 @@ var require_bool2 = __commonJS((exports) => {
   exports.trueTag = trueTag;
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/float.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/float.js
 var require_float2 = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var stringifyNumber = require_stringifyNumber();
@@ -2682,7 +2682,7 @@ var require_float2 = __commonJS((exports) => {
   exports.floatNaN = floatNaN;
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/int.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/int.js
 var require_int2 = __commonJS((exports) => {
   var stringifyNumber = require_stringifyNumber();
   var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
@@ -2758,7 +2758,7 @@ var require_int2 = __commonJS((exports) => {
   exports.intOct = intOct;
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/set.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/set.js
 var require_set = __commonJS((exports) => {
   var identity = require_identity();
   var Pair = require_Pair();
@@ -2841,7 +2841,7 @@ var require_set = __commonJS((exports) => {
   exports.set = set;
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/timestamp.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/timestamp.js
 var require_timestamp = __commonJS((exports) => {
   var stringifyNumber = require_stringifyNumber();
   function parseSexagesimal(str, asBigInt) {
@@ -2923,7 +2923,7 @@ var require_timestamp = __commonJS((exports) => {
   exports.timestamp = timestamp;
 });
 
-// node_modules/yaml/dist/schema/yaml-1.1/schema.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/schema.js
 var require_schema3 = __commonJS((exports) => {
   var map = require_map();
   var _null = require_null();
@@ -2964,7 +2964,7 @@ var require_schema3 = __commonJS((exports) => {
   exports.schema = schema;
 });
 
-// node_modules/yaml/dist/schema/tags.js
+// ../../../node_modules/yaml/dist/schema/tags.js
 var require_tags = __commonJS((exports) => {
   var map = require_map();
   var _null = require_null();
@@ -3055,7 +3055,7 @@ var require_tags = __commonJS((exports) => {
   exports.getTags = getTags;
 });
 
-// node_modules/yaml/dist/schema/Schema.js
+// ../../../node_modules/yaml/dist/schema/Schema.js
 var require_Schema = __commonJS((exports) => {
   var identity = require_identity();
   var map = require_map();
@@ -3085,7 +3085,7 @@ var require_Schema = __commonJS((exports) => {
   exports.Schema = Schema;
 });
 
-// node_modules/yaml/dist/stringify/stringifyDocument.js
+// ../../../node_modules/yaml/dist/stringify/stringifyDocument.js
 var require_stringifyDocument = __commonJS((exports) => {
   var identity = require_identity();
   var stringify = require_stringify();
@@ -3165,7 +3165,7 @@ var require_stringifyDocument = __commonJS((exports) => {
   exports.stringifyDocument = stringifyDocument;
 });
 
-// node_modules/yaml/dist/doc/Document.js
+// ../../../node_modules/yaml/dist/doc/Document.js
 var require_Document = __commonJS((exports) => {
   var Alias = require_Alias();
   var Collection = require_Collection();
@@ -3400,7 +3400,7 @@ var require_Document = __commonJS((exports) => {
   exports.Document = Document;
 });
 
-// node_modules/yaml/dist/errors.js
+// ../../../node_modules/yaml/dist/errors.js
 var require_errors = __commonJS((exports) => {
   class YAMLError extends Error {
     constructor(name, pos, code, message) {
@@ -3465,7 +3465,7 @@ ${pointer}
   exports.prettifyError = prettifyError;
 });
 
-// node_modules/yaml/dist/compose/resolve-props.js
+// ../../../node_modules/yaml/dist/compose/resolve-props.js
 var require_resolve_props = __commonJS((exports) => {
   function resolveProps(tokens, { flow, indicator, next, offset, onError, parentIndent, startOnNewline }) {
     let spaceBefore = false;
@@ -3595,7 +3595,7 @@ var require_resolve_props = __commonJS((exports) => {
   exports.resolveProps = resolveProps;
 });
 
-// node_modules/yaml/dist/compose/util-contains-newline.js
+// ../../../node_modules/yaml/dist/compose/util-contains-newline.js
 var require_util_contains_newline = __commonJS((exports) => {
   function containsNewline(key) {
     if (!key)
@@ -3635,7 +3635,7 @@ var require_util_contains_newline = __commonJS((exports) => {
   exports.containsNewline = containsNewline;
 });
 
-// node_modules/yaml/dist/compose/util-flow-indent-check.js
+// ../../../node_modules/yaml/dist/compose/util-flow-indent-check.js
 var require_util_flow_indent_check = __commonJS((exports) => {
   var utilContainsNewline = require_util_contains_newline();
   function flowIndentCheck(indent, fc, onError) {
@@ -3650,7 +3650,7 @@ var require_util_flow_indent_check = __commonJS((exports) => {
   exports.flowIndentCheck = flowIndentCheck;
 });
 
-// node_modules/yaml/dist/compose/util-map-includes.js
+// ../../../node_modules/yaml/dist/compose/util-map-includes.js
 var require_util_map_includes = __commonJS((exports) => {
   var identity = require_identity();
   function mapIncludes(ctx, items, search) {
@@ -3663,7 +3663,7 @@ var require_util_map_includes = __commonJS((exports) => {
   exports.mapIncludes = mapIncludes;
 });
 
-// node_modules/yaml/dist/compose/resolve-block-map.js
+// ../../../node_modules/yaml/dist/compose/resolve-block-map.js
 var require_resolve_block_map = __commonJS((exports) => {
   var Pair = require_Pair();
   var YAMLMap = require_YAMLMap();
@@ -3770,7 +3770,7 @@ var require_resolve_block_map = __commonJS((exports) => {
   exports.resolveBlockMap = resolveBlockMap;
 });
 
-// node_modules/yaml/dist/compose/resolve-block-seq.js
+// ../../../node_modules/yaml/dist/compose/resolve-block-seq.js
 var require_resolve_block_seq = __commonJS((exports) => {
   var YAMLSeq = require_YAMLSeq();
   var resolveProps = require_resolve_props();
@@ -3818,7 +3818,7 @@ var require_resolve_block_seq = __commonJS((exports) => {
   exports.resolveBlockSeq = resolveBlockSeq;
 });
 
-// node_modules/yaml/dist/compose/resolve-end.js
+// ../../../node_modules/yaml/dist/compose/resolve-end.js
 var require_resolve_end = __commonJS((exports) => {
   function resolveEnd(end, offset, reqSpace, onError) {
     let comment = "";
@@ -3858,7 +3858,7 @@ var require_resolve_end = __commonJS((exports) => {
   exports.resolveEnd = resolveEnd;
 });
 
-// node_modules/yaml/dist/compose/resolve-flow-collection.js
+// ../../../node_modules/yaml/dist/compose/resolve-flow-collection.js
 var require_resolve_flow_collection = __commonJS((exports) => {
   var identity = require_identity();
   var Pair = require_Pair();
@@ -4049,7 +4049,7 @@ var require_resolve_flow_collection = __commonJS((exports) => {
   exports.resolveFlowCollection = resolveFlowCollection;
 });
 
-// node_modules/yaml/dist/compose/compose-collection.js
+// ../../../node_modules/yaml/dist/compose/compose-collection.js
 var require_compose_collection = __commonJS((exports) => {
   var identity = require_identity();
   var Scalar = require_Scalar();
@@ -4111,7 +4111,7 @@ var require_compose_collection = __commonJS((exports) => {
   exports.composeCollection = composeCollection;
 });
 
-// node_modules/yaml/dist/compose/resolve-block-scalar.js
+// ../../../node_modules/yaml/dist/compose/resolve-block-scalar.js
 var require_resolve_block_scalar = __commonJS((exports) => {
   var Scalar = require_Scalar();
   function resolveBlockScalar(ctx, scalar, onError) {
@@ -4304,7 +4304,7 @@ var require_resolve_block_scalar = __commonJS((exports) => {
   exports.resolveBlockScalar = resolveBlockScalar;
 });
 
-// node_modules/yaml/dist/compose/resolve-flow-scalar.js
+// ../../../node_modules/yaml/dist/compose/resolve-flow-scalar.js
 var require_resolve_flow_scalar = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var resolveEnd = require_resolve_end();
@@ -4521,7 +4521,7 @@ var require_resolve_flow_scalar = __commonJS((exports) => {
   exports.resolveFlowScalar = resolveFlowScalar;
 });
 
-// node_modules/yaml/dist/compose/compose-scalar.js
+// ../../../node_modules/yaml/dist/compose/compose-scalar.js
 var require_compose_scalar = __commonJS((exports) => {
   var identity = require_identity();
   var Scalar = require_Scalar();
@@ -4599,7 +4599,7 @@ var require_compose_scalar = __commonJS((exports) => {
   exports.composeScalar = composeScalar;
 });
 
-// node_modules/yaml/dist/compose/util-empty-scalar-position.js
+// ../../../node_modules/yaml/dist/compose/util-empty-scalar-position.js
 var require_util_empty_scalar_position = __commonJS((exports) => {
   function emptyScalarPosition(offset, before, pos) {
     if (before) {
@@ -4626,7 +4626,7 @@ var require_util_empty_scalar_position = __commonJS((exports) => {
   exports.emptyScalarPosition = emptyScalarPosition;
 });
 
-// node_modules/yaml/dist/compose/compose-node.js
+// ../../../node_modules/yaml/dist/compose/compose-node.js
 var require_compose_node = __commonJS((exports) => {
   var Alias = require_Alias();
   var identity = require_identity();
@@ -4729,7 +4729,7 @@ var require_compose_node = __commonJS((exports) => {
   exports.composeNode = composeNode;
 });
 
-// node_modules/yaml/dist/compose/compose-doc.js
+// ../../../node_modules/yaml/dist/compose/compose-doc.js
 var require_compose_doc = __commonJS((exports) => {
   var Document = require_Document();
   var composeNode = require_compose_node();
@@ -4769,7 +4769,7 @@ var require_compose_doc = __commonJS((exports) => {
   exports.composeDoc = composeDoc;
 });
 
-// node_modules/yaml/dist/compose/composer.js
+// ../../../node_modules/yaml/dist/compose/composer.js
 var require_composer = __commonJS((exports) => {
   var node_process = __require("process");
   var directives = require_directives();
@@ -4960,7 +4960,7 @@ ${end.comment}` : end.comment;
   exports.Composer = Composer;
 });
 
-// node_modules/yaml/dist/parse/cst-scalar.js
+// ../../../node_modules/yaml/dist/parse/cst-scalar.js
 var require_cst_scalar = __commonJS((exports) => {
   var resolveBlockScalar = require_resolve_block_scalar();
   var resolveFlowScalar = require_resolve_flow_scalar();
@@ -5150,7 +5150,7 @@ var require_cst_scalar = __commonJS((exports) => {
   exports.setScalarValue = setScalarValue;
 });
 
-// node_modules/yaml/dist/parse/cst-stringify.js
+// ../../../node_modules/yaml/dist/parse/cst-stringify.js
 var require_cst_stringify = __commonJS((exports) => {
   var stringify = (cst) => ("type" in cst) ? stringifyToken(cst) : stringifyItem(cst);
   function stringifyToken(token) {
@@ -5208,7 +5208,7 @@ var require_cst_stringify = __commonJS((exports) => {
   exports.stringify = stringify;
 });
 
-// node_modules/yaml/dist/parse/cst-visit.js
+// ../../../node_modules/yaml/dist/parse/cst-visit.js
 var require_cst_visit = __commonJS((exports) => {
   var BREAK = Symbol("break visit");
   var SKIP = Symbol("skip children");
@@ -5267,7 +5267,7 @@ var require_cst_visit = __commonJS((exports) => {
   exports.visit = visit;
 });
 
-// node_modules/yaml/dist/parse/cst.js
+// ../../../node_modules/yaml/dist/parse/cst.js
 var require_cst = __commonJS((exports) => {
   var cstScalar = require_cst_scalar();
   var cstStringify = require_cst_stringify();
@@ -5368,7 +5368,7 @@ var require_cst = __commonJS((exports) => {
   exports.tokenType = tokenType;
 });
 
-// node_modules/yaml/dist/parse/lexer.js
+// ../../../node_modules/yaml/dist/parse/lexer.js
 var require_lexer = __commonJS((exports) => {
   var cst = require_cst();
   function isEmpty(ch) {
@@ -5965,7 +5965,7 @@ var require_lexer = __commonJS((exports) => {
   exports.Lexer = Lexer;
 });
 
-// node_modules/yaml/dist/parse/line-counter.js
+// ../../../node_modules/yaml/dist/parse/line-counter.js
 var require_line_counter = __commonJS((exports) => {
   class LineCounter {
     constructor() {
@@ -5993,7 +5993,7 @@ var require_line_counter = __commonJS((exports) => {
   exports.LineCounter = LineCounter;
 });
 
-// node_modules/yaml/dist/parse/parser.js
+// ../../../node_modules/yaml/dist/parse/parser.js
 var require_parser = __commonJS((exports) => {
   var node_process = __require("process");
   var cst = require_cst();
@@ -6849,7 +6849,7 @@ var require_parser = __commonJS((exports) => {
   exports.Parser = Parser;
 });
 
-// node_modules/yaml/dist/public-api.js
+// ../../../node_modules/yaml/dist/public-api.js
 var require_public_api = __commonJS((exports) => {
   var composer = require_composer();
   var Document = require_Document();
@@ -6946,9 +6946,9 @@ var require_public_api = __commonJS((exports) => {
 // src/specialist/script-runner.ts
 import { spawn as spawn2 } from "node:child_process";
 import { createHash as createHash3, randomUUID } from "node:crypto";
-import { existsSync as existsSync8, readFileSync as readFileSync6 } from "node:fs";
+import { existsSync as existsSync9, readFileSync as readFileSync6 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { isAbsolute as isAbsolute2, join as join5, relative, resolve as resolve5 } from "node:path";
+import { isAbsolute as isAbsolute2, join as join6, relative, resolve as resolve6 } from "node:path";
 
 // src/pi/session.ts
 import { createHash } from "node:crypto";
@@ -6980,11 +6980,39 @@ function getReadLineNumbersExtensionPath() {
   return cached;
 }
 
+// src/pi/extension-tool-policy-extension.ts
+import { existsSync as existsSync2 } from "node:fs";
+import { dirname as dirname2, join as join2, resolve as resolve2 } from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+var HERE2 = dirname2(fileURLToPath2(import.meta.url));
+var REL2 = join2("config", "pi-extensions", "extension-tool-policy");
+var CANDIDATES2 = [
+  join2(HERE2, "..", REL2),
+  join2(HERE2, "..", "..", REL2),
+  join2(HERE2, "..", "..", "..", REL2)
+];
+var cached2;
+function getExtensionToolPolicyExtensionPath() {
+  if (cached2 !== undefined)
+    return cached2;
+  for (const candidate of CANDIDATES2) {
+    if (existsSync2(join2(candidate, "index.mjs"))) {
+      cached2 = resolve2(candidate);
+      return cached2;
+    }
+  }
+  cached2 = null;
+  process.stderr.write("[xtrm-tool-policy] WARN: bundled policy extension not found alongside package. " + `Enabled extension sources will load without the tool-policy gate.
+`);
+  return cached2;
+}
+var NATIVE_TOOLS_ENV_KEY = "PI_SPECIALIST_ALLOWED_NATIVE_TOOLS";
+
 // src/pi/session.ts
 import { spawn } from "node:child_process";
-import { existsSync as existsSync3, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync as existsSync4, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { isAbsolute, resolve as resolve2, sep, join as join2, dirname as dirname2 } from "node:path";
+import { isAbsolute, resolve as resolve3, sep, join as join3, dirname as dirname3 } from "node:path";
 
 // src/pi/backendMap.ts
 var BACKEND_MAP = {
@@ -7013,15 +7041,15 @@ function getProviderArgs(model) {
 }
 
 // src/specialist/canonical-asset-resolver.ts
-import { existsSync as existsSync2 } from "node:fs";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
+import { existsSync as existsSync3 } from "node:fs";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
 function resolveCanonicalAssetDir(relativePath) {
   const configPath = `config/${relativePath}`;
-  let resolved = fileURLToPath2(new URL(`../${configPath}`, import.meta.url));
-  if (existsSync2(resolved))
+  let resolved = fileURLToPath3(new URL(`../${configPath}`, import.meta.url));
+  if (existsSync3(resolved))
     return resolved;
-  resolved = fileURLToPath2(new URL(`../../${configPath}`, import.meta.url));
-  if (existsSync2(resolved))
+  resolved = fileURLToPath3(new URL(`../../${configPath}`, import.meta.url));
+  if (existsSync3(resolved))
     return resolved;
   return null;
 }
@@ -7199,6 +7227,7 @@ function buildResolvedToolContract(input) {
   const tierNativeTools = new Set(nativeCatalog?.source_tiers[input.tier] ?? []);
   const nativeTools = resolver.toolsList.filter((tool) => tierNativeTools.has(tool));
   const extensionTools = resolver.toolsList.filter((tool) => !tierNativeTools.has(tool));
+  const exposedExtensionSources = uniqueOrdered2(input.extensionSources ?? []);
   const extensions = Object.fromEntries(input.catalogs.filter((catalog) => catalog.catalog !== "native").map((catalog) => {
     const activeTools = resolver.toolsList.filter((tool) => getRequestedExtensionTools(input.catalogs, catalog.catalog, input.tier).includes(tool));
     return [
@@ -7214,6 +7243,7 @@ function buildResolvedToolContract(input) {
   return {
     effectiveTier: input.tier,
     toolsFlag: resolver.tools,
+    exposedExtensionSources,
     toolsList: resolver.toolsList,
     nativeTools,
     extensionTools,
@@ -7230,6 +7260,7 @@ function formatResolvedToolContract(contract) {
     "## Resolved Tool Contract",
     `- effective tier: ${contract.effectiveTier}`,
     `- --tools: ${contract.toolsFlag || "(none)"}`,
+    ...contract.exposedExtensionSources.length > 0 ? [`- exposed extension sources (all registered tools available via tool-policy gate): ${formatList(contract.exposedExtensionSources)}`] : [],
     `- actual native tools: ${formatList(contract.nativeTools)}`,
     `- active extension tools: ${formatList(contract.extensionTools)}`,
     `- denied native tools: ${formatList(contract.deniedNativeTools)}`,
@@ -7251,7 +7282,7 @@ function formatResolvedToolContract(contract) {
 `);
 }
 
-// node_modules/zod/v3/helpers/util.js
+// ../../../node_modules/zod/v3/helpers/util.js
 var util;
 (function(util2) {
   util2.assertEqual = (_) => {};
@@ -7382,7 +7413,7 @@ var getParsedType = (data) => {
   }
 };
 
-// node_modules/zod/v3/ZodError.js
+// ../../../node_modules/zod/v3/ZodError.js
 var ZodIssueCode = util.arrayToEnum([
   "invalid_type",
   "invalid_literal",
@@ -7496,7 +7527,7 @@ ZodError.create = (issues) => {
   return error;
 };
 
-// node_modules/zod/v3/locales/en.js
+// ../../../node_modules/zod/v3/locales/en.js
 var errorMap = (issue, _ctx) => {
   let message;
   switch (issue.code) {
@@ -7599,13 +7630,13 @@ var errorMap = (issue, _ctx) => {
 };
 var en_default = errorMap;
 
-// node_modules/zod/v3/errors.js
+// ../../../node_modules/zod/v3/errors.js
 var overrideErrorMap = en_default;
 function getErrorMap() {
   return overrideErrorMap;
 }
 
-// node_modules/zod/v3/helpers/parseUtil.js
+// ../../../node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
   const { data, path, errorMaps, issueData } = params;
   const fullPath = [...path, ...issueData.path || []];
@@ -7711,14 +7742,14 @@ var isDirty = (x) => x.status === "dirty";
 var isValid = (x) => x.status === "valid";
 var isAsync = (x) => typeof Promise !== "undefined" && x instanceof Promise;
 
-// node_modules/zod/v3/helpers/errorUtil.js
+// ../../../node_modules/zod/v3/helpers/errorUtil.js
 var errorUtil;
 (function(errorUtil2) {
   errorUtil2.errToObj = (message) => typeof message === "string" ? { message } : message || {};
   errorUtil2.toString = (message) => typeof message === "string" ? message : message?.message;
 })(errorUtil || (errorUtil = {}));
 
-// node_modules/zod/v3/types.js
+// ../../../node_modules/zod/v3/types.js
 class ParseInputLazyPath {
   constructor(parent, value, path, key) {
     this._cachedPath = [];
@@ -11129,7 +11160,7 @@ function toRuntimeToolCatalogs(catalogIndex) {
 function loadSharedToolCatalogIndex() {
   if (cachedToolCatalogIndex)
     return cachedToolCatalogIndex;
-  const overridePath = resolve2(process.cwd(), ".specialists", "catalog", "index.json");
+  const overridePath = resolve3(process.cwd(), ".specialists", "catalog", "index.json");
   try {
     cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(overridePath, "utf8"));
     return cachedToolCatalogIndex;
@@ -11138,7 +11169,7 @@ function loadSharedToolCatalogIndex() {
       const canonicalDir = resolveCanonicalAssetDir("catalog");
       if (!canonicalDir)
         return;
-      const canonicalPath = resolve2(canonicalDir, "index.json");
+      const canonicalPath = resolve3(canonicalDir, "index.json");
       cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(canonicalPath, "utf8"));
       return cachedToolCatalogIndex;
     } catch {
@@ -11170,9 +11201,9 @@ function resolveGitnexusRuntime(options) {
       extensionState: { enabled: true, health: "not_installed", catalogCompatible: false }
     };
   }
-  const packagePath = join2(globalDir, packageName);
-  const packageJsonPath = join2(packagePath, "package.json");
-  if (!existsSync3(packageJsonPath)) {
+  const packagePath = join3(globalDir, packageName);
+  const packageJsonPath = join3(packagePath, "package.json");
+  if (!existsSync4(packageJsonPath)) {
     return {
       packageName,
       extensionState: { enabled: true, health: "not_installed", catalogCompatible: false }
@@ -11219,6 +11250,7 @@ function resolveRuntimeToolContract(options) {
     manifestPolicy: options.specialistPermissions ? { permissions: options.specialistPermissions } : undefined,
     specialistOverride,
     specialistExclusions: (options.excludeExtensions ?? []).includes(gitnexusRuntime.packageName) ? { disabledExtensions: ["gitnexus"] } : undefined,
+    extensionSources: options.extensionSources,
     extensionState: {
       gitnexus: gitnexusRuntime.extensionState
     },
@@ -11229,6 +11261,15 @@ function resolveRuntimeToolContract(options) {
       }
     }
   });
+}
+function applyExtensionToolPolicyGate(args, contract, env) {
+  if (!contract || (contract.exposedExtensionSources?.length ?? 0) === 0)
+    return;
+  args.push("--no-builtin-tools");
+  const policyPath = getExtensionToolPolicyExtensionPath();
+  if (policyPath)
+    args.push("-e", policyPath);
+  env[NATIVE_TOOLS_ENV_KEY] = contract.nativeTools.join(",");
 }
 function isRemoteExtensionSource(source) {
   return source.startsWith("npm:") || source.startsWith("git:") || source.startsWith("http://") || source.startsWith("https://");
@@ -11257,12 +11298,12 @@ function resolveExecutionExtensionSelection(extensions) {
 function resolveGlobalNodeModulesDir() {
   const candidates = [
     process.env.PI_NPM_GLOBAL_DIR,
-    process.env.NPM_CONFIG_PREFIX ? join2(process.env.NPM_CONFIG_PREFIX, "lib", "node_modules") : undefined,
-    process.env.npm_config_prefix ? join2(process.env.npm_config_prefix, "lib", "node_modules") : undefined,
-    process.env.NVM_BIN ? join2(dirname2(process.env.NVM_BIN), "lib", "node_modules") : undefined,
-    join2(homedir(), ".nvm/versions/node", process.version, "lib", "node_modules")
+    process.env.NPM_CONFIG_PREFIX ? join3(process.env.NPM_CONFIG_PREFIX, "lib", "node_modules") : undefined,
+    process.env.npm_config_prefix ? join3(process.env.npm_config_prefix, "lib", "node_modules") : undefined,
+    process.env.NVM_BIN ? join3(dirname3(process.env.NVM_BIN), "lib", "node_modules") : undefined,
+    join3(homedir(), ".nvm/versions/node", process.version, "lib", "node_modules")
   ].filter((candidate) => Boolean(candidate));
-  return candidates.find((candidate) => existsSync3(candidate));
+  return candidates.find((candidate) => existsSync4(candidate));
 }
 function asNumber(value) {
   if (typeof value === "number" && Number.isFinite(value))
@@ -11489,8 +11530,8 @@ function isTestCommand(command) {
 var WRITE_BOUNDARY_TOOL_NAMES = new Set(["edit", "write", "multiEdit", "notebookEdit"]);
 var WORKTREE_BOUNDARY_ENV_KEY = "SPECIALISTS_WORKTREE_BOUNDARY";
 function getWorktreeBoundaryExtensionPath(worktreeBoundary) {
-  const boundaryHash = createHash("sha256").update(resolve2(worktreeBoundary)).digest("hex").slice(0, 16);
-  const extensionsDir = join2(tmpdir(), "specialists-pi-extensions");
+  const boundaryHash = createHash("sha256").update(resolve3(worktreeBoundary)).digest("hex").slice(0, 16);
+  const extensionsDir = join3(tmpdir(), "specialists-pi-extensions");
   try {
     mkdirSync(extensionsDir, { recursive: true });
   } catch (err) {
@@ -11498,8 +11539,8 @@ function getWorktreeBoundaryExtensionPath(worktreeBoundary) {
 `);
     return null;
   }
-  const extensionPath = join2(extensionsDir, `worktree-boundary-${boundaryHash}.mjs`);
-  if (existsSync3(extensionPath))
+  const extensionPath = join3(extensionsDir, `worktree-boundary-${boundaryHash}.mjs`);
+  if (existsSync4(extensionPath))
     return extensionPath;
   const extensionSource = `
 import { isAbsolute, resolve } from 'node:path';
@@ -11608,31 +11649,33 @@ class PiAgentSession {
       level: this.options.permissionLevel,
       specialistName: this.options.specialistName,
       specialistPermissions: this.options.specialistPermissions,
-      excludeExtensions: this.options.excludeExtensions
+      excludeExtensions: this.options.excludeExtensions,
+      extensionSources: this.options.extensionSources
     });
-    if (resolvedToolContract?.toolsFlag)
+    if (resolvedToolContract?.toolsFlag && (resolvedToolContract.exposedExtensionSources?.length ?? 0) === 0) {
       args.push("--tools", resolvedToolContract.toolsFlag);
+    }
     if (this.options.thinkingLevel) {
       args.push("--thinking", this.options.thinkingLevel);
     }
     for (const skillPath of this.options.skillPaths ?? []) {
       args.push("--skill", skillPath);
     }
-    const piExtDir = join2(homedir(), ".pi", "agent", "extensions");
+    const piExtDir = join3(homedir(), ".pi", "agent", "extensions");
     const permLevel = (this.options.permissionLevel ?? "").toUpperCase();
     if (permLevel !== "READ_ONLY") {
-      const qgPath = join2(piExtDir, "quality-gates");
-      if (existsSync3(qgPath))
+      const qgPath = join3(piExtDir, "quality-gates");
+      if (existsSync4(qgPath))
         args.push("-e", qgPath);
     }
-    const cavemanPath = join2(piExtDir, "caveman");
-    if (existsSync3(cavemanPath))
+    const cavemanPath = join3(piExtDir, "caveman");
+    if (existsSync4(cavemanPath))
       args.push("-e", cavemanPath);
-    const nvidiaNimPath = join2(homedir(), ".pi", "agent", "git", "github.com", "xRyul", "pi-nvidia-nim");
-    if (existsSync3(nvidiaNimPath))
+    const nvidiaNimPath = join3(homedir(), ".pi", "agent", "git", "github.com", "xRyul", "pi-nvidia-nim");
+    if (existsSync4(nvidiaNimPath))
       args.push("-e", nvidiaNimPath);
     const gitnexusContract = resolvedToolContract?.extensions.gitnexus;
-    if (gitnexusContract?.status === "available" && gitnexusContract.packagePath && existsSync3(gitnexusContract.packagePath)) {
+    if (gitnexusContract?.status === "available" && gitnexusContract.packagePath && existsSync4(gitnexusContract.packagePath)) {
       args.push("-e", gitnexusContract.packagePath);
     }
     for (const source of this.options.extensionSources ?? []) {
@@ -11642,7 +11685,7 @@ class PiAgentSession {
       const systemPromptFlag = this.options.systemPromptMode === "replace" ? "--system-prompt" : "--append-system-prompt";
       args.push(systemPromptFlag, this.options.systemPrompt);
     }
-    const worktreeBoundary = this.options.worktreeBoundary ? resolve2(this.options.worktreeBoundary) : undefined;
+    const worktreeBoundary = this.options.worktreeBoundary ? resolve3(this.options.worktreeBoundary) : undefined;
     if (worktreeBoundary) {
       const boundaryExtPath = getWorktreeBoundaryExtensionPath(worktreeBoundary);
       if (boundaryExtPath) {
@@ -11652,20 +11695,23 @@ class PiAgentSession {
     const readLineNumbersPath = getReadLineNumbersExtensionPath();
     if (readLineNumbersPath)
       args.push("-e", readLineNumbersPath);
+    const policyEnv = {};
+    applyExtensionToolPolicyGate(args, resolvedToolContract, policyEnv);
     const hookEnv = {
       ...process.env,
       ...this.options.env ?? {},
+      ...policyEnv,
       CAVEMAN_LEVEL: "full"
     };
-    const sessionCwd = resolve2(this.options.cwd ?? process.cwd());
+    const sessionCwd = resolve3(this.options.cwd ?? process.cwd());
     this.proc = spawn("pi", args, {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: sessionCwd,
       env: worktreeBoundary ? { ...hookEnv, [WORKTREE_BOUNDARY_ENV_KEY]: worktreeBoundary } : hookEnv,
       detached: true
     });
-    const donePromise = new Promise((resolve3, reject) => {
-      this._doneResolve = resolve3;
+    const donePromise = new Promise((resolve4, reject) => {
+      this._doneResolve = resolve4;
       this._doneReject = reject;
     });
     donePromise.catch(() => {});
@@ -12017,7 +12063,7 @@ class PiAgentSession {
     }
   }
   sendCommand(cmd, timeoutMs = 30000) {
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       if (!this.proc?.stdin) {
         reject(new Error("No stdin available"));
         return;
@@ -12027,7 +12073,7 @@ class PiAgentSession {
         this._pendingRequests.delete(id);
         reject(new Error(`RPC timeout: no response for command id=${id} after ${timeoutMs}ms`));
       }, timeoutMs);
-      this._pendingRequests.set(id, { resolve: resolve3, reject, timer });
+      this._pendingRequests.set(id, { resolve: resolve4, reject, timer });
       this.proc.stdin.write(JSON.stringify({ ...cmd, id }) + `
 `, (err) => {
         if (err) {
@@ -12093,15 +12139,15 @@ class PiAgentSession {
     this.proc?.stdin?.end();
     if (this.proc) {
       const proc = this.proc;
-      await new Promise((resolve3) => {
-        proc.on("close", () => resolve3());
+      await new Promise((resolve4) => {
+        proc.on("close", () => resolve4());
         setTimeout(() => {
           if (proc.exitCode === null && proc.pid != null) {
             try {
               process.kill(-proc.pid, "SIGKILL");
             } catch {}
           }
-          resolve3();
+          resolve4();
         }, 8000);
       });
     }
@@ -12156,8 +12202,8 @@ class PiAgentSession {
       throw new Error("Session is not active");
     }
     this._agentEndReceived = false;
-    const donePromise = new Promise((resolve3, reject) => {
-      this._doneResolve = resolve3;
+    const donePromise = new Promise((resolve4, reject) => {
+      this._doneResolve = resolve4;
       this._doneReject = reject;
     });
     donePromise.catch(() => {});
@@ -12168,18 +12214,18 @@ class PiAgentSession {
 }
 
 // src/specialist/mandatory-rules.ts
-import { existsSync as existsSync6, readFileSync as readFileSync4 } from "node:fs";
+import { existsSync as existsSync7, readFileSync as readFileSync4 } from "node:fs";
 import { createHash as createHash2 } from "node:crypto";
-import { resolve as resolve3 } from "node:path";
+import { resolve as resolve4 } from "node:path";
 
 // src/specialist/observability-sqlite.ts
-import { existsSync as existsSync5, mkdirSync as mkdirSync3, readFileSync as readFileSync3, statSync } from "node:fs";
-import { dirname as dirname3, join as join4 } from "node:path";
+import { existsSync as existsSync6, mkdirSync as mkdirSync3, readFileSync as readFileSync3, statSync } from "node:fs";
+import { dirname as dirname4, join as join5 } from "node:path";
 
 // src/specialist/observability-db.ts
-import { chmodSync, existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { chmodSync, existsSync as existsSync5, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { join as join3, sep as sep2 } from "node:path";
+import { join as join4, sep as sep2 } from "node:path";
 var OBSERVABILITY_DB_FILENAME = "observability.db";
 var DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT = [".specialists", "db"];
 function resolveGitRootFrom(cwd) {
@@ -12207,17 +12253,17 @@ function resolveGitRootFrom(cwd) {
 function resolveDbDirectory(gitRoot) {
   const xdgDataHome = process.env.XDG_DATA_HOME?.trim();
   if (xdgDataHome) {
-    return { directory: join3(xdgDataHome, "specialists"), source: "xdg-data-home" };
+    return { directory: join4(xdgDataHome, "specialists"), source: "xdg-data-home" };
   }
   return {
-    directory: join3(gitRoot, ...DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT),
+    directory: join4(gitRoot, ...DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT),
     source: "git-root"
   };
 }
 function resolveObservabilityDbLocation(cwd = process.cwd()) {
   const gitRoot = resolveGitRootFrom(cwd);
   const resolved = resolveDbDirectory(gitRoot);
-  const dbPath = join3(resolved.directory, OBSERVABILITY_DB_FILENAME);
+  const dbPath = join4(resolved.directory, OBSERVABILITY_DB_FILENAME);
   return {
     gitRoot,
     dbDirectory: resolved.directory,
@@ -12229,7 +12275,7 @@ function resolveObservabilityDbLocation(cwd = process.cwd()) {
 }
 function ensureObservabilityDbFile(location) {
   mkdirSync2(location.dbDirectory, { recursive: true });
-  const alreadyExists = existsSync4(location.dbPath);
+  const alreadyExists = existsSync5(location.dbPath);
   if (alreadyExists) {
     chmodSync(location.dbPath, 420);
   }
@@ -15339,7 +15385,7 @@ class SqliteClient {
         WHERE worktree_column IS NOT NULL AND worktree_column != ''
       `).all();
       for (const row of worktreeRows) {
-        if (existsSync5(row.worktree_column))
+        if (existsSync6(row.worktree_column))
           continue;
         findings.push({
           kind: "stale-pointer",
@@ -15371,7 +15417,7 @@ function openObservabilitySqliteClient(dbPath) {
   }
 }
 function createObservabilitySqliteClientAtPath(dbPath) {
-  mkdirSync3(dirname3(dbPath), { recursive: true });
+  mkdirSync3(dirname4(dbPath), { recursive: true });
   return openObservabilitySqliteClient(dbPath);
 }
 
@@ -15509,19 +15555,19 @@ function mergeIndex(base, overlay) {
   };
 }
 function loadMandatoryRulesIndex(cwd) {
-  const sourcePath = resolve3(cwd, "config/mandatory-rules/index.json");
-  const canonicalCopyPath = resolve3(cwd, ".specialists/default/mandatory-rules/index.json");
-  const userOverlayPath = resolve3(cwd, ".specialists/user/mandatory-rules/index.json");
+  const sourcePath = resolve4(cwd, "config/mandatory-rules/index.json");
+  const canonicalCopyPath = resolve4(cwd, ".specialists/default/mandatory-rules/index.json");
+  const userOverlayPath = resolve4(cwd, ".specialists/user/mandatory-rules/index.json");
   const packageLivePath = resolveCanonicalAssetDir("mandatory-rules");
-  const overlayPath = resolve3(cwd, ".specialists/mandatory-rules/index.json");
-  const packageLiveIndexPath = packageLivePath ? resolve3(packageLivePath, "index.json") : null;
+  const overlayPath = resolve4(cwd, ".specialists/mandatory-rules/index.json");
+  const packageLiveIndexPath = packageLivePath ? resolve4(packageLivePath, "index.json") : null;
   const tierPaths = [userOverlayPath, sourcePath, canonicalCopyPath, overlayPath].filter((value) => Boolean(value));
   const tiers = [];
   for (const path of tierPaths) {
-    if (existsSync6(path))
+    if (existsSync7(path))
       tiers.push(readJsonFile(path));
   }
-  if (tiers.length === 0 && packageLiveIndexPath && existsSync6(packageLiveIndexPath)) {
+  if (tiers.length === 0 && packageLiveIndexPath && existsSync7(packageLiveIndexPath)) {
     tiers.push(readJsonFile(packageLiveIndexPath));
   }
   if (tiers.length === 0) {
@@ -15617,13 +15663,13 @@ function parseMandatoryRulesFrontmatter(content, setId) {
 function readMandatoryRuleSet(cwd, id) {
   const packageCanonicalDir = resolveCanonicalAssetDir("mandatory-rules");
   const candidates = [
-    resolve3(cwd, `.specialists/user/mandatory-rules/${id}.md`),
-    resolve3(cwd, `.specialists/mandatory-rules/${id}.md`),
-    resolve3(cwd, `.specialists/default/mandatory-rules/${id}.md`),
-    resolve3(cwd, `config/mandatory-rules/${id}.md`),
-    ...packageCanonicalDir ? [resolve3(packageCanonicalDir, `${id}.md`)] : []
+    resolve4(cwd, `.specialists/user/mandatory-rules/${id}.md`),
+    resolve4(cwd, `.specialists/mandatory-rules/${id}.md`),
+    resolve4(cwd, `.specialists/default/mandatory-rules/${id}.md`),
+    resolve4(cwd, `config/mandatory-rules/${id}.md`),
+    ...packageCanonicalDir ? [resolve4(packageCanonicalDir, `${id}.md`)] : []
   ];
-  const filePath = candidates.find((path) => existsSync6(path));
+  const filePath = candidates.find((path) => existsSync7(path));
   if (!filePath)
     return null;
   const content = readFileSync4(filePath, "utf8");
@@ -15783,8 +15829,8 @@ class CircuitBreaker {
 
 // src/specialist/runner.ts
 import { execSync, spawnSync as spawnSync2 } from "node:child_process";
-import { existsSync as existsSync7, readFileSync as readFileSync5 } from "node:fs";
-import { basename, resolve as resolve4 } from "node:path";
+import { existsSync as existsSync8, readFileSync as readFileSync5 } from "node:fs";
+import { basename, resolve as resolve5 } from "node:path";
 import { homedir as homedir2 } from "node:os";
 function runScript(command, cwd) {
   const run = (command ?? "").trim();
@@ -15815,7 +15861,7 @@ ${blocks}
 </pre_flight_context>`;
 }
 function resolvePath(p) {
-  return p.startsWith("~/") ? resolve4(homedir2(), p.slice(2)) : resolve4(p);
+  return p.startsWith("~/") ? resolve5(homedir2(), p.slice(2)) : resolve5(p);
 }
 function commandExists(cmd) {
   const result = spawnSync2("which", [cmd], { stdio: "ignore" });
@@ -15886,7 +15932,7 @@ function validateBeforeRun(spec, permissionLevel, resolvedToolContract) {
   const warnings = [];
   for (const p of spec.specialist.skills?.paths ?? []) {
     const abs = resolvePath(p);
-    if (!existsSync7(abs)) {
+    if (!existsSync8(abs)) {
       errors.push(`  ✗ skills.paths: skill not found: ${p}
 ` + `    resolved to: ${abs}
 ` + `    canonical global skills live in ~/.xtrm/skills/default/<skill>/`);
@@ -15899,7 +15945,7 @@ function validateBeforeRun(spec, permissionLevel, resolvedToolContract) {
     const isFilePath = run.startsWith("./") || run.startsWith("../") || run.startsWith("/") || run.startsWith("~/");
     if (isFilePath) {
       const abs = resolvePath(run);
-      if (!existsSync7(abs)) {
+      if (!existsSync8(abs)) {
         errors.push(`  ✗ skills.scripts: script not found: ${run}`);
       } else {
         validateShebang(abs, errors);
@@ -15916,13 +15962,18 @@ function validateBeforeRun(spec, permissionLevel, resolvedToolContract) {
       errors.push(`  ✗ capabilities.external_commands: not found on PATH: ${cmd}`);
     }
   }
+  const exposingExtensions = (resolvedToolContract?.exposedExtensionSources.length ?? 0) > 0;
   for (const tool of spec.specialist.capabilities?.required_tools ?? []) {
     if (!isToolAvailable(tool, permissionLevel)) {
       errors.push(`  ✗ capabilities.required_tools: tool "${tool}" requires higher permission than "${permissionLevel}"`);
       continue;
     }
     if (resolvedToolContract && !resolvedToolContract.toolsList.some((availableTool) => availableTool.toLowerCase() === tool.toLowerCase())) {
-      errors.push(`  ✗ capabilities.required_tools: tool "${tool}" missing from resolved runtime contract (${resolvedToolContract.toolsFlag || "(none)"})`);
+      if (exposingExtensions) {
+        warnings.push(`capabilities.required_tools: tool "${tool}" is expected from an enabled extension source; it is not in the native contract (${resolvedToolContract.toolsFlag || "(none)"})`);
+      } else {
+        errors.push(`  ✗ capabilities.required_tools: tool "${tool}" missing from resolved runtime contract (${resolvedToolContract.toolsFlag || "(none)"})`);
+      }
     }
   }
   if (warnings.length > 0) {
@@ -16203,11 +16254,11 @@ class CompatGuardError extends Error {
 function normalizePath(path, baseDir) {
   if (isAbsolute2(path))
     return path;
-  return resolve5(baseDir ?? process.cwd(), path);
+  return resolve6(baseDir ?? process.cwd(), path);
 }
 function isPathWithinRoot(candidatePath, rootPath) {
-  const candidate = resolve5(candidatePath);
-  const root = resolve5(rootPath);
+  const candidate = resolve6(candidatePath);
+  const root = resolve6(rootPath);
   const rel = relative(root, candidate);
   return rel === "" || rel.length > 0 && !rel.startsWith("..") && !isAbsolute2(rel);
 }
@@ -16639,7 +16690,8 @@ async function runScriptSpecialist(input, options) {
       level: permissionLevel,
       specialistName,
       specialistPermissions,
-      excludeExtensions: extensionSelection.excludeExtensions
+      excludeExtensions: extensionSelection.excludeExtensions,
+      extensionSources: extensionSelection.extensionSources
     });
     const resolvedToolContractBlock = resolvedToolContract ? formatResolvedToolContract(resolvedToolContract) : "";
     const localScripts = getLocalScripts(spec);
@@ -16918,17 +16970,17 @@ function appendExtensionArgs(args, spec, resolvedToolContract, extensionSources 
   const readLineNumbersPath = getReadLineNumbersExtensionPath();
   if (readLineNumbersPath)
     args.push("-e", readLineNumbersPath);
-  const piExtDir = join5(homedir3(), ".pi", "agent", "extensions");
+  const piExtDir = join6(homedir3(), ".pi", "agent", "extensions");
   if (permissionLevel !== "READ_ONLY") {
-    const qualityGatesPath = join5(piExtDir, "quality-gates");
-    if (existsSync8(qualityGatesPath))
+    const qualityGatesPath = join6(piExtDir, "quality-gates");
+    if (existsSync9(qualityGatesPath))
       args.push("-e", qualityGatesPath);
   }
-  const cavemanPath = join5(piExtDir, "caveman");
-  if (existsSync8(cavemanPath))
+  const cavemanPath = join6(piExtDir, "caveman");
+  if (existsSync9(cavemanPath))
     args.push("-e", cavemanPath);
   const gitnexusContract = resolvedToolContract?.extensions.gitnexus;
-  if (gitnexusContract?.status === "available" && gitnexusContract.packagePath && existsSync8(gitnexusContract.packagePath)) {
+  if (gitnexusContract?.status === "available" && gitnexusContract.packagePath && existsSync9(gitnexusContract.packagePath)) {
     args.push("-e", gitnexusContract.packagePath);
   }
   for (const source of extensionSources) {
@@ -17073,13 +17125,13 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
       });
     }
   }
-  return await new Promise((resolve6, reject) => {
+  return await new Promise((resolve7, reject) => {
     const args = ["--mode", "json", "--no-session", "--no-extensions", "--no-skills"];
     if (extensionSelection.offline !== false)
       args.push("--offline");
     args.push("--no-context-files", "--no-prompt-templates", "--no-themes");
     const toolsFlag = resolvedToolContract?.toolsFlag;
-    if (toolsFlag)
+    if (toolsFlag && resolvedToolContract.exposedExtensionSources.length === 0)
       args.push("--tools", toolsFlag);
     for (const skillPath of skillPaths)
       args.push("--skill", skillPath);
@@ -17089,7 +17141,13 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
     if (systemPrompt)
       args.push(systemPromptMode === "append" ? "--append-system-prompt" : "--system-prompt", systemPrompt);
     appendExtensionArgs(args, spec, resolvedToolContract, extensionSelection.extensionSources);
-    const pi = spawn2("pi", args, { stdio: ["pipe", "pipe", "pipe"], cwd: options.projectDir ?? process.cwd() });
+    const policyEnv = {};
+    applyExtensionToolPolicyGate(args, resolvedToolContract, policyEnv);
+    const pi = spawn2("pi", args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      cwd: options.projectDir ?? process.cwd(),
+      ...Object.keys(policyEnv).length > 0 ? { env: { ...process.env, ...policyEnv } } : {}
+    });
     options.onChild?.(pi);
     pi.stdin?.on("error", () => {});
     pi.stdin?.write(prompt);
@@ -17162,7 +17220,7 @@ async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assista
     pi.on("error", reject);
     pi.on("close", (code) => {
       clearTimeout(timer);
-      resolve6({
+      resolve7({
         model,
         text: assistantText,
         stderr,
@@ -17207,10 +17265,10 @@ function isAuthFailureMessage(message) {
 }
 // src/specialist/loader.ts
 import { readdir, readFile, stat } from "node:fs/promises";
-import { basename as basename2, join as join8 } from "node:path";
-import { existsSync as existsSync11 } from "node:fs";
+import { basename as basename2, join as join9 } from "node:path";
+import { existsSync as existsSync12 } from "node:fs";
 
-// node_modules/yaml/dist/index.js
+// ../../../node_modules/yaml/dist/index.js
 var composer = require_composer();
 var Document = require_Document();
 var Schema = require_Schema();
@@ -17473,14 +17531,14 @@ ${result.warnings.map((w) => `  ⚠ ${w}`).join(`
 
 // src/specialist/global-config.ts
 import {
-  existsSync as existsSync9,
+  existsSync as existsSync10,
   mkdirSync as mkdirSync4,
   readFileSync as readFileSync7,
   renameSync,
   rmSync,
   writeFileSync as writeFileSync3
 } from "node:fs";
-import { dirname as dirname4, join as join6 } from "node:path";
+import { dirname as dirname5, join as join7 } from "node:path";
 import { homedir as homedir4 } from "node:os";
 var CONFIG_FILENAME = "user.json";
 var SPECIALISTS_SUBDIR = "specialists";
@@ -17488,15 +17546,15 @@ function getGlobalUserConfigPath() {
   const home = process.env.HOME?.trim() || homedir4();
   const xdgConfigHome = process.env.XDG_CONFIG_HOME?.trim();
   if (xdgConfigHome) {
-    const xdgPath = join6(xdgConfigHome, SPECIALISTS_SUBDIR, CONFIG_FILENAME);
-    return { path: xdgPath, exists: existsSync9(xdgPath), source: "xdg" };
+    const xdgPath = join7(xdgConfigHome, SPECIALISTS_SUBDIR, CONFIG_FILENAME);
+    return { path: xdgPath, exists: existsSync10(xdgPath), source: "xdg" };
   }
-  const configHomePath = join6(home, ".config", SPECIALISTS_SUBDIR, CONFIG_FILENAME);
-  if (existsSync9(configHomePath)) {
+  const configHomePath = join7(home, ".config", SPECIALISTS_SUBDIR, CONFIG_FILENAME);
+  if (existsSync10(configHomePath)) {
     return { path: configHomePath, exists: true, source: "config-home" };
   }
-  const legacyPath = join6(home, ".specialists", CONFIG_FILENAME);
-  if (existsSync9(legacyPath)) {
+  const legacyPath = join7(home, ".specialists", CONFIG_FILENAME);
+  if (existsSync10(legacyPath)) {
     return { path: legacyPath, exists: true, source: "legacy" };
   }
   return { path: configHomePath, exists: false, source: "config-home" };
@@ -17546,8 +17604,8 @@ function readGlobalUserConfig(location) {
 }
 
 // src/specialist/preset-resolver.ts
-import { existsSync as existsSync10, readFileSync as readFileSync8 } from "node:fs";
-import { join as join7 } from "node:path";
+import { existsSync as existsSync11, readFileSync as readFileSync8 } from "node:fs";
+import { join as join8 } from "node:path";
 var PRESET_REFERENCE_PREFIX = "@preset/";
 var PRESET_REFERENCE_MAX_DEPTH = 4;
 var presetsCache = null;
@@ -17629,11 +17687,11 @@ function loadPresets(options = {}) {
   if (presetsCache && presetsCacheBaseDir === baseDir && !options.force)
     return presetsCache;
   const paths = [
-    join7(baseDir, "config", "presets.json"),
-    join7(baseDir, "config", "specialists", "presets.json")
+    join8(baseDir, "config", "presets.json"),
+    join8(baseDir, "config", "specialists", "presets.json")
   ];
   for (const path of paths) {
-    if (!existsSync10(path))
+    if (!existsSync11(path))
       continue;
     try {
       presetsCache = JSON.parse(readFileSync8(path, "utf-8"));
@@ -17752,12 +17810,12 @@ class SpecialistLoader {
   }
   getScanDirs() {
     const dirs = [
-      { path: join8(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
-      { path: join8(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
-      { path: join8(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
+      { path: join9(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
+      { path: join9(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
+      { path: join9(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
       { path: resolveCanonicalAssetDir("specialists") ?? "", scope: "package", source: "package-live" }
     ];
-    return dirs.filter((d) => d.path && existsSync11(d.path));
+    return dirs.filter((d) => d.path && existsSync12(d.path));
   }
   toJson(content, isYaml) {
     if (!isYaml)
@@ -17765,12 +17823,12 @@ class SpecialistLoader {
     return JSON.stringify($parse(content));
   }
   resolveSpecialistPath(dirPath, specialistName) {
-    const jsonPath = join8(dirPath, `${specialistName}.specialist.json`);
-    if (existsSync11(jsonPath)) {
+    const jsonPath = join9(dirPath, `${specialistName}.specialist.json`);
+    if (existsSync12(jsonPath)) {
       return { filePath: jsonPath, deprecatedYaml: false };
     }
-    const yamlPath = join8(dirPath, `${specialistName}.specialist.yaml`);
-    if (existsSync11(yamlPath)) {
+    const yamlPath = join9(dirPath, `${specialistName}.specialist.yaml`);
+    if (existsSync12(yamlPath)) {
       return { filePath: yamlPath, deprecatedYaml: true };
     }
     return null;
@@ -18109,9 +18167,9 @@ function resolveSkillsPaths(spec, fileDir) {
     return;
   const resolved = rawPaths.map((p) => {
     if (p.startsWith("~/"))
-      return join8(process.env.HOME || "", p.slice(2));
+      return join9(process.env.HOME || "", p.slice(2));
     if (p.startsWith("./"))
-      return join8(fileDir, p.slice(2));
+      return join9(fileDir, p.slice(2));
     return p;
   });
   spec.specialist.skills.paths = resolved;
@@ -18363,7 +18421,7 @@ function projectLaunchOutcome(outcome) {
 }
 // src/specialist/citation-evidence.ts
 import { realpath, readFile as readFile2 } from "node:fs/promises";
-import { isAbsolute as isAbsolute3, relative as relative2, resolve as resolve6 } from "node:path";
+import { isAbsolute as isAbsolute3, relative as relative2, resolve as resolve7 } from "node:path";
 function positiveInteger(value, fallback, name) {
   const resolved = value ?? fallback;
   if (!Number.isInteger(resolved) || resolved < 1) {
@@ -18382,9 +18440,9 @@ async function safeCitationPath(path, trustedRoot = process.cwd()) {
     throw new TypeError("path must remain within trusted root");
   }
   const canonicalRoot = await realpath(trustedRoot);
-  const canonicalPath = await realpath(resolve6(canonicalRoot, path));
+  const canonicalPath = await realpath(resolve7(canonicalRoot, path));
   const pathFromRoot = relative2(canonicalRoot, canonicalPath);
-  if (pathFromRoot === ".." || pathFromRoot.startsWith(`..${resolve6("/").slice(0, 1)}`) || isAbsolute3(pathFromRoot)) {
+  if (pathFromRoot === ".." || pathFromRoot.startsWith(`..${resolve7("/").slice(0, 1)}`) || isAbsolute3(pathFromRoot)) {
     throw new TypeError("path must remain within trusted root");
   }
   return canonicalPath;

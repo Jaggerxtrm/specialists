@@ -23,13 +23,11 @@ export interface ResolvedExtensionContract {
 export interface ResolvedToolContract {
   effectiveTier: ToolTier;
   toolsFlag: string;
-  /** When set, the spawn must pass `--exclude-tools <this>` (deny-list gate)
-   *  instead of `--tools <toolsFlag>`: native tools stay tier-restricted while
-   *  tools registered by enabled extension sources remain available. */
-  excludeToolsFlag?: string;
   /** Extension sources enabled via `execution.extensions[source] === true`.
-   *  Each loads (-e) and its REGISTERED tools are all exposed to the model
-   *  (operator trust signal; enabling an extension authorizes its code). */
+   *  When non-empty the spawn loads the Specialists tool-policy extension
+   *  LAST and gates the session on `--no-builtin-tools`: the policy extension
+   *  re-activates the tier's native tools (bounded env channel) plus every
+   *  tool registered by these sources. Native restrictions stay fail-closed. */
   exposedExtensionSources: readonly string[];
   toolsList: readonly string[];
   nativeTools: readonly string[];
@@ -45,16 +43,11 @@ export interface ResolvedToolContract {
 interface BuildResolvedToolContractInput extends ResolverInput {
   extensionPackages?: Partial<Record<ToolCatalogName, ExtensionPackageRuntime>>;
   /** Enabled extension sources (execution.extensions[source] === true) that
-   *  switch the tool gate to deny-list mode so their registered tools are not
-   *  suppressed by the native allowlist. */
+   *  switch the session to the tool-policy gate: --no-builtin-tools plus the
+   *  Specialists-owned policy extension selecting the granted natives and
+   *  all extension-registered tools at session start. */
   extensionSources?: readonly string[];
 }
-
-/** Builtin native tool names Pi can register (read/write/edit/bash + search
- *  family). Used to build the deny-list gate: everything not granted at the
- *  effective tier is excluded, while extension-registered tools pass through.
- *  Names that Pi does not register are ignored harmlessly. */
-export const ALL_PI_NATIVE_TOOL_NAMES = ['read', 'write', 'edit', 'bash', 'grep', 'find', 'ls'] as const;
 
 function uniqueOrdered(values: readonly string[]): string[] {
   const seen = new Set<string>();
@@ -98,11 +91,6 @@ export function buildResolvedToolContract(input: BuildResolvedToolContractInput)
   const nativeTools = resolver.toolsList.filter((tool) => tierNativeTools.has(tool));
   const extensionTools = resolver.toolsList.filter((tool) => !tierNativeTools.has(tool));
   const exposedExtensionSources = uniqueOrdered(input.extensionSources ?? []);
-  // Deny-list gate: builtin natives NOT granted after deny resolution are
-  // excluded; extension-registered tools pass through by Pi design.
-  const excludeToolsFlag = exposedExtensionSources.length > 0
-    ? ALL_PI_NATIVE_TOOL_NAMES.filter((name) => !nativeTools.includes(name)).join(',')
-    : undefined;
   const extensions = Object.fromEntries(
     input.catalogs
       .filter((catalog): catalog is ToolCatalog & { catalog: Exclude<ToolCatalogName, 'native'> } => catalog.catalog !== 'native')
@@ -123,7 +111,6 @@ export function buildResolvedToolContract(input: BuildResolvedToolContractInput)
   return {
     effectiveTier: input.tier,
     toolsFlag: resolver.tools,
-    excludeToolsFlag,
     exposedExtensionSources,
     toolsList: resolver.toolsList,
     nativeTools,
@@ -142,9 +129,8 @@ export function formatResolvedToolContract(contract: ResolvedToolContract): stri
     '## Resolved Tool Contract',
     `- effective tier: ${contract.effectiveTier}`,
     `- --tools: ${contract.toolsFlag || '(none)'}`,
-    ...(contract.excludeToolsFlag ? [`- --exclude-tools (extension expose-all gate): ${contract.excludeToolsFlag}`] : []),
     ...(contract.exposedExtensionSources.length > 0
-      ? [`- exposed extension sources (all registered tools available): ${formatList(contract.exposedExtensionSources)}`]
+      ? [`- exposed extension sources (all registered tools available via tool-policy gate): ${formatList(contract.exposedExtensionSources)}`]
       : []),
     `- actual native tools: ${formatList(contract.nativeTools)}`,
     `- active extension tools: ${formatList(contract.extensionTools)}`,
