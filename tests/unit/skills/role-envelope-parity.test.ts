@@ -48,6 +48,24 @@ describe('parity matrix: xt pi --role vs xt claude --role', () => {
     expect(pi.initial_prompt).toEqual(claude.initial_prompt);
     expect(pi.prompt_hash).toEqual(claude.prompt_hash);
   });
+
+  it('turn-1 carries the exact bead id near the top on every role surface (unitAI-edfjs)', () => {
+    // Core sends only initial_prompt as turn-1 role=user; the envelope's bead_id
+    // metadata must not be the agent's only authoritative copy. The shared bead
+    // context must put the exact id next to the task heading so the agent obeys
+    // claim/bead-id-verbatim without running bd ready/search to rediscover it.
+    const pi = roleSurface();
+    expect(pi.initial_prompt).toContain(`## Bead id: ${BEAD.id}`);
+    const heading = `# Task: ${BEAD.title}\n## Bead id: ${BEAD.id}`;
+    const idx = pi.initial_prompt.indexOf('# Task:');
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(pi.initial_prompt.slice(idx, idx + heading.length)).toBe(heading);
+
+    // Same invariant for a non-bare specialist (mandatory rules appended below).
+    const nonBare = renderTaskPrompt({ ...base, specialist: spec({ execution: { bare: false } }) });
+    expect(nonBare.initial_prompt).toContain(`## Bead id: ${BEAD.id}`);
+    expect(nonBare.initial_prompt.indexOf('# Task:')).toBeLessThan(nonBare.initial_prompt.indexOf('## Bead id:'));
+  });
 });
 
 describe('parity matrix: role surfaces vs sp run', () => {

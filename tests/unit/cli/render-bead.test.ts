@@ -84,6 +84,22 @@ describe('sp render-bead', () => {
     expect(out.prompt_hash).toMatch(/^[0-9a-f]{16}$/);
   });
 
+  it('renders the exact bead id near the top of turn-1 so no rediscovery is needed (unitAI-edfjs)', async () => {
+    for (const surface of ['pi', 'claude', 'codex']) {
+      stdout = [];
+      const out = await render(BEAD.id, '--surface', surface);
+      // The whole turn-1 body carries the exact id verbatim — the agent must not
+      // run bd ready/search to rediscover it before obeying claim/verbatim rules.
+      expect(out.initial_prompt).toContain(`## Bead id: ${BEAD.id}`);
+      // Near the top: the `# Task:` heading, then the id, in one contiguous block.
+      const idx = out.initial_prompt.indexOf('# Task:');
+      expect(idx).toBeGreaterThanOrEqual(0);
+      expect(out.initial_prompt.slice(idx, idx + `# Task: ${BEAD.title}\n## Bead id: ${BEAD.id}`.length)).toBe(
+        `# Task: ${BEAD.title}\n## Bead id: ${BEAD.id}`,
+      );
+    }
+  });
+
   it('injects MANDATORY_RULES like every other surface', async () => {
     const out = await render(BEAD.id);
     expect(out.mandatory_rules).not.toBeNull();
