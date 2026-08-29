@@ -399,7 +399,9 @@ describe('SpecialistRunner', () => {
       });
 
       const promptArg = mockSession.prompt.mock.calls.at(-1)?.[0] as string;
-      expect(promptArg).toContain('review $reviewed_job_id');
+      // unitAI-i3u2e: an execution-only placeholder absent from the low-level
+      // runner resolves to empty rather than leaking a literal `$name` to the model.
+      expect(promptArg).not.toContain('$reviewed_job_id');
       expect(promptArg).toContain('## Reviewer Diff Context');
       expect(promptArg).toContain('Patch source:');
       expect(promptArg).toContain('staged diff');

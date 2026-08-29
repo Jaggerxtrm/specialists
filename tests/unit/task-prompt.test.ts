@@ -59,11 +59,33 @@ describe('renderTaskPrompt', () => {
     expect(out.taskTemplateComponent.kind).toBe('task_template');
   });
 
-  it('substitutes $bead_id and $cwd, leaving unknown variables verbatim', () => {
-    const out = renderTaskPrompt({ ...base, specialist: spec('bead=$bead_id cwd=$cwd unknown=$nope') });
-    expect(out.initial_prompt).toContain('bead=unitAI-6639v');
-    expect(out.initial_prompt).toContain('cwd=/repo');
-    expect(out.initial_prompt).toContain('unknown=$nope');
+  it('substitutes $bead_id and $cwd, and refuses a genuinely-unknown variable', () => {
+    expect(() => renderTaskPrompt({ ...base, specialist: spec('bead=$bead_id cwd=$cwd unknown=$nope') }))
+      .toThrow(/unresolved placeholder.*\$nope/);
+    const ok = renderTaskPrompt({ ...base, specialist: spec('bead=$bead_id cwd=$cwd') });
+    expect(ok.initial_prompt).toContain('bead=unitAI-6639v');
+    expect(ok.initial_prompt).toContain('cwd=/repo');
+  });
+
+  it('resolves absent execution-only placeholders to empty instead of leaking $name', () => {
+    // unitAI-i3u2e: the read-only renderer supplies no tool-contract/worktree
+    // reuse; these must render empty, never as a literal `$...` to the model.
+    const out = renderTaskPrompt({
+      ...base,
+      specialist: spec('\n$reused_worktree_awareness\n$resolved_tool_contract\n$bead_context\n'),
+    });
+    expect(out.initial_prompt).not.toMatch(/\$[a-zA-Z_]\w*/);
+    expect(out.initial_prompt).not.toContain('$resolved_tool_contract');
+    expect(out.initial_prompt).not.toContain('$bead_context');
+  });
+
+  it('never overwrites an execution-only value the caller did provide', () => {
+    const out = renderTaskPrompt({
+      ...base,
+      specialist: spec('aware=$reused_worktree_awareness'),
+      variables: { reused_worktree_awareness: 'REAL REUSE BLOCK' },
+    });
+    expect(out.initial_prompt).toContain('aware=REAL REUSE BLOCK');
   });
 
   it('applies the execution-only hook after the task body, before the hash', () => {
