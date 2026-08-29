@@ -930,6 +930,21 @@ export class PiAgentSession {
 
     this.proc.on('close', (code) => {
       this._clearStallTimer();
+      // Fail pending RPC commands immediately: a dead child can never answer.
+      // Without this, a startup source-resolution failure (npm:/git: source
+      // exits pi 1 before the prompt ack) burns the full per-command timeout
+      // and surfaces as a generic "RPC timeout" instead of the actionable
+      // exit code + stderr (unitAI-u5xjk).
+      if (this._pendingRequests.size > 0) {
+        const stderrTail = this._stderrBuffer.trim().split('\n').slice(-5).join('\n').slice(0, 2000);
+        const exitDetail = code === null ? '' : ` with code ${code}`;
+        const message = `pi process exited${exitDetail} before responding to RPC command${stderrTail ? `; stderr:\n${stderrTail}` : ''}`;
+        for (const [, entry] of this._pendingRequests) {
+          clearTimeout(entry.timer);
+          entry.reject(new Error(message));
+        }
+        this._pendingRequests.clear();
+      }
       if (this._agentEndReceived || this._killed) {
         this._doneResolve?.();
       } else if (code === 0 || code === null) {

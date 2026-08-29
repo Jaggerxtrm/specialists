@@ -20,6 +20,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { resolveRuntimeToolContract } from '../../../src/pi/session.js';
+import { PiAgentSession } from '../../../src/pi/session.js';
 import { getExtensionToolPolicyExtensionPath, NATIVE_TOOLS_ENV_KEY } from '../../../src/pi/extension-tool-policy-extension.js';
 
 const ENABLED = process.env.PI_INTEGRATION === '1';
@@ -290,5 +291,49 @@ describeIntegration('extension exposure model-backed regression', () => {
     // never a silent session that simply lacks the extension's tools.
     expect(result.status).not.toBe(0);
     expect(`${result.stderr ?? ''}${result.stdout ?? ''}`).toMatch(/Failed to load extension/i);
+  });
+
+  it('cold-delayed failing source fails fast through PiAgentSession (unitAI-u5xjk)', async () => {
+    const piBin = resolvePiBinary();
+    if (!existsSync(piBin)) {
+      console.warn('pi binary not present — skipping integration assertion');
+      return;
+    }
+    // Cold-resolution failure shape: the source resolves slowly (registry
+    // latency), then fails; pi exits 1 before the prompt ack. PiAgentSession
+    // must reject the pending RPC immediately on child exit — not after the
+    // fixed 30s command timeout — and surface the actionable stderr.
+    const dir = mkdtempSync(join(tmpdir(), 'ext-cold-fail-'));
+    writeFileSync(join(dir, 'index.mjs'), [
+      'await new Promise((r) => setTimeout(r, 1500));',
+      "throw new Error('fixture source resolution failed');",
+    ].join('\n'), 'utf8');
+    try {
+      const session = await PiAgentSession.create({
+        model: 'gemini',
+        extensionSources: [dir],
+        env: cleanSpawnEnv(piBin),
+      });
+      const startedAt = Date.now();
+      let rejection: unknown;
+      try {
+        await session.start();
+        await session.prompt('say ok');
+      } catch (err) {
+        rejection = err;
+      } finally {
+        session.kill();
+      }
+      const elapsedMs = Date.now() - startedAt;
+
+      expect(rejection).toBeInstanceOf(Error);
+      // Fail-fast: rejection on child close (~2s), far below the 30s RPC
+      // command timeout the pre-fix code burned before reporting.
+      expect(elapsedMs).toBeLessThan(15_000);
+      expect(`${(rejection as Error).message}\n${session.getStderr()}`)
+        .toMatch(/fixture source resolution failed|Failed to load extension/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
