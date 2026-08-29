@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { PiAgentSession, resolveExecutionExtensionSelection, resolveRuntimeToolContract } from '../pi/session.js';
+import { PiAgentSession, applyExtensionToolPolicyGate, resolveExecutionExtensionSelection, resolveRuntimeToolContract } from '../pi/session.js';
 import { getReadLineNumbersExtensionPath } from '../pi/read-line-numbers-extension.js';
 import { SpecialistLoader } from './loader.js';
 import { buildMandatoryRulesInjection } from './mandatory-rules.js';
@@ -1143,15 +1143,24 @@ async function runSingleAttempt(
     if (extensionSelection.offline !== false) args.push('--offline');
     args.push('--no-context-files', '--no-prompt-templates', '--no-themes');
     const toolsFlag = resolvedToolContract?.toolsFlag;
-    if (resolvedToolContract?.excludeToolsFlag) args.push('--exclude-tools', resolvedToolContract.excludeToolsFlag);
-    else if (toolsFlag) args.push('--tools', toolsFlag);
+    if (toolsFlag && resolvedToolContract.exposedExtensionSources.length === 0) args.push('--tools', toolsFlag);
     for (const skillPath of skillPaths) args.push('--skill', skillPath);
     args.push('--model', model);
     if (thinkingLevel) args.push('--thinking', thinkingLevel);
     if (systemPrompt) args.push(systemPromptMode === 'append' ? '--append-system-prompt' : '--system-prompt', systemPrompt);
     appendExtensionArgs(args, spec, resolvedToolContract, extensionSelection.extensionSources);
 
-    const pi = spawn('pi', args, { stdio: ['pipe', 'pipe', 'pipe'], cwd: options.projectDir ?? process.cwd() });
+    // Extension tool policy gate: appended LAST (-e) after every configured
+    // source; activates granted natives + extension-registered tools under
+    // --no-builtin-tools (unitAI-34pyf). No-op without enabled sources.
+    const policyEnv: Record<string, string> = {};
+    applyExtensionToolPolicyGate(args, resolvedToolContract, policyEnv);
+
+    const pi = spawn('pi', args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: options.projectDir ?? process.cwd(),
+      ...(Object.keys(policyEnv).length > 0 ? { env: { ...process.env, ...policyEnv } } : {}),
+    });
     options.onChild?.(pi);
     pi.stdin?.on('error', () => {
       // The child close/error handlers report Pi failures. Swallow stdin EPIPE-style

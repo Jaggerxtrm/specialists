@@ -519,6 +519,27 @@ describe('SpecialistRunner', () => {
     expect(promptArg).toContain('gitnexus: disabled');
   });
 
+  it('warns (not fails) for extension-provided required tools when sources are exposed', async () => {
+    // unitAI-34pyf: with enabled extension sources the contract cannot
+    // enumerate extension-registered tool names ahead of launch (they are
+    // activated by the tool-policy extension at session_start), so a missing
+    // required tool is a warning, not a hard error. Native requirements keep
+    // failing hard.
+    const runner = new SpecialistRunner({
+      loader: makeLoader(
+        { extensions: { gitnexus: false, '/tmp/extension-source': true } },
+        'auto',
+        {},
+        { capabilities: { required_tools: ['probe_marker'] } },
+      ),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory: vi.fn().mockResolvedValue(mockSession),
+    });
+
+    await expect(runner.run({ name: 'test-spec', prompt: 'do thing' })).resolves.toBeTruthy();
+  });
+
   it('fails fast when required tool is impossible under resolved runtime contract', async () => {
     const runner = new SpecialistRunner({
       loader: makeLoader(

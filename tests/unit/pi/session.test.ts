@@ -12,7 +12,8 @@ vi.mock('node:child_process', () => ({
 }));
 
 import { execFileSync, spawn } from 'node:child_process';
-import { PiAgentSession, StallTimeoutError, resolveExecutionExtensionSelection, resolveRuntimeToolContract, validateWriteToolPathAgainstBoundary } from '../../../src/pi/session.js';
+import { PiAgentSession, StallTimeoutError, applyExtensionToolPolicyGate, resolveExecutionExtensionSelection, resolveRuntimeToolContract, validateWriteToolPathAgainstBoundary } from '../../../src/pi/session.js';
+import { getExtensionToolPolicyExtensionPath, NATIVE_TOOLS_ENV_KEY } from '../../../src/pi/extension-tool-policy-extension.js';
 
 const mockSpawn = spawn as ReturnType<typeof vi.fn>;
 const mockExecFileSync = execFileSync as ReturnType<typeof vi.fn>;
@@ -830,44 +831,26 @@ describe('PiAgentSession', () => {
       return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
     }
 
-    it('switches to the deny-list gate and lists exposed sources when extensions are enabled', () => {
+    it('keeps the strict --tools allowlist when no extension source is enabled', () => {
+      const contract = resolveRuntimeToolContract({ level: 'READ_ONLY' });
+      expect(contract?.exposedExtensionSources).toEqual([]);
+      expect(contract?.toolsFlag?.split(',')).toEqual(expect.arrayContaining(['read', 'grep', 'find', 'ls']));
+    });
+
+    it('lists exposed sources and preserves granted natives in the contract', () => {
       const { dir, cleanup } = makeExtensionDir();
       try {
         const contract = resolveRuntimeToolContract({ level: 'READ_ONLY', extensionSources: [dir] });
-        // toolsFlag keeps the native allowlist for validation/advisory...
-        expect(contract?.toolsFlag?.split(',')).toEqual(expect.arrayContaining(['read', 'grep', 'find', 'ls']));
-        // ...but the spawn gate is the deny list: natives not granted at the
-        // tier are excluded while extension-registered tools pass through.
-        expect(contract?.excludeToolsFlag?.split(',')).toEqual(expect.arrayContaining(['write', 'edit', 'bash']));
-        expect(contract?.excludeToolsFlag?.split(',')).not.toContain('read');
         expect(contract?.exposedExtensionSources).toEqual([dir]);
+        // Native allowlist unchanged: read,grep,find,ls stay the granted set
+        // (gitnexus not installed here, so hard deny cannot strip search).
+        expect(contract?.nativeTools).toEqual(['read', 'grep', 'find', 'ls']);
       } finally {
         cleanup();
       }
     });
 
-    it('emits the allowlist gate (no excludes) when no extension source is enabled', () => {
-      const contract = resolveRuntimeToolContract({ level: 'READ_ONLY' });
-      expect(contract?.excludeToolsFlag).toBeUndefined();
-      expect(contract?.exposedExtensionSources).toEqual([]);
-      expect(contract?.toolsFlag?.split(',')).toEqual(expect.arrayContaining(['read', 'grep', 'find', 'ls']));
-    });
-
-    it('includes hard-denied natives in the exclude list at READ_ONLY with healthy gitnexus', async () => {
-      await withGitnexusInstall('0.6.1', async () => {
-        const { dir, cleanup } = makeExtensionDir();
-        try {
-          const contract = resolveRuntimeToolContract({ level: 'READ_ONLY', extensionSources: [dir] });
-          expect(contract?.excludeToolsFlag?.split(',')).toEqual(expect.arrayContaining(['grep', 'find', 'ls', 'write', 'edit', 'bash']));
-          expect(contract?.excludeToolsFlag?.split(',')).not.toContain('read');
-          expect(contract?.exposedExtensionSources).toEqual([dir]);
-        } finally {
-          cleanup();
-        }
-      });
-    });
-
-    it('passes --exclude-tools instead of --tools at spawn when extensions are enabled', async () => {
+    it('emits the policy gate (--no-builtin-tools + policy -e last + bounded env) at spawn', async () => {
       const { dir, cleanup } = makeExtensionDir();
       try {
         const session = await PiAgentSession.create({
@@ -877,17 +860,57 @@ describe('PiAgentSession', () => {
         });
         await session.start();
         const args: string[] = mockSpawn.mock.calls[0][1];
-        const toolsIdx = args.indexOf('--tools');
-        expect(toolsIdx).toBe(-1);
-        const excludeIdx = args.indexOf('--exclude-tools');
-        expect(excludeIdx).toBeGreaterThan(-1);
-        // MEDIUM grants read,grep,find,ls,bash,edit; gitnexus is not installed
-        // in this fixture so hard deny cannot strip the search natives.
-        expect(args[excludeIdx + 1].split(',')).toEqual(['write']);
-        expect(args).toContain(dir); // -e <source>
+        // Strict allowlist is NOT passed (it would suppress extension tools);
+        // the policy gate replaces it for sourced sessions.
+        expect(args.indexOf('--tools')).toBe(-1);
+        expect(args).toContain('--no-builtin-tools');
+        const policyPath = getExtensionToolPolicyExtensionPath();
+        expect(policyPath).toBeTruthy();
+        expect(args[args.length - 1]).toBe(policyPath); // policy -e pair is LAST
+        expect(args[args.length - 2]).toBe('-e');
+        expect(args).toContain(dir); // configured source still -e'd
+        // Bounded env channel carries exactly the granted natives.
+        const spawnOptions = mockSpawn.mock.calls[0][2];
+        expect(spawnOptions.env[NATIVE_TOOLS_ENV_KEY]).toBe('read,grep,find,ls,bash,edit');
       } finally {
         cleanup();
       }
+    });
+
+    it('passes hard-denied search tools out of the native allowlist channel', async () => {
+      await withGitnexusInstall('0.6.1', async () => {
+        const { dir, cleanup } = makeExtensionDir();
+        try {
+          const session = await PiAgentSession.create({
+            model: 'gemini',
+            permissionLevel: 'READ_ONLY',
+            extensionSources: [dir],
+          });
+          await session.start();
+          const spawnOptions = mockSpawn.mock.calls[0][2];
+          expect(spawnOptions.env[NATIVE_TOOLS_ENV_KEY]).toBe('read');
+          const args: string[] = mockSpawn.mock.calls[0][1];
+          expect(args).toContain('--no-builtin-tools');
+          expect(args.indexOf('--tools')).toBe(-1);
+        } finally {
+          cleanup();
+        }
+      });
+    });
+
+    it('forwards malformed sources as -e so Pi surfaces the load failure', async () => {
+      const session = await PiAgentSession.create({
+        model: 'gemini',
+        permissionLevel: 'READ_ONLY',
+        extensionSources: ['/nonexistent/missing-extension'],
+      });
+      await session.start();
+      const args: string[] = mockSpawn.mock.calls[0][1];
+      expect(args).toContain('/nonexistent/missing-extension');
+      // The policy extension still loads after it; the session fails loudly
+      // when Pi reports "Failed to load extension" for the bad source.
+      const policyPath = getExtensionToolPolicyExtensionPath();
+      expect(args[args.length - 1]).toBe(policyPath);
     });
   });
 

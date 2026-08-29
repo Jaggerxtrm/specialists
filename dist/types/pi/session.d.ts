@@ -144,13 +144,28 @@ export declare function resolveRuntimeToolContract(options: {
     specialistName?: string;
     specialistPermissions?: ManifestPolicy['permissions'];
     excludeExtensions?: readonly string[];
+    extensionSources?: readonly string[];
 }): ResolvedToolContract | undefined;
 export declare function resolvePermissionTools(options: {
     level?: string;
     specialistName?: string;
     specialistPermissions?: ManifestPolicy['permissions'];
     excludeExtensions?: readonly string[];
+    extensionSources?: readonly string[];
 }): string | undefined;
+/**
+ * Applies the extension tool-policy gate to a spawn arg list (unitAI-34pyf).
+ * When the resolved contract exposes enabled extension sources:
+ *   - the session starts `--no-builtin-tools` (nothing active by default),
+ *   - the Specialists-owned policy extension is appended LAST to `-e` and, at
+ *     session_start, re-activates the tier's granted natives (bounded env
+ *     channel) plus every tool registered by the enabled extension sources.
+ * Native restrictions stay fail-closed: anything not explicitly granted is
+ * never activated, and Pi rejects inactive tools at call time. When no
+ * extension source is enabled this is a no-op and the caller keeps the strict
+ * `--tools` allowlist — byte-identical legacy behavior.
+ */
+export declare function applyExtensionToolPolicyGate(args: string[], contract: ResolvedToolContract | undefined, env: Record<string, string>): void;
 export declare function resolveExecutionExtensionSelection(extensions: Readonly<Record<string, boolean | null | undefined>> | undefined): {
     excludeExtensions: string[];
     extensionSources: string[];
