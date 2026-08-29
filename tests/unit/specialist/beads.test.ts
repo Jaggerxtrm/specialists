@@ -40,6 +40,7 @@ describe('buildBeadContext', () => {
 
     expect(context).toBe([
       '# Task: Refactor auth module',
+      '## Bead id: unitAI-55d',
       'Extract JWT validation into AuthService.',
       '',
       '## Notes',
@@ -67,6 +68,7 @@ describe('buildBeadContext', () => {
 
     expect(context).toBe([
       '# Task: Refactor auth module',
+      '## Bead id: unitAI-55d',
       'Extract JWT validation into AuthService.',
       '',
       '## Notes',
@@ -91,6 +93,7 @@ describe('buildBeadContext', () => {
 
     expect(context).toBe([
       '# Task: Refactor auth module',
+      '## Bead id: unitAI-55d',
       'Extract JWT validation into AuthService.',
       '',
       '## Parent epic',
@@ -107,6 +110,7 @@ describe('buildBeadContext', () => {
 
     expect(context).toBe([
       '# Task: Register project MCP',
+      '## Bead id: unitAI-7fm',
       'Write project-scoped .mcp.json registration.',
     ].join('\n'));
     expect(context).not.toContain('dependencies');
@@ -122,7 +126,21 @@ describe('buildBeadContext', () => {
 
     expect(context).toBe([
       '# Task: Register project MCP',
+      '## Bead id: unitAI-7fm',
       'Write project-scoped .mcp.json registration.',
     ].join('\n'));
+  });
+
+  it('emits the exact bead id near the top of the context (unitAI-edfjs)', () => {
+    const context = buildBeadContext({
+      id: 'unitAI-34pyf',
+      title: 'Fix extension exposure',
+      description: 'PROBLEM: the extension tool leaks.',
+    });
+    const lines = context.split('\n');
+    expect(lines[0]).toBe('# Task: Fix extension exposure');
+    expect(lines[1]).toBe('## Bead id: unitAI-34pyf');
+    // The exact id appears verbatim, not near a title that merely echoes it.
+    expect(context).toContain('## Bead id: unitAI-34pyf');
   });
 });

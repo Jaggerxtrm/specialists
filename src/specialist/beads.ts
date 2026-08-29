@@ -26,7 +26,12 @@ export interface BeadRecord {
 }
 
 export function buildBeadContext(bead: BeadRecord, completedBlockers: BeadRecord[] = []): string {
-  const lines = [`# Task: ${bead.title}`];
+  // The exact bead id heads the context so an interactive launcher's turn-1
+  // role=user message can obey claim/bead-id-verbatim discipline without
+  // rediscovering the id (unitAI-edfjs). Templates may also interpolate
+  // $bead_id, but every render surface routes through this one assembly, so
+  // this is the single shared contract that carries the id for role and roleless.
+  const lines = [`# Task: ${bead.title}`, `## Bead id: ${bead.id}`];
 
   if (bead.description?.trim()) {
     lines.push(bead.description.trim());
