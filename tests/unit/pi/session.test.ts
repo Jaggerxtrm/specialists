@@ -1174,6 +1174,28 @@ describe('sendCommand — concurrent dispatch', () => {
     }
   });
 
+  it('rejects pending RPC immediately when child exits before responding (unitAI-u5xjk)', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = await PiAgentSession.create({ model: 'gemini' });
+      await session.start();
+
+      // Cold npm:/git: source resolution failure shape: the child exits with
+      // the actionable npm error on stderr before answering command id=1.
+      const p = session.prompt('task').catch((e) => e);
+      fake.stderrHandlers['data']?.(Buffer.from('npm error: failed to resolve npm:pi-ast-grep\n'));
+      fake.procHandlers['close']?.(1);
+
+      // Fail-fast: rejected on child close, not after the 30s command timer.
+      await vi.advanceTimersByTimeAsync(100);
+      const err = await p;
+      expect(err.message).toMatch(/pi process exited with code 1 before responding to RPC command/);
+      expect(err.message).toContain('npm error: failed to resolve npm:pi-ast-grep');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('kill() rejects all pending RPC requests', async () => {
     const session = await PiAgentSession.create({ model: 'gemini' });
     await session.start();
