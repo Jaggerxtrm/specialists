@@ -682,6 +682,7 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
       specialistName,
       specialistPermissions,
       excludeExtensions: extensionSelection.excludeExtensions,
+      extensionSources: extensionSelection.extensionSources,
     });
     const resolvedToolContractBlock = resolvedToolContract ? formatResolvedToolContract(resolvedToolContract) : '';
 
@@ -1142,7 +1143,8 @@ async function runSingleAttempt(
     if (extensionSelection.offline !== false) args.push('--offline');
     args.push('--no-context-files', '--no-prompt-templates', '--no-themes');
     const toolsFlag = resolvedToolContract?.toolsFlag;
-    if (toolsFlag) args.push('--tools', toolsFlag);
+    if (resolvedToolContract?.excludeToolsFlag) args.push('--exclude-tools', resolvedToolContract.excludeToolsFlag);
+    else if (toolsFlag) args.push('--tools', toolsFlag);
     for (const skillPath of skillPaths) args.push('--skill', skillPath);
     args.push('--model', model);
     if (thinkingLevel) args.push('--thinking', thinkingLevel);

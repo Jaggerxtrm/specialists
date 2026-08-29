@@ -822,6 +822,75 @@ describe('PiAgentSession', () => {
     });
   });
 
+  describe('extension tool exposure (unitAI-34pyf)', () => {
+    /** Hermetic local extension source dir (no catalog involvement). */
+    function makeExtensionDir(): { dir: string; cleanup: () => void } {
+      const dir = mkdtempSync(join(tmpdir(), 'pi-ext-src-'));
+      writeFileSync(join(dir, 'index.mjs'), 'export default function () {}\n');
+      return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+    }
+
+    it('switches to the deny-list gate and lists exposed sources when extensions are enabled', () => {
+      const { dir, cleanup } = makeExtensionDir();
+      try {
+        const contract = resolveRuntimeToolContract({ level: 'READ_ONLY', extensionSources: [dir] });
+        // toolsFlag keeps the native allowlist for validation/advisory...
+        expect(contract?.toolsFlag?.split(',')).toEqual(expect.arrayContaining(['read', 'grep', 'find', 'ls']));
+        // ...but the spawn gate is the deny list: natives not granted at the
+        // tier are excluded while extension-registered tools pass through.
+        expect(contract?.excludeToolsFlag?.split(',')).toEqual(expect.arrayContaining(['write', 'edit', 'bash']));
+        expect(contract?.excludeToolsFlag?.split(',')).not.toContain('read');
+        expect(contract?.exposedExtensionSources).toEqual([dir]);
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('emits the allowlist gate (no excludes) when no extension source is enabled', () => {
+      const contract = resolveRuntimeToolContract({ level: 'READ_ONLY' });
+      expect(contract?.excludeToolsFlag).toBeUndefined();
+      expect(contract?.exposedExtensionSources).toEqual([]);
+      expect(contract?.toolsFlag?.split(',')).toEqual(expect.arrayContaining(['read', 'grep', 'find', 'ls']));
+    });
+
+    it('includes hard-denied natives in the exclude list at READ_ONLY with healthy gitnexus', async () => {
+      await withGitnexusInstall('0.6.1', async () => {
+        const { dir, cleanup } = makeExtensionDir();
+        try {
+          const contract = resolveRuntimeToolContract({ level: 'READ_ONLY', extensionSources: [dir] });
+          expect(contract?.excludeToolsFlag?.split(',')).toEqual(expect.arrayContaining(['grep', 'find', 'ls', 'write', 'edit', 'bash']));
+          expect(contract?.excludeToolsFlag?.split(',')).not.toContain('read');
+          expect(contract?.exposedExtensionSources).toEqual([dir]);
+        } finally {
+          cleanup();
+        }
+      });
+    });
+
+    it('passes --exclude-tools instead of --tools at spawn when extensions are enabled', async () => {
+      const { dir, cleanup } = makeExtensionDir();
+      try {
+        const session = await PiAgentSession.create({
+          model: 'gemini',
+          permissionLevel: 'MEDIUM',
+          extensionSources: [dir],
+        });
+        await session.start();
+        const args: string[] = mockSpawn.mock.calls[0][1];
+        const toolsIdx = args.indexOf('--tools');
+        expect(toolsIdx).toBe(-1);
+        const excludeIdx = args.indexOf('--exclude-tools');
+        expect(excludeIdx).toBeGreaterThan(-1);
+        // MEDIUM grants read,grep,find,ls,bash,edit; gitnexus is not installed
+        // in this fixture so hard deny cannot strip the search natives.
+        expect(args[excludeIdx + 1].split(',')).toEqual(['write']);
+        expect(args).toContain(dir); // -e <source>
+      } finally {
+        cleanup();
+      }
+    });
+  });
+
   it('suppresses GitNexus with unhealthy package metadata before --tools emission', async () => {
     await withNpmGlobal(npmGlobalDir => {
       mkdirSync(join(npmGlobalDir, 'pi-gitnexus'), { recursive: true });

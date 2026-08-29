@@ -270,6 +270,7 @@ export function resolveRuntimeToolContract(options: {
   specialistName?: string;
   specialistPermissions?: ManifestPolicy['permissions'];
   excludeExtensions?: readonly string[];
+  extensionSources?: readonly string[];
 }): ResolvedToolContract | undefined {
   const catalogIndex = loadSharedToolCatalogIndex();
   if (!catalogIndex) return undefined;
@@ -294,6 +295,7 @@ export function resolveRuntimeToolContract(options: {
     specialistExclusions: (options.excludeExtensions ?? []).includes(gitnexusRuntime.packageName)
       ? { disabledExtensions: ['gitnexus'] }
       : undefined,
+    extensionSources: options.extensionSources,
     extensionState: {
       gitnexus: gitnexusRuntime.extensionState,
     },
@@ -311,6 +313,7 @@ export function resolvePermissionTools(options: {
   specialistName?: string;
   specialistPermissions?: ManifestPolicy['permissions'];
   excludeExtensions?: readonly string[];
+  extensionSources?: readonly string[];
 }): string | undefined {
   return resolveRuntimeToolContract(options)?.toolsFlag || undefined;
 }
@@ -761,8 +764,10 @@ export class PiAgentSession {
       specialistName: this.options.specialistName,
       specialistPermissions: this.options.specialistPermissions,
       excludeExtensions: this.options.excludeExtensions,
+      extensionSources: this.options.extensionSources,
     });
-    if (resolvedToolContract?.toolsFlag) args.push('--tools', resolvedToolContract.toolsFlag);
+    if (resolvedToolContract?.excludeToolsFlag) args.push('--exclude-tools', resolvedToolContract.excludeToolsFlag);
+    else if (resolvedToolContract?.toolsFlag) args.push('--tools', resolvedToolContract.toolsFlag);
 
     // Thinking level (models that don't support it ignore the flag)
     if (this.options.thinkingLevel) {

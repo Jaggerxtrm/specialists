@@ -23,6 +23,14 @@ export interface ResolvedExtensionContract {
 export interface ResolvedToolContract {
   effectiveTier: ToolTier;
   toolsFlag: string;
+  /** When set, the spawn must pass `--exclude-tools <this>` (deny-list gate)
+   *  instead of `--tools <toolsFlag>`: native tools stay tier-restricted while
+   *  tools registered by enabled extension sources remain available. */
+  excludeToolsFlag?: string;
+  /** Extension sources enabled via `execution.extensions[source] === true`.
+   *  Each loads (-e) and its REGISTERED tools are all exposed to the model
+   *  (operator trust signal; enabling an extension authorizes its code). */
+  exposedExtensionSources: readonly string[];
   toolsList: readonly string[];
   nativeTools: readonly string[];
   extensionTools: readonly string[];
@@ -36,7 +44,17 @@ export interface ResolvedToolContract {
 
 interface BuildResolvedToolContractInput extends ResolverInput {
   extensionPackages?: Partial<Record<ToolCatalogName, ExtensionPackageRuntime>>;
+  /** Enabled extension sources (execution.extensions[source] === true) that
+   *  switch the tool gate to deny-list mode so their registered tools are not
+   *  suppressed by the native allowlist. */
+  extensionSources?: readonly string[];
 }
+
+/** Builtin native tool names Pi can register (read/write/edit/bash + search
+ *  family). Used to build the deny-list gate: everything not granted at the
+ *  effective tier is excluded, while extension-registered tools pass through.
+ *  Names that Pi does not register are ignored harmlessly. */
+export const ALL_PI_NATIVE_TOOL_NAMES = ['read', 'write', 'edit', 'bash', 'grep', 'find', 'ls'] as const;
 
 function uniqueOrdered(values: readonly string[]): string[] {
   const seen = new Set<string>();
@@ -79,6 +97,12 @@ export function buildResolvedToolContract(input: BuildResolvedToolContractInput)
   const tierNativeTools = new Set(nativeCatalog?.source_tiers[input.tier] ?? []);
   const nativeTools = resolver.toolsList.filter((tool) => tierNativeTools.has(tool));
   const extensionTools = resolver.toolsList.filter((tool) => !tierNativeTools.has(tool));
+  const exposedExtensionSources = uniqueOrdered(input.extensionSources ?? []);
+  // Deny-list gate: builtin natives NOT granted after deny resolution are
+  // excluded; extension-registered tools pass through by Pi design.
+  const excludeToolsFlag = exposedExtensionSources.length > 0
+    ? ALL_PI_NATIVE_TOOL_NAMES.filter((name) => !nativeTools.includes(name)).join(',')
+    : undefined;
   const extensions = Object.fromEntries(
     input.catalogs
       .filter((catalog): catalog is ToolCatalog & { catalog: Exclude<ToolCatalogName, 'native'> } => catalog.catalog !== 'native')
@@ -99,6 +123,8 @@ export function buildResolvedToolContract(input: BuildResolvedToolContractInput)
   return {
     effectiveTier: input.tier,
     toolsFlag: resolver.tools,
+    excludeToolsFlag,
+    exposedExtensionSources,
     toolsList: resolver.toolsList,
     nativeTools,
     extensionTools,
@@ -116,6 +142,10 @@ export function formatResolvedToolContract(contract: ResolvedToolContract): stri
     '## Resolved Tool Contract',
     `- effective tier: ${contract.effectiveTier}`,
     `- --tools: ${contract.toolsFlag || '(none)'}`,
+    ...(contract.excludeToolsFlag ? [`- --exclude-tools (extension expose-all gate): ${contract.excludeToolsFlag}`] : []),
+    ...(contract.exposedExtensionSources.length > 0
+      ? [`- exposed extension sources (all registered tools available): ${formatList(contract.exposedExtensionSources)}`]
+      : []),
     `- actual native tools: ${formatList(contract.nativeTools)}`,
     `- active extension tools: ${formatList(contract.extensionTools)}`,
     `- denied native tools: ${formatList(contract.deniedNativeTools)}`,
