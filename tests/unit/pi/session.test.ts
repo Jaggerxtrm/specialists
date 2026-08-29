@@ -912,6 +912,32 @@ describe('PiAgentSession', () => {
       const policyPath = getExtensionToolPolicyExtensionPath();
       expect(args[args.length - 1]).toBe(policyPath);
     });
+
+    it('aborts launch when the policy artifact is missing and sources are exposed (hard fail)', async () => {
+      // Simulate a broken installation: the bundled policy extension is
+      // unresolvable. Launch must abort — never warn-and-continue with
+      // --no-builtin-tools and no policy (which would leave extension tools
+      // active without the granted native gate).
+      vi.resetModules();
+      vi.doMock('../../../src/pi/extension-tool-policy-extension.js', () => ({
+        getExtensionToolPolicyExtensionPath: () => null,
+        NATIVE_TOOLS_ENV_KEY: 'PI_SPECIALIST_ALLOWED_NATIVE_TOOLS',
+      }));
+      try {
+        const { PiAgentSession: ReloadedSession } = await import('../../../src/pi/session.js');
+        const session = await ReloadedSession.create({
+          model: 'gemini',
+          permissionLevel: 'READ_ONLY',
+          extensionSources: ['/tmp/extension-source'],
+        });
+        await expect(session.start()).rejects.toThrow(/policy extension not found/);
+        // No spawn is ever attempted for the broken gate.
+        expect(mockSpawn).not.toHaveBeenCalled();
+      } finally {
+        vi.doUnmock('../../../src/pi/extension-tool-policy-extension.js');
+        vi.resetModules();
+      }
+    });
   });
 
   it('suppresses GitNexus with unhealthy package metadata before --tools emission', async () => {

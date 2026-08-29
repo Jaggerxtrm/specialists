@@ -63,6 +63,17 @@ vi.mock('../../../src/pi/session.js', () => ({
     const contract = resolveRuntimeToolContractMock(options);
     return contract?.toolsFlag;
   }),
+  applyExtensionToolPolicyGate: vi.fn((args: string[], contract?: { exposedExtensionSources?: string[]; nativeTools?: string[] }, policyEnv: Record<string, string> = {}) => {
+    // Faithful mock of the real gate (session.ts): no-op without exposed
+    // sources; otherwise -nbt + policy -e LAST + bounded env channel. The
+    // policy path is a sentinel here — exact path equality is verified in
+    // tests/unit/pi/session.test.ts and the integration suite against the
+    // real resolver.
+    if (!contract || (contract.exposedExtensionSources?.length ?? 0) === 0) return;
+    args.push('--no-builtin-tools');
+    args.push('-e', '__POLICY_EXT__');
+    policyEnv.__NATIVE_TOOLS_ENV__ = contract.nativeTools?.join(',') ?? '';
+  }),
 }));
 
 vi.mock('../../../src/specialist/observability-sqlite.js', () => {
@@ -165,6 +176,7 @@ function createResolvedToolContract(overrides: Partial<{
   gitnexusStatus: 'available' | 'disabled' | 'loaded_unhealthy' | 'catalog_incompatible' | 'not_installed';
   gitnexusTools: string[];
   packagePath: string;
+  exposedExtensionSources: string[];
 }> = {}) {
   const toolsList = overrides.toolsList ?? ['read', 'grep', 'find', 'ls', 'gitnexus_query'];
   const nativeTools = overrides.nativeTools ?? ['read', 'grep', 'find', 'ls'];
@@ -173,6 +185,7 @@ function createResolvedToolContract(overrides: Partial<{
   return {
     effectiveTier: overrides.effectiveTier ?? 'READ_ONLY',
     toolsFlag: overrides.toolsFlag ?? toolsList.join(','),
+    exposedExtensionSources: overrides.exposedExtensionSources ?? [],
     toolsList,
     nativeTools,
     extensionTools,
@@ -457,6 +470,42 @@ describe('runScriptSpecialist resolved tool contract', () => {
     expect(spawnArgs).not.toContain('--tools');
     const extensionPaths = spawnArgs.filter((value, index, args) => args[index - 1] === '-e');
     expect(extensionPaths).not.toContain(rediscoveredGitnexusPath);
+  });
+
+  it('raw cli spawn applies the extension tool-policy gate for exposed sources (unitAI-34pyf)', async () => {
+    const resolvedToolContract = createResolvedToolContract({
+      toolsFlag: 'read,grep,find,ls',
+      toolsList: ['read', 'grep', 'find', 'ls'],
+      nativeTools: ['read', 'grep', 'find', 'ls'],
+      extensionTools: [],
+      gitnexusStatus: 'available',
+      gitnexusTools: [],
+      exposedExtensionSources: ['/tmp/enabled-extension-source'],
+    });
+    resolveRuntimeToolContractMock.mockReturnValue(resolvedToolContract);
+    const child = createSpawnMock();
+
+    const resultPromise = runScriptSpecialist(
+      { specialist: 'changelog-drafter', template: 'Contract follows\n\n$resolved_tool_contract', variables: { name: 'release notes' } },
+      { loader: makeLoader(baseSpec as never) as never, projectDir: '.' },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    child.stdout.emit('data', Buffer.from(`${JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] } })}\n`));
+    child.emit('close', 0);
+    await resultPromise;
+
+    const spawnArgs: string[] = spawnMock.mock.calls[0][1];
+    // --tools allowlist is suppressed for sourced sessions; the gate takes over.
+    expect(spawnArgs).not.toContain('--tools');
+    expect(spawnArgs).toContain('--no-builtin-tools');
+    // The policy extension -e pair must be the LAST args (loaded after all
+    // configured sources so every extension registers before session_start).
+    expect(spawnArgs[spawnArgs.length - 2]).toBe('-e');
+    expect(spawnArgs[spawnArgs.length - 1]).toBe('__POLICY_EXT__');
+    // Bounded env channel carries the granted native allowlist.
+    const spawnOptions = spawnMock.mock.calls[0][2] as { env?: Record<string, string> };
+    expect(spawnOptions.env?.__NATIVE_TOOLS_ENV__).toBe('read,grep,find,ls');
   });
 
   it.each(['disabled', 'loaded_unhealthy', 'catalog_incompatible', 'not_installed'] as const)('does not load gitnexus extension for %s contract state on direct cli path', async (gitnexusStatus) => {

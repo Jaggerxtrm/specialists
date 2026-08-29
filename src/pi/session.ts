@@ -330,6 +330,11 @@ export function resolvePermissionTools(options: {
  * never activated, and Pi rejects inactive tools at call time. When no
  * extension source is enabled this is a no-op and the caller keeps the strict
  * `--tools` allowlist — byte-identical legacy behavior.
+ *
+ * HARD-FAIL: with extension sources enabled, a missing policy artifact aborts
+ * the launch. Running `--no-builtin-tools` without the policy extension would
+ * leave explicitly enabled extension tools active while the granted natives
+ * stay inactive — a broken, misleading session. Never warn-and-continue.
  */
 export function applyExtensionToolPolicyGate(
   args: string[],
@@ -337,9 +342,16 @@ export function applyExtensionToolPolicyGate(
   env: Record<string, string>,
 ): void {
   if (!contract || (contract.exposedExtensionSources?.length ?? 0) === 0) return;
-  args.push('--no-builtin-tools');
   const policyPath = getExtensionToolPolicyExtensionPath();
-  if (policyPath) args.push('-e', policyPath);
+  if (!policyPath) {
+    throw new Error(
+      '[xtrm-tool-policy] bundled policy extension not found while extension sources are enabled ' +
+        `(${contract.exposedExtensionSources.join(', ')}); aborting launch. ` +
+        'Reinstall or rebuild the specialists package so config/pi-extensions/extension-tool-policy ships.',
+    );
+  }
+  args.push('--no-builtin-tools');
+  args.push('-e', policyPath);
   env[NATIVE_TOOLS_ENV_KEY] = contract.nativeTools.join(',');
 }
 
