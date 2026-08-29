@@ -1,6 +1,6 @@
 import { basename, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
-import { renderTemplate } from './templateEngine.js';
+import { extractTemplateTokens, renderTemplate } from './templateEngine.js';
 import { MandatoryRulesBudgetError, buildMandatoryRulesInjection } from './mandatory-rules.js';
 import { buildBeadContext, type BeadRecord } from './beads.js';
 import { measurePayloadComponent, type PayloadComponentMeasurement } from './payload-measure.js';
@@ -8,6 +8,41 @@ import type { Specialist } from './schema.js';
 
 export const MANDATORY_RULES_TOKEN_LIMIT = 2000;
 const SKILL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/**
+ * `$name` placeholders that may be legitimately absent at task-assembly time and
+ * MUST then resolve to an intentional empty value rather than leak a literal
+ * `$name` into the model prompt (unitAI-i3u2e). Each is populated at execution
+ * time in `sp run` (tool-contract resolution, `--job` reuse state, injected
+ * diffs, lineage summary, attached bead) and is absent from the read-only
+ * renderer (`sp render-task` / `sp render-bead`). The strict invariant below
+ * refuses any OTHER unresolved token, so a future template referencing a new
+ * execution-only variable is caught by the shipped-template regression sweep.
+ */
+const OPTIONALLY_ABSENT_PLACEHOLDERS = new Set([
+  'bead_context',
+  'gitnexus_summary',
+  'obligations_diff',
+  'resolved_tool_contract',
+  'reused_worktree_awareness',
+  'reviewed_job_id',
+  'writer_diff',
+  'writer_job_id',
+]);
+
+/**
+ * A task_template referenced a `$name` that no caller provides and that is not a
+ * known execution-only placeholder. Fail loud: a complete initial prompt is the
+ * renderer's contract, and a silent literal `$name` handed to the model is a leak.
+ */
+export class TemplatePlaceholderError extends Error {
+  readonly unresolved: string[];
+  constructor(unresolved: string[]) {
+    super(`task_template references unresolved placeholder(s): ${unresolved.map((n) => `$${n}`).join(', ')}`);
+    this.name = 'TemplatePlaceholderError';
+    this.unresolved = unresolved;
+  }
+}
 
 export type Surface = 'pi' | 'claude' | 'codex';
 
@@ -178,6 +213,21 @@ export function renderTaskPrompt(input: TaskPromptInput): TaskPromptResult {
     ...(input.variables ?? {}),
     ...beadVariables,
   };
+
+  // Resolve known execution-only/conditionally-absent placeholders to an
+  // intentional empty when no caller supplied them (execution-only inputs are
+  // absent BY CONSTRUCTION from the read-only renderer, but `sp run` can also
+  // legitimately skip a `--job`/diff/lineage variable). Real values already in
+  // `variables` win — never overwrite a provided value.
+  for (const name of OPTIONALLY_ABSENT_PLACEHOLDERS) {
+    if (variables[name] === undefined) variables[name] = '';
+  }
+
+  // Shared post-render invariant: no unresolved `$name` may reach the model. Any
+  // token in the template that is still missing here is a config bug -> refuse.
+  const unresolvedTokens = extractTemplateTokens(prompt.task_template)
+    .filter((name) => variables[name] === undefined);
+  if (unresolvedTokens.length > 0) throw new TemplatePlaceholderError(unresolvedTokens);
 
   // ONE pass over the original template. The previous two-pass render substituted
   // $prompt with the bead body and then re-scanned the RESULT, so a bead whose text
