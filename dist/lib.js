@@ -11741,6 +11741,19 @@ class PiAgentSession {
     });
     this.proc.on("close", (code) => {
       this._clearStallTimer();
+      if (this._pendingRequests.size > 0) {
+        const stderrTail = this._stderrBuffer.trim().split(`
+`).slice(-5).join(`
+`).slice(0, 2000);
+        const exitDetail = code === null ? "" : ` with code ${code}`;
+        const message = `pi process exited${exitDetail} before responding to RPC command${stderrTail ? `; stderr:
+${stderrTail}` : ""}`;
+        for (const [, entry] of this._pendingRequests) {
+          clearTimeout(entry.timer);
+          entry.reject(new Error(message));
+        }
+        this._pendingRequests.clear();
+      }
       if (this._agentEndReceived || this._killed) {
         this._doneResolve?.();
       } else if (code === 0 || code === null) {
