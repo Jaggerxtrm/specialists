@@ -3,6 +3,15 @@ import { type BeadRecord } from './beads.js';
 import { type PayloadComponentMeasurement } from './payload-measure.js';
 import type { Specialist } from './schema.js';
 export declare const MANDATORY_RULES_TOKEN_LIMIT = 2000;
+/**
+ * A task_template referenced a `$name` that no caller provides and that is not a
+ * known execution-only placeholder. Fail loud: a complete initial prompt is the
+ * renderer's contract, and a silent literal `$name` handed to the model is a leak.
+ */
+export declare class TemplatePlaceholderError extends Error {
+    readonly unresolved: string[];
+    constructor(unresolved: string[]);
+}
 export type Surface = 'pi' | 'claude' | 'codex';
 /**
  * Derive a skill's invocation name from its declared path.
