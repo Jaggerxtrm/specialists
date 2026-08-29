@@ -62,6 +62,45 @@ export default function (pi) {
 }
 `;
 
+// Advisory fixture (unitAI-kaae7): registers an ACTIVE high-leverage tool
+// (ast_grep, cli source — has reviewed guidance) and a CONFIGURED-BUT-DENIED
+// tool (denied_probe, sdk source). The policy refuses to activate sdk-source
+// tools, so denied_probe must never appear in the advisory even though it is
+// registered by an enabled source. Only ast_grep (active + reviewed) surfaces.
+const ADVISORY_FIXTURE_EXTENSION = `export default function (pi) {
+  pi.registerTool({
+    name: "ast_grep",
+    label: "ast-grep",
+    description: "Structural code-shape queries.",
+    promptSnippet: "Call ast_grep for structural code queries.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    async execute() { return { content: [{ type: "text", text: "AST-OK" }] }; },
+  });
+  pi.registerTool({
+    name: "denied_probe",
+    label: "denied-probe",
+    description: "Configured-but-denied tool (sdk source): must not be claimed active.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    async execute() { return { content: [{ type: "text", text: "DENIED-OK" }] }; },
+  });
+}
+`;
+
+// Loaded LAST, after the policy extension appended its advisory to the chained
+// system prompt. The fixture dumps the advisory block actually sent to the
+// model (event.systemPrompt at its own before_agent_start already reflects the
+// policy's earlier handler), so the presence/absence assertions check the
+// model's real input deterministically — not the model's free-form reply.
+const ADVISORY_CAPTURE_EXTENSION = `export default function (pi) {
+  pi.on("before_agent_start", (event) => {
+    const sp = event.systemPrompt ?? "";
+    const i = sp.indexOf("Active extension tools");
+    const block = i >= 0 ? sp.slice(i, i + 300) : "<no-advisory-block>";
+    console.error("ADVISORY_CAPTURED_START:" + block + ":ADVISORY_CAPTURED_END");
+  });
+}
+`;
+
 function cleanSpawnEnv(piBin: string) {
   return {
     PATH: `${join(piBin, '..')}:/usr/bin:/bin`,
@@ -146,6 +185,77 @@ describeIntegration('extension exposure model-backed regression', () => {
       expect(stdout).toContain('"toolName":"probe_marker"');
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('advisory presence matches active tools and omits configured-but-denied tools', () => {
+    // AST-grep (active, reviewed guidance) MUST be listed; denied_probe (sdk
+    // source, configured but never activated by the policy) MUST be absent.
+    const dir = mkdtempSync(join(tmpdir(), 'advisory-model-'));
+    writeFileSync(join(dir, 'index.mjs'), ADVISORY_FIXTURE_EXTENSION, 'utf8');
+    const captureDir = mkdtempSync(join(tmpdir(), 'advisory-capture-'));
+    writeFileSync(join(captureDir, 'index.mjs'), ADVISORY_CAPTURE_EXTENSION, 'utf8');
+
+    try {
+      const policyPath = getExtensionToolPolicyExtensionPath();
+      expect(policyPath).toBeTruthy();
+      const model = process.env.PI_INTEGRATION_MODEL ?? 'opencode-go/deepseek-v4-flash';
+      // Native allowlist keeps grep/find/ls denied when a source is enabled
+      // (default_overrides hard deny), so only `read` is a granted native here.
+      const args = [
+        '--mode', 'json',
+        '--no-session',
+        '--no-extensions',
+        '--no-skills',
+        '--offline',
+        '--no-context-files',
+        '--no-prompt-templates',
+        '--no-themes',
+        '--no-builtin-tools',
+        '--model', model,
+        '-e', dir,
+        '-e', policyPath!,
+        '-e', captureDir,
+      ];
+      const piBin = resolvePiBinary();
+      const prompt =
+        'Your system prompt may contain a section titled "Active extension tools". ' +
+        'If present, list exactly the tool names it names, comma-separated. ' +
+        'If no such section exists, reply exactly: NONE';
+      const result = spawnSync(piBin, args, {
+        input: prompt,
+        encoding: 'utf8',
+        timeout: 180_000,
+        env: {
+          ...cleanSpawnEnv(piBin),
+          [NATIVE_TOOLS_ENV_KEY]: 'read',
+        },
+      });
+
+      if (result.error && (result.error as NodeJS.ErrnoException).code === 'ENOENT') {
+        console.warn('pi binary not present — skipping integration assertion');
+        return;
+      }
+
+      const stdout = result.stdout ?? '';
+      const stderr = result.stderr ?? '';
+      for (const line of stdout.split('\n').filter((l) => l.length > 0)) {
+        expect(() => JSON.parse(line)).not.toThrow();
+      }
+      // Deterministic: the fixture dumps the advisory block that was actually
+      // appended to the system prompt sent to the model.
+      const captured = stderr.match(/ADVISORY_CAPTURED_START:([\s\S]*?):ADVISORY_CAPTURED_END/)?.[1] ?? '';
+      expect(captured).not.toBe('');
+      // Presence: the active ast_grep tool reached the advisory block.
+      expect(captured).toContain('ast_grep');
+      // Absence: the configured-but-denied sdk tool was never claimed active
+      // in the advisory that reached the model (deterministic read-back).
+      expect(captured).not.toContain('denied_probe');
+      // Non-mandatory wording: advisory invites use, never forces it.
+      expect(captured).toMatch(/use when relevant/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(captureDir, { recursive: true, force: true });
     }
   });
 

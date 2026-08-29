@@ -1,7 +1,8 @@
-// Unit tests for the Specialists-owned extension tool policy (unitAI-34pyf).
-// Exercises the REAL bundled artifact (config/pi-extensions/extension-tool-policy/index.mjs)
-// through its factory with a fake pi, so the fail-closed selection logic is
-// verified against the exact code Pi loads.
+// Unit tests for the Specialists-owned extension tool policy (unitAI-34pyf)
+// and advisory (unitAI-kaae7). Exercises the REAL bundled artifact
+// (config/pi-extensions/extension-tool-policy/index.mjs) through its factory
+// with a fake pi, so the fail-closed selection logic and the active-tool
+// advisory are verified against the exact code Pi loads.
 
 import { describe, expect, it } from 'vitest';
 import { existsSync } from 'node:fs';
@@ -14,19 +15,34 @@ interface FakeTool {
   sourceInfo: { source: string; path: string };
 }
 
+interface BeforeAgentStartResult {
+  systemPrompt?: string;
+  message?: unknown;
+}
+
+interface BeforeAgentStartHandler {
+  (event: { systemPrompt?: string; systemPromptOptions?: { selectedTools?: string[] } }):
+    BeforeAgentStartResult | undefined;
+}
+
 function makeFakePi(allTools: FakeTool[]) {
   let active: string[] = [];
   let sessionHandler: (() => void) | undefined;
+  let beforeAgentStartHandler: BeforeAgentStartHandler | undefined;
   return {
     fake: {
       getAllTools: () => allTools,
+      getActiveTools: () => active,
       setActiveTools: (names: string[]) => {
         active = names;
       },
-      on: (event: string, handler: () => void) => {
-        if (event === 'session_start') sessionHandler = handler;
+      on: (event: string, handler: BeforeAgentStartHandler) => {
+        if (event === 'session_start') sessionHandler = handler as () => void;
+        if (event === 'before_agent_start') beforeAgentStartHandler = handler;
       },
       runSessionStart: () => sessionHandler?.(),
+      runBeforeAgentStart: (event?: { systemPrompt?: string }) =>
+        beforeAgentStartHandler?.({ systemPrompt: '', ...(event ?? {}) }),
       getActive: () => active,
     },
   };
@@ -97,6 +113,77 @@ describe('extension tool policy artifact', () => {
       expect(fake.getActive()).not.toContain('grep');
       expect(fake.getActive()).not.toContain('find');
       expect(fake.getActive()).not.toContain('ls');
+    } finally {
+      if (prev === undefined) delete process.env.PI_SPECIALIST_ALLOWED_NATIVE_TOOLS;
+      else process.env.PI_SPECIALIST_ALLOWED_NATIVE_TOOLS = prev;
+    }
+  });
+
+  it('appends advisory listing runtime-confirmed active high-leverage tools', async () => {
+    const factory = await loadPolicyFactory();
+    const { fake } = makeFakePi([
+      ...BUILTINS,
+      { name: 'python', sourceInfo: { source: 'cli', path: '/tmp/python-kernel' } },
+      { name: 'ast_grep', sourceInfo: { source: 'extension', path: '/pkg/ast' } },
+      { name: 'probe_marker', sourceInfo: { source: 'cli', path: '/tmp/fixture' } }, // active, no reviewed guidance
+    ]);
+    const prev = process.env.PI_SPECIALIST_ALLOWED_NATIVE_TOOLS;
+    process.env.PI_SPECIALIST_ALLOWED_NATIVE_TOOLS = 'read,grep,find,ls';
+    try {
+      factory(fake);
+      fake.runSessionStart();
+      const result = fake.runBeforeAgentStart({ systemPrompt: 'SPECIALIST-RULES' });
+      // Advisory is appended to the SYSTEM PROMPT (not a new user message),
+      // preserving the bead-task-as-first-user / rules-in-system-prompt split.
+      expect(result?.systemPrompt).toContain('SPECIALIST-RULES');
+      // Only runtime-confirmed active tools the advisory KNOWS surface:
+      expect(result?.systemPrompt).toContain('ast_grep');
+      expect(result?.systemPrompt).toContain('python');
+      // Advisory is delivered via system prompt, never a new role=user message
+      // (keeps the rendered bead task as the first user message).
+      expect(result?.message).toBeUndefined();
+    } finally {
+      if (prev === undefined) delete process.env.PI_SPECIALIST_ALLOWED_NATIVE_TOOLS;
+      else process.env.PI_SPECIALIST_ALLOWED_NATIVE_TOOLS = prev;
+    }
+  });
+
+  it('emits NO advisory when no reviewed high-leverage tool is active', async () => {
+    const factory = await loadPolicyFactory();
+    // Only granted natives are active — no extension-class high-leverage tool
+    // with reviewed guidance. Advisory must be absent.
+    const { fake } = makeFakePi([...BUILTINS]);
+    const prev = process.env.PI_SPECIALIST_ALLOWED_NATIVE_TOOLS;
+    process.env.PI_SPECIALIST_ALLOWED_NATIVE_TOOLS = 'read,grep,find,ls';
+    try {
+      factory(fake);
+      fake.runSessionStart();
+      const result = fake.runBeforeAgentStart({ systemPrompt: 'RULES' });
+      expect(result).toBeUndefined();
+    } finally {
+      if (prev === undefined) delete process.env.PI_SPECIALIST_ALLOWED_NATIVE_TOOLS;
+      else process.env.PI_SPECIALIST_ALLOWED_NATIVE_TOOLS = prev;
+    }
+  });
+
+  it('omits configured-but-denied tools from the advisory', async () => {
+    // denied_probe is registered but sdk-source, so the policy never
+    // activates it. It must be absent from the advisory even though its
+    // source was enabled (configured).
+    const factory = await loadPolicyFactory();
+    const { fake } = makeFakePi([
+      ...BUILTINS,
+      { name: 'ast_grep', sourceInfo: { source: 'extension', path: '/pkg/ast' } },
+      { name: 'denied_probe', sourceInfo: { source: 'sdk', path: '<sdk>' } },
+    ]);
+    const prev = process.env.PI_SPECIALIST_ALLOWED_NATIVE_TOOLS;
+    process.env.PI_SPECIALIST_ALLOWED_NATIVE_TOOLS = 'read,grep,find,ls';
+    try {
+      factory(fake);
+      fake.runSessionStart();
+      const result = fake.runBeforeAgentStart({ systemPrompt: 'RULES' });
+      expect(result?.systemPrompt).toContain('ast_grep');
+      expect(result?.systemPrompt).not.toContain('denied_probe');
     } finally {
       if (prev === undefined) delete process.env.PI_SPECIALIST_ALLOWED_NATIVE_TOOLS;
       else process.env.PI_SPECIALIST_ALLOWED_NATIVE_TOOLS = prev;

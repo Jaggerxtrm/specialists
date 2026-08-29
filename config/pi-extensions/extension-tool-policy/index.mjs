@@ -1,4 +1,4 @@
-// Specialists-owned extension tool policy (unitAI-34pyf).
+// Specialists-owned extension tool policy (unitAI-34pyf) + advisory (unitAI-kaae7).
 //
 // Loaded LAST (-e) by the specialist spawn when execution.extensions sources
 // are enabled, together with `--no-builtin-tools`. At session_start every
@@ -11,6 +11,15 @@
 //      enabling a source authorizes its code).
 // Everything else (including future/unknown builtins such as powershell)
 // stays inactive and is rejected by Pi at call time — fail-closed.
+//
+// At before_agent_start the same extension appends a concise, non-mandatory
+// advisory listing the ACTIVE high-leverage tools (intersected with a
+// reviewed static guidance map) so agents use tools they actually have.
+// Rationale: the advisory must be derived from runtime-confirmed active tool
+// names — never from configured sources (a source may be enabled yet its
+// tools denied/unhealthy). The policy extension is the single owner of that
+// active set, so the advisory reuses it here instead of duplicating the
+// selection in Specialists role output or Core ambient discovery.
 //
 // The active-set selection must mirror selectExtensionPolicyTools in
 // tests/unit/pi/extension-tool-policy.test.ts; keep both in sync.
@@ -40,6 +49,34 @@ function selectActiveTools(allTools, allowedNativeToolsEnv) {
   return active;
 }
 
+// Reviewed static guidance keyed by known high-leverage tool name. Never
+// generated from untrusted source strings; only looked up by tool name.
+// Conditional and non-mandatory: "use when relevant", not a ceremonial
+// requirement. Add an entry only for a reviewed, genuinely high-leverage tool.
+const TOOL_GUIDANCE = {
+  ast_grep: "prefer ast_grep for structural code-shape queries (AST patterns/rules) over text grep",
+  python: "prefer python for repeated parse/aggregate/decision loops and persistent probes",
+  intercom: "prefer intercom to coordinate with other local pi sessions",
+  "claude-link": "prefer claude-link to message Claude Code sessions on this machine",
+};
+
+/**
+ * Build the advisory from the runtime-confirmed ACTIVE tool set, intersected
+ * with the reviewed static guidance map. Returns null when none of the
+ * active tools has reviewed guidance (no advisory — don't add noise). Only
+ * tools the session actually exposes are ever listed.
+ */
+export function buildActiveToolAdvisory(activeTools) {
+  const lines = [];
+  for (const name of activeTools) {
+    const guidance = TOOL_GUIDANCE[name];
+    if (guidance) lines.push(`- ${name}: ${guidance}.`);
+  }
+  if (lines.length === 0) return null;
+  const header = "## Active extension tools (use when relevant; optional):";
+  return `${header}\n${lines.join("\n")}`;
+}
+
 export default function extensionToolPolicy(pi) {
   pi.on("session_start", () => {
     try {
@@ -51,6 +88,27 @@ export default function extensionToolPolicy(pi) {
       // failure the session keeps the --no-builtin-tools empty active set,
       // which is fail-closed (no native tools, no extension tools).
       console.error(`[xtrm-tool-policy] failed to apply tool policy: ${error?.message ?? String(error)}`);
+    }
+  });
+
+  pi.on("before_agent_start", (event) => {
+    try {
+      // Runtime-confirmed active set — reflects the session_start policy
+      // resolution (granted natives + active extension tools). Never list a
+      // configured-but-denied/unhealthy tool: absent from active == absent
+      // from the advisory.
+      const active = pi.getActiveTools();
+      const advisory = buildActiveToolAdvisory(active);
+      if (!advisory) return undefined;
+      // Append to the SYSTEM PROMPT, not a new user message: preserves the
+      // session separation where the rendered bead task stays the first
+      // role=user message and specialist identity/rules live in the system
+      // prompt layer.
+      return { systemPrompt: `${event.systemPrompt ?? ""}\n\n${advisory}` };
+    } catch (error) {
+      // Advisory is best-effort; never take the session down.
+      console.error(`[xtrm-tool-policy] failed to append advisory: ${error?.message ?? String(error)}`);
+      return undefined;
     }
   });
 }
