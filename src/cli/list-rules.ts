@@ -10,11 +10,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve, join, basename } from 'node:path';
 import { loadMandatoryRulesIndex } from '../specialist/mandatory-rules.js';
 import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
-import {
-  getGlobalUserConfigPath,
-  readGlobalUserConfig,
-  validateGlobalUserConfig,
-} from '../specialist/global-config.js';
+import { getGlobalUserConfigPath, validateGlobalUserConfig } from '../specialist/global-config.js';
+import { SpecialistLoader } from '../specialist/loader.js';
 import type { SpecialistMandatoryRulesConfig } from '../specialist/mandatory-rules.js';
 
 interface RuleSetEntry {
@@ -123,9 +120,10 @@ function appliedRulesForSpec(
 ): AppliedRule[] {
   const out = new Map<string, AppliedRule>();
   for (const id of required) out.set(id, { id, scope: 'required' });
-  if (!spec.globals_disabled) {
-    for (const id of defaults) if (!out.has(id)) out.set(id, { id, scope: 'default' });
-  }
+  // Index `default_template_sets` ALWAYS load at runtime (unitAI-klo6k):
+  // `disable_default_globals` only suppresses the inline workflow-quick-rules
+  // block in buildMandatoryRulesInjection, never index-driven sets.
+  for (const id of defaults) if (!out.has(id)) out.set(id, { id, scope: 'default' });
   for (const id of spec_template_sets) if (!out.has(id)) out.set(id, { id, scope: 'role-specific' });
   if (spec.inline_rule_count > 0) out.set(`__inline__${spec.name}`, { id: '(inline)', scope: 'inline' });
   return [...out.values()];
@@ -156,7 +154,7 @@ function renderMatrix(rules: RuleSetEntry[], specs: SpecialistEntry[]): string {
     lines.push(cells.join(' '));
   }
   lines.push('');
-  lines.push('  R = required (always)   D = default (unless disable_default_globals)   x = role-specific   . = not applied');
+  lines.push('  R = required (always)   D = default (index policy, always loaded)   x = role-specific   . = not applied');
   return lines.join('\n');
 }
 
@@ -213,51 +211,69 @@ export async function run(): Promise<void> {
   const rules = discoverRuleSets(cwd);
   const specs = discoverSpecialists(cwd);
 
-  // Overlay the global user layer (~/.config/specialists/user.json): a
-  // non-null `mandatory_rules.template_sets` selection replaces the
-  // specialist-specific sets from the manifest file, exactly like the loader
-  // merge. `null` / absent inherits; `[]` explicitly clears them (index
-  // required/default sets still load below).
-  //
-  // The file is schema-validated BEFORE any value is trusted (unitAI-klo6k
-  // seconder): a malformed file (bad JSON, wrong shape, non-kebab ids, blocked
-  // fields) disables the overlay with an actionable stderr warning instead of
-  // silently applying or silently ignoring a garbage selection.
+  // Pre-flight validation of the global user layer (seconder, unitAI-klo6k):
+  // an invalid user.json is surfaced with an actionable warning before any
+  // merge. Effective values themselves are NOT read from the raw file — they
+  // come from the loader merge below, which type-guards and kebab-hardens
+  // every template_sets element (unitAI-klo6k security).
   const globalLocation = getGlobalUserConfigPath();
-  let globalConfig: ReturnType<typeof readGlobalUserConfig> | null = null;
   if (globalLocation.exists) {
     try {
       const content = readFileSync(globalLocation.path, 'utf-8');
       const validation = validateGlobalUserConfig(content);
       if (!validation.valid) {
         process.stderr.write(
-          `[specialists] ignoring global mandatory_rules.template_sets overlay: ${globalLocation.path} failed validation: ` +
+          `[specialists] global user config failed validation; mandatory-rules overlay hardened/fallback applies instead: ` +
             `${validation.errors.map(error => `${error.path}: ${error.message}`).join('; ')}\n`,
         );
-      } else {
-        globalConfig = JSON.parse(content) as ReturnType<typeof readGlobalUserConfig>;
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       process.stderr.write(
-        `[specialists] ignoring global mandatory_rules.template_sets overlay: cannot read ${globalLocation.path}: ${message}\n`,
+        `[specialists] cannot read global user config ${globalLocation.path}: ${message}\n`,
       );
     }
   }
 
+  // Effective per-specialist state comes from the REAL layered merge
+  // (package canonical → ~/.config/specialists/user.json → repo
+  // .specialists/user/<name>), exactly as the loader composes it at runtime
+  // (unitAI-klo6k F4). The template_sets value therefore reflects true
+  // precedence — repo overlay beats global beats package — and has already
+  // passed the merge's kebab hardening. The raw tier walk above is kept only
+  // for the rule library + source-path display.
+  const loader = new SpecialistLoader();
   for (const spec of specs) {
-    const parsed = JSON.parse(readFileSync(spec.source_path, 'utf-8'));
-    const fileSets = (parsed?.specialist?.mandatory_rules?.template_sets ?? []) as string[];
-    const globalSelection = (globalConfig?.[spec.name] as
-      | { mandatory_rules?: { template_sets?: unknown } }
-      | undefined)?.mandatory_rules?.template_sets;
-    // Validation above guarantees `string[] | null` here; the shape guard stays
-    // as defense-in-depth if a future schema change loosens the contract.
-    const effectiveSets = Array.isArray(globalSelection)
-      ? (globalSelection as string[])
-      : fileSets;
-    spec.effective_template_sets = effectiveSets;
-    spec.applied_rules = appliedRulesForSpec(spec, effectiveSets, required, defaults);
+    let fileSets: string[] = [];
+    try {
+      const parsed = JSON.parse(readFileSync(spec.source_path, 'utf-8'));
+      fileSets = (parsed?.specialist?.mandatory_rules?.template_sets ?? []) as string[];
+    } catch {
+      // Unreadable manifest: fall back to the empty selection below.
+    }
+    // The loader merge can throw when the global user.json is unparseable or a
+    // layer manifest is schema-invalid; degrade to the manifest's own selection
+    // instead of crashing the listing (the pre-flight above already warned).
+    let effectiveSpec: Awaited<ReturnType<SpecialistLoader['getEffective']>> = null;
+    try {
+      effectiveSpec = await loader.getEffective(spec.name);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(
+        `[specialists] cannot compute merged mandatory-rules selection for '${spec.name}'; using manifest defaults: ${message}\n`,
+      );
+    }
+    if (effectiveSpec) {
+      const rulesConfig = effectiveSpec.specialist.mandatory_rules;
+      spec.effective_template_sets = rulesConfig?.template_sets ?? [];
+      spec.inline_rule_count = rulesConfig?.inline_rules?.length ?? 0;
+      spec.globals_disabled = rulesConfig?.disable_default_globals ?? false;
+    } else {
+      // Discovery-only specialist (not resolvable by the loader): keep the
+      // manifest file's own selection so the matrix stays populated.
+      spec.effective_template_sets = fileSets;
+    }
+    spec.applied_rules = appliedRulesForSpec(spec, spec.effective_template_sets, required, defaults);
   }
 
   if (opts.filterRule) {

@@ -66,6 +66,7 @@ function setupFixture(): string {
     specialist: {
       metadata: { name: 'alpha', version: '1.0.0', description: '', category: 'audit' },
       execution: { mode: 'tool', model: 'a/b', permission_required: 'LOW' },
+      prompt: { task_template: 'Do $prompt' },
       mandatory_rules: { template_sets: ['role-rule'] },
     },
   }));
@@ -73,6 +74,7 @@ function setupFixture(): string {
     specialist: {
       metadata: { name: 'beta', version: '1.0.0', description: '', category: 'audit' },
       execution: { mode: 'tool', model: 'a/b', permission_required: 'LOW' },
+      prompt: { task_template: 'Do $prompt' },
       mandatory_rules: { template_sets: [], disable_default_globals: true },
     },
   }));
@@ -114,12 +116,14 @@ describe('sp list-rules', () => {
     expect(stdout).toMatch(/role-rule\s+role-specific/);
   });
 
-  it('--specialist on disable_default_globals omits defaults', () => {
+  it('default index sets load even with disable_default_globals (runtime parity, unitAI-klo6k F2)', () => {
     const { stdout, status } = runListRules(fixture, ['--specialist', 'beta']);
     expect(status).toBe(0);
     expect(stdout).toMatch(/globals_disabled=true/);
     expect(stdout).toMatch(/core-rule\s+required/);
-    expect(stdout).not.toMatch(/git-rule\s+default/);
+    // Runtime always loads index default_template_sets; disable_default_globals
+    // only suppresses the inline workflow-quick-rules block.
+    expect(stdout).toMatch(/git-rule\s+default/);
   });
 
   it('--json emits structured output', () => {
@@ -181,7 +185,7 @@ describe('sp list-rules', () => {
     }
   });
 
-  it('malformed global template_sets shape is ignored with an actionable warning (unitAI-klo6k seconder)', () => {
+  it('malformed global template_sets shape fails validation with a warning; effective state falls back to merged/package (unitAI-klo6k)', () => {
     const home = mkdtempSync(join(tmpdir(), 'list-rules-home-'));
     try {
       mkdirSync(join(home, '.config', 'specialists'), { recursive: true });
@@ -191,9 +195,9 @@ describe('sp list-rules', () => {
       const { stdout, stderr, status } = runListRules(fixture, ['--specialist', 'alpha', '--json'], env);
       // Fail-safe: command still succeeds, alerting on stderr.
       expect(status).toBe(0);
-      expect(stderr).toContain('ignoring global mandatory_rules.template_sets overlay');
-      expect(stderr).toContain('failed validation');
-      // Overlay NOT applied: the manifest selection stays authoritative.
+      expect(stderr).toContain('global user config failed validation');
+      expect(stderr).toContain('template_sets');
+      // Non-array value is never applied: the manifest selection stays authoritative.
       const parsed = JSON.parse(stdout);
       const alpha = parsed.name === 'alpha' ? parsed : parsed.specialists.find((s: any) => s.name === 'alpha');
       expect(alpha.effective_template_sets).toEqual(['role-rule']);
@@ -203,26 +207,28 @@ describe('sp list-rules', () => {
     }
   });
 
-  it('non-kebab template_sets ids are rejected and the overlay is ignored (unitAI-klo6k seconder)', () => {
+  it('non-kebab template_sets ids trigger a validation warning; the merge keeps only kebab siblings (unitAI-klo6k)', () => {
     const home = mkdtempSync(join(tmpdir(), 'list-rules-home-'));
     try {
       mkdirSync(join(home, '.config', 'specialists'), { recursive: true });
-      writeFileSync(join(home, '.config', 'specialists', 'user.json'), overlayConfig('alpha', ['Bad_Id', 'ok-id']));
+      writeFileSync(join(home, '.config', 'specialists', 'user.json'), overlayConfig('alpha', ['Bad_Id', 'extra-rule']));
       const env = { ...process.env, HOME: home, XDG_CONFIG_HOME: '' };
 
       const { stdout, stderr, status } = runListRules(fixture, ['--specialist', 'alpha', '--json'], env);
       expect(status).toBe(0);
-      expect(stderr).toContain('ignoring global mandatory_rules.template_sets overlay');
-      expect(stderr).toContain('template_sets');
+      expect(stderr).toContain('global user config failed validation');
       const parsed = JSON.parse(stdout);
       const alpha = parsed.name === 'alpha' ? parsed : parsed.specialists.find((s: any) => s.name === 'alpha');
-      expect(alpha.effective_template_sets).toEqual(['role-rule']);
+      // Kebab sibling survives the merge hardening; the invalid element never propagates.
+      expect(alpha.effective_template_sets).toEqual(['extra-rule']);
+      expect(alpha.applied_rules.map((r: any) => r.id)).toContain('extra-rule');
+      expect(alpha.applied_rules.map((r: any) => r.id)).not.toContain('role-rule');
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
   });
 
-  it('invalid JSON in the global config is ignored with a warning, not a crash (unitAI-klo6k seconder)', () => {
+  it('invalid JSON in the global config is ignored with a warning, not a crash (unitAI-klo6k)', () => {
     const home = mkdtempSync(join(tmpdir(), 'list-rules-home-'));
     try {
       mkdirSync(join(home, '.config', 'specialists'), { recursive: true });
@@ -231,10 +237,40 @@ describe('sp list-rules', () => {
 
       const { stdout, stderr, status } = runListRules(fixture, ['--specialist', 'alpha', '--json'], env);
       expect(status).toBe(0);
-      expect(stderr).toContain('ignoring global mandatory_rules.template_sets overlay');
+      expect(stderr).toContain('global user config failed validation');
       const parsed = JSON.parse(stdout);
       const alpha = parsed.name === 'alpha' ? parsed : parsed.specialists.find((s: any) => s.name === 'alpha');
       expect(alpha.effective_template_sets).toEqual(['role-rule']);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('repo overlay beats global beats package for template_sets (true merge, unitAI-klo6k F4)', () => {
+    const home = mkdtempSync(join(tmpdir(), 'list-rules-home-'));
+    try {
+      // Global layer selects extra-rule...
+      mkdirSync(join(home, '.config', 'specialists'), { recursive: true });
+      writeFileSync(join(home, '.config', 'specialists', 'user.json'), overlayConfig('alpha', ['extra-rule']));
+      // ...but the repo overlay selects user-rule -> repo wins at runtime.
+      mkdirSync(join(fixture, '.specialists', 'user'), { recursive: true });
+      writeFileSync(join(fixture, '.specialists', 'user', 'alpha.specialist.json'), JSON.stringify({
+        specialist: { mandatory_rules: { template_sets: ['user-rule'] } },
+      }));
+      const env = { ...process.env, HOME: home, XDG_CONFIG_HOME: '' };
+
+      const { stdout, stderr, status } = runListRules(fixture, ['--specialist', 'alpha', '--json'], env);
+      expect(status).toBe(0);
+      expect(stderr).toBe('');
+      const parsed = JSON.parse(stdout);
+      expect(parsed.source_tier).toBe('user');
+      expect(parsed.effective_template_sets).toEqual(['user-rule']);
+      const ids = parsed.applied_rules.map((r: any) => r.id);
+      expect(ids).toContain('user-rule');
+      expect(ids).not.toContain('role-rule'); // package replaced
+      expect(ids).not.toContain('extra-rule'); // global shadowed by repo
+      expect(ids).toContain('core-rule');      // index required still loads
+      expect(ids).toContain('git-rule');       // index default still loads
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
