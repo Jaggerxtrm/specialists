@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hard-fail policy gate, dead dist removal, raw-spawn assertion (unitAI-34pyf audit round 2) ([d444d6d](https://github.com/xtrm-dev/specialists/commit/d444d6d64c7037219d2e40825644d6ffbadaa5f8))
 - Never emit unresolved template placeholders ([333df3e](https://github.com/xtrm-dev/specialists/commit/333df3e58fc21c9f0e4620aed84400ac7da7e83b))
 - Reject pending RPC immediately when pi child exits (unitAI-u5xjk) ([2ffea6d](https://github.com/xtrm-dev/specialists/commit/2ffea6dbde3d1fb8893bc981e6684073fe13fe97))
+- Validate global template_sets before list-rules overlay (unitAI-klo6k seconder) ([410dbcf](https://github.com/xtrm-dev/specialists/commit/410dbcf7cc09b68880fb1010e2faa296dae7f47c))
 
 ### Other changes
 - Support dynamic execution extension sources ([479d2b6](https://github.com/xtrm-dev/specialists/commit/479d2b69bce86b28c9556d21ecc00d27d10f2a74))
