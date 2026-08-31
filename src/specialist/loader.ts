@@ -293,6 +293,12 @@ export class SpecialistLoader {
     //    `disable_default_globals` stay blocked (detected in step 1), so index
     //    required/default policy and inline rule text can never be reached
     //    through an override layer.
+    //    Every merged element is validated kebab-case before it is written
+    //    (security, unitAI-klo6k): the global layer is schema-checked at write
+    //    time, but repo overlays are raw JSON, so the merge itself must reject
+    //    malformed ids (incl. path traversal like `../../...`) instead of
+    //    forwarding them to readMandatoryRuleSet. Invalid elements are dropped
+    //    with a warning; valid siblings still apply.
     const overrideMandatoryRules = (overrideSpec.mandatory_rules ?? {}) as Record<string, unknown>;
     for (const field of OVERRIDE_ALLOWED_MANDATORY_RULES_FIELDS) {
       if (!(field in overrideMandatoryRules)) continue;
@@ -301,7 +307,17 @@ export class SpecialistLoader {
       if (overrideValue === null || overrideValue === undefined) continue;
       if (!Array.isArray(overrideValue)) continue;
       const baseMandatoryRules = (baseSpec.mandatory_rules ?? {}) as Record<string, unknown>;
-      baseMandatoryRules[field] = overrideValue;
+      const safeIds: string[] = [];
+      for (const rawId of overrideValue) {
+        if (typeof rawId === 'string' && /^[a-z][a-z0-9-]*$/.test(rawId)) {
+          safeIds.push(rawId);
+        } else {
+          process.stderr.write(
+            `[specialists] mandatory_rules.template_sets: dropping invalid set id '${String(rawId)}' for '${name}' (must be kebab-case)\n`,
+          );
+        }
+      }
+      baseMandatoryRules[field] = safeIds;
       baseSpec.mandatory_rules = baseMandatoryRules;
     }
 
