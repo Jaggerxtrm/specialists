@@ -7,6 +7,7 @@ import {
   buildGlobalUserConfigTemplate,
   buildSpecialistOverrideTemplate,
   mergeGlobalUserConfig,
+  readValidatedGlobalUserConfig,
   validateGlobalUserConfig,
   writeGlobalUserConfig,
   type GlobalUserConfigPath,
@@ -312,6 +313,61 @@ describe('global specialist override config', () => {
 
     const example = match?.[1] ?? '';
     expect(validateGlobalUserConfig(example)).toEqual({ valid: true, errors: [] });
+  });
+});
+
+describe('readValidatedGlobalUserConfig — shared fail-safe read (unitAI-klo6k)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'sp-global-validated-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function locationFor(name: string): GlobalUserConfigPath {
+    return { path: join(dir, name), source: 'xdg', exists: false };
+  }
+
+  it('returns config for a valid global file', () => {
+    const location = locationFor('user.json');
+    const valid = { demo: buildSpecialistOverrideTemplate() };
+    writeGlobalUserConfig(location, valid);
+    location.exists = true;
+
+    const result = readValidatedGlobalUserConfig(location);
+    expect(result.config?.demo).toBeDefined();
+    expect(result.invalidReason).toBeNull();
+  });
+
+  it('returns null config with reason for broken JSON instead of throwing', () => {
+    const location = locationFor('user.json');
+    writeFileSync(location.path, '{ broken json', 'utf-8');
+    location.exists = true;
+
+    const result = readValidatedGlobalUserConfig(location);
+    expect(result.config).toBeNull();
+    expect(result.invalidReason).toContain('failed validation');
+    expect(result.invalidReason).toContain('JSON');
+  });
+
+  it('returns null config with reason for schema-invalid content (blocked/sparse)', () => {
+    const location = locationFor('user.json');
+    writeFileSync(location.path, JSON.stringify({ demo: { mandatory_rules: { template_sets: ['Bad_Id'] } } }), 'utf-8');
+    location.exists = true;
+
+    const result = readValidatedGlobalUserConfig(location);
+    expect(result.config).toBeNull();
+    expect(result.invalidReason).toContain('failed validation');
+    expect(result.invalidReason).toContain('template_sets');
+  });
+
+  it('returns absent state when the file does not exist', () => {
+    const result = readValidatedGlobalUserConfig(locationFor('missing.json'));
+    expect(result.config).toBeNull();
+    expect(result.invalidReason).toBeNull();
   });
 });
 

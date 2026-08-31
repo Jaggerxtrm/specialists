@@ -356,6 +356,22 @@ export declare function validateGlobalUserConfig(jsonContent: string): GlobalCon
  * {@link validateGlobalUserConfig}.
  */
 export declare function readGlobalUserConfig(location: GlobalUserConfigPath): GlobalUserConfig | null;
+export interface ValidatedGlobalUserConfigResult {
+    /** Parsed config when the file exists AND passes GlobalUserConfigSchema; null otherwise. */
+    config: GlobalUserConfig | null;
+    /** Human-readable reason when the file exists but is invalid; null when absent or valid. */
+    invalidReason: string | null;
+}
+/**
+ * Read + schema-validate the global user config WITHOUT throwing on malformed
+ * content (unitAI-klo6k). Shared fail-safe for introspection CLIs (doctor,
+ * list-rules): invalid JSON or schema violations yield
+ * `{ config: null, invalidReason }` so the caller can warn and degrade, while
+ * valid files yield the parsed config. Keeps the raw parse
+ * ({@link readGlobalUserConfig}) untouched for runtime callers that already
+ * handle parse failures themselves.
+ */
+export declare function readValidatedGlobalUserConfig(location: GlobalUserConfigPath): ValidatedGlobalUserConfigResult;
 /**
  * Write the global user config, creating parent directories as needed.
  *

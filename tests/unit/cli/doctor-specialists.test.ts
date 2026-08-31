@@ -5,6 +5,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtemp } from 'node:fs/promises';
+import { buildSpecialistOverrideTemplate } from '../../../src/specialist/global-config.js';
 
 // Force the loader to ignore the installed package's canonical-asset dir so each
 // test sees ONLY the fixtures we write into tmpProject/config/specialists/.
@@ -110,7 +111,8 @@ describe('doctor --specialists  (KAN-90 override layer)', () => {
     writeFileSync(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC('demo', 'pkg/m'));
     writeGlobalUserJson({
       demo: {
-        execution: { model: 'glm/glm-5.1' },
+        ...buildSpecialistOverrideTemplate(),
+        execution: { ...buildSpecialistOverrideTemplate().execution, model: 'glm/glm-5.1' },
         mandatory_rules: { template_sets: ['git-workflow-safe', 'core-session-boundary'] },
       },
     });
@@ -120,11 +122,12 @@ describe('doctor --specialists  (KAN-90 override layer)', () => {
     expect(out).not.toMatch(/blocked-field overrides STRIPPED/);
   });
 
-  it('reports explicit empty selection and strips blocked inline_rules / disable_default_globals (unitAI-klo6k)', async () => {
+  it('a global config with blocked mandatory-rules fields is rejected whole; strip warnings still surface, selection report skipped (unitAI-klo6k)', async () => {
     writeFileSync(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC('demo', 'pkg/m'));
     writeGlobalUserJson({
       demo: {
-        execution: { model: 'glm/glm-5.1' },
+        ...buildSpecialistOverrideTemplate(),
+        execution: { ...buildSpecialistOverrideTemplate().execution, model: 'glm/glm-5.1' },
         mandatory_rules: {
           template_sets: [],
           disable_default_globals: true,
@@ -133,7 +136,11 @@ describe('doctor --specialists  (KAN-90 override layer)', () => {
       },
     });
     const out = await runDoctorSpecialists();
-    expect(out).toContain('demo: template_sets = []');
+    // Whole-file validation rejects the blocked fields -> selection report skipped.
+    expect(out).toContain('failed validation');
+    expect(out).toContain('mandatory-rules selection report skipped');
+    expect(out).not.toContain('demo: template_sets = []');
+    // The loader still strips the blocked fields with warnings.
     expect(out).toMatch(/blocked-field overrides STRIPPED/);
     expect(out).toContain('mandatory_rules.inline_rules');
     expect(out).toContain('mandatory_rules.disable_default_globals');
@@ -141,8 +148,31 @@ describe('doctor --specialists  (KAN-90 override layer)', () => {
 
   it('reports the inherit-default line when no global template_sets selection exists', async () => {
     writeFileSync(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC('demo', 'pkg/m'));
-    writeGlobalUserJson({ demo: { execution: { model: 'glm/glm-5.1' } } });
+    writeGlobalUserJson({
+      demo: {
+        ...buildSpecialistOverrideTemplate(),
+        execution: { ...buildSpecialistOverrideTemplate().execution, model: 'glm/glm-5.1' },
+      },
+    });
     const out = await runDoctorSpecialists();
     expect(out).toContain('no global template_sets overrides (all specialists inherit shipped sets)');
+  });
+
+  it('malformed global user.json warns and degrades instead of crashing doctor (unitAI-klo6k final reviewer)', async () => {
+    writeFileSync(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC('demo', 'pkg/m'));
+    const dir = join(tmpHome, '.config', 'specialists');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'user.json'), '{ broken json');
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const out = await runDoctorSpecialists();
+      // No fatal error surfaced; warning emitted instead.
+      expect(out).toContain('failed validation');
+      expect(out).toContain('mandatory-rules selection report skipped');
+      expect(errorSpy.mock.calls.map(call => String(call[0])).join('\n')).not.toContain('Fatal error');
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });

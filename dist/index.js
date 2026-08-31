@@ -21117,6 +21117,7 @@ var exports_global_config = {};
 __export(exports_global_config, {
   writeGlobalUserConfig: () => writeGlobalUserConfig,
   validateGlobalUserConfig: () => validateGlobalUserConfig,
+  readValidatedGlobalUserConfig: () => readValidatedGlobalUserConfig,
   readGlobalUserConfig: () => readGlobalUserConfig,
   mergeGlobalUserConfig: () => mergeGlobalUserConfig,
   getGlobalUserConfigPath: () => getGlobalUserConfigPath,
@@ -21279,6 +21280,24 @@ function readGlobalUserConfig(location) {
     return null;
   const content = readFileSync3(location.path, "utf-8");
   return JSON.parse(content);
+}
+function readValidatedGlobalUserConfig(location) {
+  if (!location.exists)
+    return { config: null, invalidReason: null };
+  try {
+    const content = readFileSync3(location.path, "utf-8");
+    const validation = validateGlobalUserConfig(content);
+    if (!validation.valid) {
+      return {
+        config: null,
+        invalidReason: `failed validation: ${validation.errors.map((error2) => `${error2.path}: ${error2.message}`).join("; ")}`
+      };
+    }
+    return { config: JSON.parse(content), invalidReason: null };
+  } catch (error2) {
+    const message = error2 instanceof Error ? error2.message : String(error2);
+    return { config: null, invalidReason: `cannot read: ${message}` };
+  }
 }
 function writeGlobalUserConfig(location, config2) {
   const dir = dirname3(location.path);
@@ -26089,16 +26108,9 @@ async function run3() {
   const specs = discoverSpecialists(cwd);
   const globalLocation = getGlobalUserConfigPath();
   if (globalLocation.exists) {
-    try {
-      const content = readFileSync8(globalLocation.path, "utf-8");
-      const validation = validateGlobalUserConfig(content);
-      if (!validation.valid) {
-        process.stderr.write(`[specialists] global user config failed validation; mandatory-rules overlay hardened/fallback applies instead: ` + `${validation.errors.map((error2) => `${error2.path}: ${error2.message}`).join("; ")}
-`);
-      }
-    } catch (error2) {
-      const message = error2 instanceof Error ? error2.message : String(error2);
-      process.stderr.write(`[specialists] cannot read global user config ${globalLocation.path}: ${message}
+    const { invalidReason } = readValidatedGlobalUserConfig(globalLocation);
+    if (invalidReason !== null) {
+      process.stderr.write(`[specialists] global user config ${invalidReason}; mandatory-rules overlay hardened/fallback applies instead
 `);
     }
   }
@@ -65372,12 +65384,16 @@ async function checkSpecialistOverrides() {
   }
   const selection = (() => {
     if (!globalLayer.exists)
-      return [];
-    const globalConfig2 = readGlobalUserConfig(globalLayer);
-    if (!globalConfig2)
-      return [];
+      return null;
+    const { config: config2, invalidReason } = readValidatedGlobalUserConfig(globalLayer);
+    if (config2 === null) {
+      if (invalidReason !== null) {
+        warn3(`global user config ${invalidReason}; mandatory-rules selection report skipped`);
+      }
+      return null;
+    }
     const entries = [];
-    for (const [name, override] of Object.entries(globalConfig2)) {
+    for (const [name, override] of Object.entries(config2)) {
       const templateSets = override?.mandatory_rules?.template_sets;
       if (templateSets === undefined || templateSets === null)
         continue;
@@ -65385,9 +65401,9 @@ async function checkSpecialistOverrides() {
     }
     return entries.sort((a, b) => a.name.localeCompare(b.name));
   })();
-  if (selection.length === 0) {
+  if (selection !== null && selection.length === 0) {
     ok3("mandatory-rules selection: no global template_sets overrides (all specialists inherit shipped sets)");
-  } else {
+  } else if (selection !== null) {
     ok3(`mandatory-rules selection: ${selection.length} specialist${selection.length === 1 ? "" : "s"} override template_sets globally`);
     for (const entry of selection) {
       hint(`${entry.name}: template_sets = ${JSON.stringify(entry.template_sets)}  ${dim14("(null inherits, [] clears specialist-specific sets; index required/default sets always load)")}`);

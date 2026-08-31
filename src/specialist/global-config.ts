@@ -356,6 +356,42 @@ export function readGlobalUserConfig(
   return JSON.parse(content) as GlobalUserConfig;
 }
 
+export interface ValidatedGlobalUserConfigResult {
+  /** Parsed config when the file exists AND passes GlobalUserConfigSchema; null otherwise. */
+  config: GlobalUserConfig | null;
+  /** Human-readable reason when the file exists but is invalid; null when absent or valid. */
+  invalidReason: string | null;
+}
+
+/**
+ * Read + schema-validate the global user config WITHOUT throwing on malformed
+ * content (unitAI-klo6k). Shared fail-safe for introspection CLIs (doctor,
+ * list-rules): invalid JSON or schema violations yield
+ * `{ config: null, invalidReason }` so the caller can warn and degrade, while
+ * valid files yield the parsed config. Keeps the raw parse
+ * ({@link readGlobalUserConfig}) untouched for runtime callers that already
+ * handle parse failures themselves.
+ */
+export function readValidatedGlobalUserConfig(
+  location: GlobalUserConfigPath,
+): ValidatedGlobalUserConfigResult {
+  if (!location.exists) return { config: null, invalidReason: null };
+  try {
+    const content = readFileSync(location.path, 'utf-8');
+    const validation = validateGlobalUserConfig(content);
+    if (!validation.valid) {
+      return {
+        config: null,
+        invalidReason: `failed validation: ${validation.errors.map(error => `${error.path}: ${error.message}`).join('; ')}`,
+      };
+    }
+    return { config: JSON.parse(content) as GlobalUserConfig, invalidReason: null };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { config: null, invalidReason: `cannot read: ${message}` };
+  }
+}
+
 /**
  * Write the global user config, creating parent directories as needed.
  *

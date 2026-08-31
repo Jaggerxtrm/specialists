@@ -10,7 +10,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve, join, basename } from 'node:path';
 import { loadMandatoryRulesIndex } from '../specialist/mandatory-rules.js';
 import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
-import { getGlobalUserConfigPath, validateGlobalUserConfig } from '../specialist/global-config.js';
+import { getGlobalUserConfigPath, readValidatedGlobalUserConfig } from '../specialist/global-config.js';
 import { SpecialistLoader } from '../specialist/loader.js';
 import type { SpecialistMandatoryRulesConfig } from '../specialist/mandatory-rules.js';
 
@@ -215,22 +215,14 @@ export async function run(): Promise<void> {
   // an invalid user.json is surfaced with an actionable warning before any
   // merge. Effective values themselves are NOT read from the raw file — they
   // come from the loader merge below, which type-guards and kebab-hardens
-  // every template_sets element (unitAI-klo6k security).
+  // every template_sets element (unitAI-klo6k security). Shared fail-safe with
+  // sp doctor via readValidatedGlobalUserConfig.
   const globalLocation = getGlobalUserConfigPath();
   if (globalLocation.exists) {
-    try {
-      const content = readFileSync(globalLocation.path, 'utf-8');
-      const validation = validateGlobalUserConfig(content);
-      if (!validation.valid) {
-        process.stderr.write(
-          `[specialists] global user config failed validation; mandatory-rules overlay hardened/fallback applies instead: ` +
-            `${validation.errors.map(error => `${error.path}: ${error.message}`).join('; ')}\n`,
-        );
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+    const { invalidReason } = readValidatedGlobalUserConfig(globalLocation);
+    if (invalidReason !== null) {
       process.stderr.write(
-        `[specialists] cannot read global user config ${globalLocation.path}: ${message}\n`,
+        `[specialists] global user config ${invalidReason}; mandatory-rules overlay hardened/fallback applies instead\n`,
       );
     }
   }
