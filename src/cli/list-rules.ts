@@ -10,6 +10,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve, join, basename } from 'node:path';
 import { loadMandatoryRulesIndex } from '../specialist/mandatory-rules.js';
 import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
+import { getGlobalUserConfigPath, readGlobalUserConfig } from '../specialist/global-config.js';
 import type { SpecialistMandatoryRulesConfig } from '../specialist/mandatory-rules.js';
 
 interface RuleSetEntry {
@@ -32,6 +33,7 @@ interface SpecialistEntry {
   applied_rules: AppliedRule[];
   inline_rule_count: number;
   globals_disabled: boolean;
+  effective_template_sets: string[];
 }
 
 interface ListRulesOptions {
@@ -99,6 +101,7 @@ function discoverSpecialists(cwd: string): SpecialistEntry[] {
           applied_rules: [],
           inline_rule_count: Array.isArray(config?.inline_rules) ? config.inline_rules.length : 0,
           globals_disabled: Boolean(config?.disable_default_globals),
+          effective_template_sets: [],
         });
       } catch {
         // Skip unreadable specialists silently.
@@ -206,10 +209,25 @@ export async function run(): Promise<void> {
   const rules = discoverRuleSets(cwd);
   const specs = discoverSpecialists(cwd);
 
+  // Overlay the global user layer (~/.config/specialists/user.json): a
+  // non-null `mandatory_rules.template_sets` selection replaces the
+  // specialist-specific sets from the manifest file, exactly like the loader
+  // merge. `null` / absent inherits; `[]` explicitly clears them (index
+  // required/default sets still load below).
+  const globalLocation = getGlobalUserConfigPath();
+  const globalConfig = globalLocation.exists ? readGlobalUserConfig(globalLocation) : null;
+
   for (const spec of specs) {
     const parsed = JSON.parse(readFileSync(spec.source_path, 'utf-8'));
-    const sets = (parsed?.specialist?.mandatory_rules?.template_sets ?? []) as string[];
-    spec.applied_rules = appliedRulesForSpec(spec, sets, required, defaults);
+    const fileSets = (parsed?.specialist?.mandatory_rules?.template_sets ?? []) as string[];
+    const globalSelection = (globalConfig?.[spec.name] as
+      | { mandatory_rules?: { template_sets?: unknown } }
+      | undefined)?.mandatory_rules?.template_sets;
+    const effectiveSets = Array.isArray(globalSelection)
+      ? (globalSelection as string[])
+      : fileSets;
+    spec.effective_template_sets = effectiveSets;
+    spec.applied_rules = appliedRulesForSpec(spec, effectiveSets, required, defaults);
   }
 
   if (opts.filterRule) {
@@ -262,6 +280,7 @@ export async function run(): Promise<void> {
         source_path: s.source_path,
         globals_disabled: s.globals_disabled,
         inline_rule_count: s.inline_rule_count,
+        effective_template_sets: s.effective_template_sets,
         applied_rules: s.applied_rules,
       })),
     }, null, 2) + '\n');

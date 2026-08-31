@@ -140,6 +140,68 @@ describe('mandatory rules resolution', () => {
     expect(result.block).toContain('### duplicate-set');
   });
 
+  it('replacing specialist-specific template_sets drops removed sets while index policy stays (unitAI-klo6k)', async () => {
+    await mkdir(join(tempDir, 'config', 'mandatory-rules'), { recursive: true });
+    await writeFile(
+      join(tempDir, 'config', 'mandatory-rules', 'index.json'),
+      JSON.stringify({
+        required_template_sets: ['core-session-boundary'],
+        default_template_sets: ['git-workflow-safe'],
+      }),
+    );
+    await mkdir(join(tempDir, '.specialists', 'default', 'mandatory-rules'), { recursive: true });
+    for (const id of ['core-session-boundary', 'git-workflow-safe', 'old-set', 'specialist-extra']) {
+      await writeFile(join(tempDir, '.specialists', 'default', 'mandatory-rules', `${id}.md`), `---\nrules:\n  - id: ${id}-1\n    level: required\n    text: ${id} rule\n---\n`);
+    }
+
+    // Mirrors the loader result after a global `template_sets` replacement:
+    // the old package-specific set is gone from the merged spec.
+    const { result } = captureWarnings(() => buildMandatoryRulesInjection({
+      cwd: tempDir,
+      specialist: {
+        mandatory_rules: {
+          template_sets: ['specialist-extra'],
+        },
+      },
+    }));
+
+    expect(result.setsLoaded).toEqual(['workflow-quick-rules', 'core-session-boundary', 'git-workflow-safe', 'specialist-extra']);
+    expect(result.block).toContain('### specialist-extra');
+    expect(result.block).not.toContain('### old-set');
+    // Required and default index policy untouched by the replacement.
+    expect(result.block).toContain('### core-session-boundary');
+    expect(result.block).toContain('### git-workflow-safe');
+  });
+
+  it('explicit empty template_sets selects no specialist-specific sets while index policy always loads (unitAI-klo6k)', async () => {
+    await mkdir(join(tempDir, 'config', 'mandatory-rules'), { recursive: true });
+    await writeFile(
+      join(tempDir, 'config', 'mandatory-rules', 'index.json'),
+      JSON.stringify({
+        required_template_sets: ['core-session-boundary'],
+        default_template_sets: ['git-workflow-safe'],
+      }),
+    );
+    await mkdir(join(tempDir, '.specialists', 'default', 'mandatory-rules'), { recursive: true });
+    for (const id of ['core-session-boundary', 'git-workflow-safe', 'stale-set']) {
+      await writeFile(join(tempDir, '.specialists', 'default', 'mandatory-rules', `${id}.md`), `---\nrules:\n  - id: ${id}-1\n    level: required\n    text: ${id} rule\n---\n`);
+    }
+
+    const { result } = captureWarnings(() => buildMandatoryRulesInjection({
+      cwd: tempDir,
+      specialist: {
+        mandatory_rules: {
+          template_sets: [],
+        },
+      },
+    }));
+
+    expect(result.setsLoaded).toEqual(['workflow-quick-rules', 'core-session-boundary', 'git-workflow-safe']);
+    expect(result.block).not.toContain('### stale-set');
+    expect(result.block).toContain('### core-session-boundary');
+    expect(result.block).toContain('### git-workflow-safe');
+  });
+
   it('disables default globals when specialist opts out', () => {
     const { result } = captureWarnings(() => buildMandatoryRulesInjection({
       cwd: tempDir,

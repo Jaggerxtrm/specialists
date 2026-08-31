@@ -24,6 +24,10 @@ const SECTION_ALIASES: Record<string, keyof Specialist['specialist'] | 'beads'> 
   stall: 'stall_detection',
   'stall-detection': 'stall_detection',
   stall_detection: 'stall_detection',
+  mandatory: 'mandatory_rules',
+  'mandatory-rules': 'mandatory_rules',
+  mandatory_rules: 'mandatory_rules',
+  rules: 'mandatory_rules',
   beads: 'beads',
 };
 
@@ -234,6 +238,7 @@ function printFullSpecialist(spec: Specialist): void {
   printBySection(spec, 'communication');
   printBySection(spec, 'validation');
   printBySection(spec, 'stall_detection');
+  printBySection(spec, 'mandatory_rules');
   printBySection(spec, 'beads');
 }
 

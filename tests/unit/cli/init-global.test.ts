@@ -100,6 +100,9 @@ describe('override template + schema', () => {
       notes_mode: null,
       output_file: null,
       skills: { paths: [] },
+      mandatory_rules: {
+        template_sets: null,
+      },
     });
   });
 
@@ -123,6 +126,38 @@ describe('override template + schema', () => {
       rogue_field: true,
     });
     expect(result.success).toBe(false);
+  });
+
+  it('schema accepts mandatory_rules.template_sets null, [], and kebab-case arrays', () => {
+    for (const value of [null, [], ['git-workflow-safe'], ['git-workflow-safe', 'per-turn-handoff-schema']]) {
+      const result = GlobalSpecialistOverrideSchema.safeParse({
+        ...buildSpecialistOverrideTemplate(),
+        mandatory_rules: { template_sets: value },
+      });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it('schema rejects non-kebab-case template_sets ids', () => {
+    const result = GlobalSpecialistOverrideSchema.safeParse({
+      ...buildSpecialistOverrideTemplate(),
+      mandatory_rules: { template_sets: ['Not-Kebab', 'underscore_set'] },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('schema rejects mandatory_rules.inline_rules / disable_default_globals at the global layer', () => {
+    for (const bad of [
+      { mandatory_rules: { template_sets: null, inline_rules: [{ id: 'x', text: 'y' }] } },
+      { mandatory_rules: { template_sets: null, disable_default_globals: true } },
+      { mandatory_rules: { template_sets: null, bogus: 'nope' } },
+    ]) {
+      const result = GlobalSpecialistOverrideSchema.safeParse({
+        ...buildSpecialistOverrideTemplate(),
+        ...bad,
+      });
+      expect(result.success).toBe(false);
+    }
   });
 });
 

@@ -2,7 +2,7 @@
 import * as z from 'zod';
 import type { ManifestPolicy, ManifestPolicyTier } from './manifest-resolver.js';
 
-const KebabCase = z.string().regex(/^[a-z][a-z0-9-]*$/, 'Must be kebab-case');
+export const KebabCase = z.string().regex(/^[a-z][a-z0-9-]*$/, 'Must be kebab-case');
 const Semver = z.string().regex(/^\d+\.\d+\.\d+$/, 'Must be semver (e.g. 1.0.0)');
 
 const MetadataSchema = z.object({
@@ -190,6 +190,15 @@ export const OVERRIDE_ALLOWED_STALL_DETECTION_PATHS = [
 /** Prompt sub-fields an override layer may set. Relative to `specialist.prompt`. */
 export const OVERRIDE_ALLOWED_PROMPT_FIELDS = ['system_prompt_mode'] as const;
 
+/**
+ * Flat mandatory-rules sub-fields an override layer may set. Relative to
+ * `specialist.mandatory_rules`. Only `template_sets` is overridable: the
+ * global layer must never inject inline rule text or disable required/default
+ * index policy, so `inline_rules` and `disable_default_globals` stay in
+ * BLOCKED_OVERRIDE_FIELDS.
+ */
+export const OVERRIDE_ALLOWED_MANDATORY_RULES_FIELDS = ['template_sets'] as const;
+
 /** Top-level specialist fields an override layer may set. */
 export const OVERRIDE_ALLOWED_TOP_FIELDS = ['beads_write_notes', 'notes_mode', 'output_file'] as const;
 
@@ -203,7 +212,8 @@ export const BLOCKED_OVERRIDE_FIELDS = [
   'prompt.system',
   'prompt.output_schema',
   'skills.scripts',
-  'mandatory_rules',
+  'mandatory_rules.inline_rules',
+  'mandatory_rules.disable_default_globals',
   'capabilities',
 ] as const;
 

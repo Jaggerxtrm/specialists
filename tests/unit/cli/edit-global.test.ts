@@ -186,6 +186,79 @@ describe('edit CLI — --global --get / --set', () => {
     expect(parsed.executor.skills.paths).toEqual(['a', 'b']);
   });
 
+  it('--set writes mandatory_rules.template_sets via JSON array', async () => {
+    await seedGlobalConfig(tempHome);
+    process.argv = ['node', 'sp', 'edit', '--global', '--set', 'executor.mandatory_rules.template_sets', '["git-workflow-safe","code-quality-defaults"]'];
+    const { run } = await importEdit();
+    await run();
+
+    const parsed = JSON.parse(await readFile(getGlobalUserConfigPath().path, 'utf-8'));
+    expect(parsed.executor.mandatory_rules.template_sets).toEqual(['git-workflow-safe', 'code-quality-defaults']);
+  });
+
+  it('--set supports comma-separated template_sets', async () => {
+    await seedGlobalConfig(tempHome);
+    process.argv = ['node', 'sp', 'edit', '--global', '--set', 'executor.mandatory_rules.template_sets', 'git-workflow-safe,code-quality-defaults'];
+    const { run } = await importEdit();
+    await run();
+
+    const parsed = JSON.parse(await readFile(getGlobalUserConfigPath().path, 'utf-8'));
+    expect(parsed.executor.mandatory_rules.template_sets).toEqual(['git-workflow-safe', 'code-quality-defaults']);
+  });
+
+  it('--set [] explicitly selects no specialist-specific sets', async () => {
+    await seedGlobalConfig(tempHome);
+    process.argv = ['node', 'sp', 'edit', '--global', '--set', 'executor.mandatory_rules.template_sets', '[]'];
+    const { run } = await importEdit();
+    await run();
+
+    const parsed = JSON.parse(await readFile(getGlobalUserConfigPath().path, 'utf-8'));
+    expect(parsed.executor.mandatory_rules.template_sets).toEqual([]);
+  });
+
+  it('--set null resets template_sets back to inherit', async () => {
+    await seedGlobalConfig(tempHome, {
+      executor: {
+        execution: { model: null, fallback_model: null, timeout_ms: null, stall_timeout_ms: null, thinking_level: null, max_retries: null },
+        beads_write_notes: null,
+        skills: { paths: [] },
+        mandatory_rules: { template_sets: ['git-workflow-safe'] },
+      },
+    });
+    process.argv = ['node', 'sp', 'edit', '--global', '--set', 'executor.mandatory_rules.template_sets', 'null'];
+    const { run } = await importEdit();
+    await run();
+
+    const parsed = JSON.parse(await readFile(getGlobalUserConfigPath().path, 'utf-8'));
+    expect(parsed.executor.mandatory_rules.template_sets).toBeNull();
+  });
+
+  it('--set rejects non-kebab case template_sets with an actionable validation error', async () => {
+    await seedGlobalConfig(tempHome);
+    process.argv = ['node', 'sp', 'edit', '--global', '--set', 'executor.mandatory_rules.template_sets', '["Bad_Id"]'];
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: number | string) => {
+      throw new Error(`exit:${code}`);
+    });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { run } = await importEdit();
+    await expect(run()).rejects.toThrow('exit:1');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('change would make the global config invalid'));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('mandatory_rules.template_sets'));
+    exitSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it('rejects mandatory_rules.inline_rules as an unknown global path', async () => {
+    await seedGlobalConfig(tempHome);
+    process.argv = ['node', 'sp', 'edit', '--global', '--set', 'executor.mandatory_rules.inline_rules', '[{"id":"x","text":"y"}]'];
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: number | string) => {
+      throw new Error(`exit:${code}`);
+    });
+    const { run } = await importEdit();
+    await expect(run()).rejects.toThrow('exit:1');
+    exitSpy.mockRestore();
+  });
+
   it('--get on unknown specialist fails', async () => {
     await seedGlobalConfig(tempHome);
     process.argv = ['node', 'sp', 'edit', '--global', '--get', 'nope.execution.model'];

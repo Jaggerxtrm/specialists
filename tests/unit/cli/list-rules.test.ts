@@ -8,12 +8,13 @@ import { join } from 'node:path';
 const CLI = join(__dirname, '../../../dist/index.js');
 const BUN = process.env.BUN_BIN ?? 'bun';
 
-function runListRules(cwd: string, args: string[] = []): { stdout: string; status: number } {
+function runListRules(cwd: string, args: string[] = [], env: NodeJS.ProcessEnv = process.env): { stdout: string; status: number } {
   try {
     const stdout = execFileSync(BUN, [CLI, 'list-rules', ...args], {
       cwd,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
+      env,
     });
     return { stdout, status: 0 };
   } catch (err: any) {
@@ -34,6 +35,7 @@ function setupFixture(): string {
   writeFileSync(join(root, 'config/mandatory-rules/git-rule.md'), '---\nname: git-rule\nkind: mandatory-rule\n---\nGit.\n');
   writeFileSync(join(root, 'config/mandatory-rules/role-rule.md'), '---\nname: role-rule\nkind: mandatory-rule\n---\nRole.\n');
   writeFileSync(join(root, 'config/mandatory-rules/orphan-rule.md'), '---\nname: orphan-rule\nkind: mandatory-rule\n---\nOrphan.\n');
+  writeFileSync(join(root, 'config/mandatory-rules/extra-rule.md'), '---\nname: extra-rule\nkind: mandatory-rule\n---\nExtra.\n');
 
   // user overlay mandatory-rules/
   mkdirSync(join(root, '.specialists/user/mandatory-rules'), { recursive: true });
@@ -116,5 +118,55 @@ describe('sp list-rules', () => {
     expect(alpha.applied_rules.map((r: any) => r.id)).toContain('core-rule');
     expect(alpha.applied_rules.map((r: any) => r.id)).toContain('role-rule');
     expect(alpha.globals_disabled).toBe(false);
+    expect(alpha.effective_template_sets).toEqual(['role-rule']);
+  });
+
+  it('global user.json template_sets selection overlays the manifest (unitAI-klo6k)', () => {
+    const home = mkdtempSync(join(tmpdir(), 'list-rules-home-'));
+    try {
+      // Global layer replaces alpha's shipped selection with a different set.
+      mkdirSync(join(home, '.config', 'specialists'), { recursive: true });
+      writeFileSync(join(home, '.config', 'specialists', 'user.json'), JSON.stringify({
+        alpha: { mandatory_rules: { template_sets: ['extra-rule'] } },
+      }));
+      // Bun's execFileSync ignores process.env mutations, so pass env explicitly.
+      const env = { ...process.env, HOME: home, XDG_CONFIG_HOME: '' };
+
+      const { stdout, status } = runListRules(fixture, ['--specialist', 'alpha', '--json'], env);
+      expect(status).toBe(0);
+      const parsed = JSON.parse(stdout);
+      const alpha = parsed.name === 'alpha' ? parsed : parsed.specialists.find((s: any) => s.name === 'alpha');
+      expect(alpha.effective_template_sets).toEqual(['extra-rule']);
+      expect(alpha.applied_rules.map((r: any) => r.id)).toContain('extra-rule');
+      // The manifest-level role-rule no longer applies: replaced by the global selection.
+      expect(alpha.applied_rules.map((r: any) => r.id)).not.toContain('role-rule');
+      // Index required/default policy still applies.
+      expect(alpha.applied_rules.map((r: any) => r.id)).toContain('core-rule');
+      expect(alpha.applied_rules.map((r: any) => r.id)).toContain('git-rule');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('global empty selection clears role-specific sets while index policy stays (unitAI-klo6k)', () => {
+    const home = mkdtempSync(join(tmpdir(), 'list-rules-home-'));
+    try {
+      mkdirSync(join(home, '.config', 'specialists'), { recursive: true });
+      writeFileSync(join(home, '.config', 'specialists', 'user.json'), JSON.stringify({
+        alpha: { mandatory_rules: { template_sets: [] } },
+      }));
+      const env = { ...process.env, HOME: home, XDG_CONFIG_HOME: '' };
+
+      const { stdout, status } = runListRules(fixture, ['--specialist', 'alpha', '--json'], env);
+      expect(status).toBe(0);
+      const parsed = JSON.parse(stdout);
+      const alpha = parsed.name === 'alpha' ? parsed : parsed.specialists.find((s: any) => s.name === 'alpha');
+      expect(alpha.effective_template_sets).toEqual([]);
+      expect(alpha.applied_rules.map((r: any) => r.id)).not.toContain('role-rule');
+      expect(alpha.applied_rules.map((r: any) => r.id)).toContain('core-rule');
+      expect(alpha.applied_rules.map((r: any) => r.id)).toContain('git-rule');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });

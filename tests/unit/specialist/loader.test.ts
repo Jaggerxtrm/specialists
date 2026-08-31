@@ -990,6 +990,124 @@ describe('KAN-90 — global override layer + null-model hard fail', () => {
     expect(loader.getBlockedFieldWarnings('demo').map(warning => warning.field)).not.toContain('execution.stdout_limit_bytes');
   });
 
+  it('global layer replaces mandatory_rules.template_sets without blocked warnings', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      JSON.stringify({
+        specialist: {
+          metadata: { name: 'demo', version: '1.0.0', description: 'demo', category: 'test' },
+          execution: { model: 'pkg/base-model', permission_required: 'READ_ONLY' },
+          prompt: { task_template: 'Do $prompt' },
+          mandatory_rules: { template_sets: ['pkg-set-a', 'pkg-set-b'] },
+        },
+      }),
+    );
+    await writeGlobalUserJson({
+      demo: { mandatory_rules: { template_sets: ['global-set-a', 'global-set-b'] } },
+    });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.mandatory_rules?.template_sets).toEqual(['global-set-a', 'global-set-b']);
+    expect(loader.getBlockedFieldWarnings('demo').map(warning => warning.field)).not.toContain('mandatory_rules.template_sets');
+  });
+
+  it('global layer explicit [] clears specialist-specific sets while index policy stays loader-owned', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      JSON.stringify({
+        specialist: {
+          metadata: { name: 'demo', version: '1.0.0', description: 'demo', category: 'test' },
+          execution: { model: 'pkg/base-model', permission_required: 'READ_ONLY' },
+          prompt: { task_template: 'Do $prompt' },
+          mandatory_rules: { template_sets: ['pkg-set-a'] },
+        },
+      }),
+    );
+    await writeGlobalUserJson({
+      demo: { mandatory_rules: { template_sets: [] } },
+    });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.mandatory_rules?.template_sets).toEqual([]);
+    expect(loader.getBlockedFieldWarnings('demo')).toEqual([]);
+  });
+
+  it('global layer explicit [] creates an empty selection when package has no mandatory_rules', async () => {
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
+    await writeGlobalUserJson({
+      demo: { mandatory_rules: { template_sets: [] } },
+    });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.mandatory_rules?.template_sets).toEqual([]);
+    expect(loader.getBlockedFieldWarnings('demo')).toEqual([]);
+  });
+
+  it('global layer null template_sets inherits the package list', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      JSON.stringify({
+        specialist: {
+          metadata: { name: 'demo', version: '1.0.0', description: 'demo', category: 'test' },
+          execution: { model: 'pkg/base-model', permission_required: 'READ_ONLY' },
+          prompt: { task_template: 'Do $prompt' },
+          mandatory_rules: { template_sets: ['pkg-set-a'] },
+        },
+      }),
+    );
+    await writeGlobalUserJson({
+      demo: { mandatory_rules: { template_sets: null } },
+    });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.mandatory_rules?.template_sets).toEqual(['pkg-set-a']);
+    expect(loader.getBlockedFieldWarnings('demo')).toEqual([]);
+  });
+
+  it('global layer cannot set mandatory_rules.inline_rules or disable_default_globals — stripped with warning', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      JSON.stringify({
+        specialist: {
+          metadata: { name: 'demo', version: '1.0.0', description: 'demo', category: 'test' },
+          execution: { model: 'pkg/base-model', permission_required: 'READ_ONLY' },
+          prompt: { task_template: 'Do $prompt' },
+          mandatory_rules: {
+            template_sets: ['pkg-set-a'],
+            inline_rules: [{ id: 'pkg-inline', text: 'package inline' }],
+            disable_default_globals: false,
+          },
+        },
+      }),
+    );
+    await writeGlobalUserJson({
+      demo: {
+        mandatory_rules: {
+          template_sets: ['global-set'],
+          inline_rules: [{ id: 'evil', text: 'global inline' }],
+          disable_default_globals: true,
+        },
+      },
+    });
+
+    const spec = await loader.get('demo');
+    const warnings = loader.getBlockedFieldWarnings('demo');
+    const fields = warnings.map(warning => warning.field);
+
+    // Allowed selection applied; blocked fields stripped.
+    expect(spec.specialist.mandatory_rules?.template_sets).toEqual(['global-set']);
+    expect(spec.specialist.mandatory_rules?.inline_rules).toEqual([{ id: 'pkg-inline', level: 'error', text: 'package inline' }]);
+    expect(spec.specialist.mandatory_rules?.disable_default_globals).toBe(false);
+    // Both blocked attempts recorded as strip-severity warnings.
+    expect(fields).toContain('mandatory_rules.inline_rules');
+    expect(fields).toContain('mandatory_rules.disable_default_globals');
+    expect(warnings.every(warning => warning.severity === 'strip')).toBe(true);
+  });
+
   describe('Phase 1 — six allowlisted user-environment fields', () => {
     it('overlays all six fields together, preserves untouched fields, and records no blocked warnings', async () => {
       const packageSpec = {

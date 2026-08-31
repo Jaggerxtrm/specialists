@@ -44,6 +44,9 @@ describe('global specialist override config', () => {
       notes_mode: null,
       output_file: null,
       skills: { paths: [] },
+      mandatory_rules: {
+        template_sets: null,
+      },
     });
   });
 
@@ -115,6 +118,9 @@ describe('global specialist override config', () => {
       notes_mode: null,
       output_file: null,
       skills: { paths: ['/custom'] },
+      mandatory_rules: {
+        template_sets: null,
+      },
     });
     expect(result.extended).toEqual(['demo']);
   });
@@ -196,6 +202,48 @@ describe('global specialist override config', () => {
     };
 
     expect(validateGlobalUserConfig(JSON.stringify(valid))).toEqual({ valid: true, errors: [] });
+  });
+
+  it('validateGlobalUserConfig accepts mandatory_rules.template_sets null, [], and kebab arrays', () => {
+    for (const value of [null, [], ['git-workflow-safe'], ['git-workflow-safe', 'code-quality-defaults']]) {
+      const valid = {
+        demo: {
+          ...buildSpecialistOverrideTemplate(),
+          mandatory_rules: { template_sets: value },
+        },
+      };
+      expect(validateGlobalUserConfig(JSON.stringify(valid))).toEqual({ valid: true, errors: [] });
+    }
+  });
+
+  it('validateGlobalUserConfig rejects non-kebab-case template_sets ids with path', () => {
+    const invalid = {
+      demo: {
+        ...buildSpecialistOverrideTemplate(),
+        mandatory_rules: { template_sets: ['Bad_Id'] },
+      },
+    };
+    const result = validateGlobalUserConfig(JSON.stringify(invalid));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(error => error.path.startsWith('demo.mandatory_rules.template_sets'))).toBe(true);
+  });
+
+  it('validateGlobalUserConfig rejects mandatory_rules.inline_rules and disable_default_globals globally', () => {
+    for (const badRules of [
+      { template_sets: null, inline_rules: [{ id: 'x', text: 'y' }] },
+      { template_sets: null, disable_default_globals: true },
+      { template_sets: null, bogus: 'nope' },
+    ]) {
+      const invalid = {
+        demo: {
+          ...buildSpecialistOverrideTemplate(),
+          mandatory_rules: badRules,
+        },
+      };
+      const result = validateGlobalUserConfig(JSON.stringify(invalid));
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(error => error.path.startsWith('demo.mandatory_rules.'))).toBe(true);
+    }
   });
 
   it('validateGlobalUserConfig accepts execution.interactive and stall_detection.waiting_auto_close_ms', () => {

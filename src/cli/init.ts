@@ -975,7 +975,9 @@ export async function runGlobal(): Promise<void> {
   console.log(`  ${dim('• for trusted custom extension sources, set')} ${yellow('<name>.execution.extensions."npm:@scope/pkg" true')}`);
   console.log(`  ${dim('• for system prompt composition, set')} ${yellow('<name>.prompt.system_prompt_mode append|replace')}`);
   console.log(`  ${dim('• for fallback chains, set')} ${yellow('<name>.execution.fallback_models ["provider/model", "provider/model"]')}`);
-  console.log(`  ${dim('• for preset refs, set model/fallback entries to')} ${yellow('@preset/cheap')} ${dim('(or medium, power)')}\n`);
+  console.log(`  ${dim('• for preset refs, set model/fallback entries to')} ${yellow('@preset/cheap')} ${dim('(or medium, power)')}`);
+  console.log(`  ${dim('• for per-specialist mandatory rule sets, set')} ${yellow('<name>.mandatory_rules.template_sets ["git-workflow-safe", ...]')}`);
+  console.log(`  ${dim('    (null inherits the shipped sets, [] selects no specialist-specific sets; index required/default sets always load)')}\n`);
 }
 
 export async function run(opts: InitOptions = {}): Promise<void> {

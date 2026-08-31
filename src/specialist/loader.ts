@@ -7,6 +7,7 @@ import {
   parseSpecialist,
   BLOCKED_OVERRIDE_FIELDS,
   OVERRIDE_ALLOWED_EXECUTION_FIELDS,
+  OVERRIDE_ALLOWED_MANDATORY_RULES_FIELDS,
   OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS,
   OVERRIDE_ALLOWED_PROMPT_FIELDS,
   OVERRIDE_ALLOWED_STALL_DETECTION_PATHS,
@@ -282,6 +283,26 @@ export class SpecialistLoader {
       }
       baseSkills.paths = merged;
       baseSpec.skills = baseSkills;
+    }
+
+    // 7. mandatory_rules.template_sets: replace-or-inherit. Unlike skills.paths
+    //    (append+dedup) and execution fields, the array REPLACES the lower-layer
+    //    specialist-specific list — that is what makes `[]` a meaningful
+    //    "select no specialist-specific sets" signal. `null` / undefined /
+    //    missing means inherit (do not touch). `inline_rules` and
+    //    `disable_default_globals` stay blocked (detected in step 1), so index
+    //    required/default policy and inline rule text can never be reached
+    //    through an override layer.
+    const overrideMandatoryRules = (overrideSpec.mandatory_rules ?? {}) as Record<string, unknown>;
+    for (const field of OVERRIDE_ALLOWED_MANDATORY_RULES_FIELDS) {
+      if (!(field in overrideMandatoryRules)) continue;
+      const overrideValue = overrideMandatoryRules[field];
+      // null + global = "inherit base" (skip). undefined/missing = absent.
+      if (overrideValue === null || overrideValue === undefined) continue;
+      if (!Array.isArray(overrideValue)) continue;
+      const baseMandatoryRules = (baseSpec.mandatory_rules ?? {}) as Record<string, unknown>;
+      baseMandatoryRules[field] = overrideValue;
+      baseSpec.mandatory_rules = baseMandatoryRules;
     }
 
     return warnings;

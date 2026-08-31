@@ -12,7 +12,7 @@
     },
     {
       "path": "config/skills/setup-specialists/SKILL.md",
-      "sha256": "4a24f7b7d02792a61ca6f8553ae0b137c6ed4cd33197d68edafce727d8a4b19c"
+      "sha256": "7a9b7b255779b6a7f2e7138e9cb6eefc27af4dbe99928aa648d3a2d3ca7a3592"
     },
     {
       "path": "config/skills/specialists-creator/scripts/audit-spec-uniformity.mjs",
@@ -28,7 +28,7 @@
     },
     {
       "path": "config/skills/specialists-creator/SKILL.md",
-      "sha256": "690a3d709500c74722493e9b2e0b832435fad5b5ae855f742546e8c1370d8a98"
+      "sha256": "d34d31682b667488b707b5d1d39c8c0a03f0fad2618b4861862ef3cebe3529ec"
     },
     {
       "path": "config/skills/update-specialists/SKILL.md",

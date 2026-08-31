@@ -417,17 +417,30 @@ falls through to `$EDITOR` in some environments (open follow-up). Prefer
 | `<name>.beads_write_notes` | bool \| null | `false` to disable auto-append to input bead notes. |
 | `<name>.notes_mode` | enum \| null | `full-trail` (default) or `final-only` — see [Handoff modes](#handoff-modes). |
 | `<name>.output_file` | string \| null | Path to write the rendered handoff block. **No env flag required** since `unitAI-f58ma`. |
+| `<name>.mandatory_rules.template_sets` | string[] \| null | Selects specialist-specific rule sets. `null` inherits the shipped list, `[]` selects none, non-empty replaces. Index required/default sets always load. |
 
 **Blocked at the global layer** (these MUST be overridden per-repo via
 `.specialists/user/<name>.specialist.json` if needed):
-`execution.permission_required`, `execution.bare`, `mandatory_rules`,
-`capabilities`, `output_schema`, `auto_commit`, `prompt.system`,
-`prompt.task_template`, `skills.scripts`.
+`execution.permission_required`, `execution.bare`, `mandatory_rules.inline_rules`,
+`mandatory_rules.disable_default_globals`, `capabilities`, `output_schema`,
+`auto_commit`, `prompt.system`, `prompt.task_template`, `skills.scripts`.
 
 A blocked field that sneaks in is **applied with a warning** (forward compat,
 v1) and surfaced by `sp doctor --specialists` as
 `blocked-field overrides present in repo layers`. Fork to a per-repo spec to
-clear the warning.
+clear the warning. At the **global** layer the loader strips blocked fields
+instead (severity `strip`) — the merge never applies them.
+
+Global-layer mandatory-rules example:
+
+```bash
+# Replace executor's shipped rule sets with a curated subset
+sp edit --global --set executor.mandatory_rules.template_sets '["git-workflow-safe","code-quality-defaults"]'
+# Explicitly select NO specialist-specific sets (index required/default still load)
+sp edit --global --set executor.mandatory_rules.template_sets '[]'
+# Reset to inherit the shipped sets
+sp edit --global --set executor.mandatory_rules.template_sets null
+```
 
 ### 4) Preset references (KAN-91 Phase 3)
 
