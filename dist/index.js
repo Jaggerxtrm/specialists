@@ -21684,7 +21684,16 @@ class SpecialistLoader {
       if (!Array.isArray(overrideValue))
         continue;
       const baseMandatoryRules = baseSpec.mandatory_rules ?? {};
-      baseMandatoryRules[field] = overrideValue;
+      const safeIds = [];
+      for (const rawId of overrideValue) {
+        if (typeof rawId === "string" && /^[a-z][a-z0-9-]*$/.test(rawId)) {
+          safeIds.push(rawId);
+        } else {
+          process.stderr.write(`[specialists] mandatory_rules.template_sets: dropping invalid set id '${String(rawId)}' for '${name}' (must be kebab-case)
+`);
+        }
+      }
+      baseMandatoryRules[field] = safeIds;
       baseSpec.mandatory_rules = baseMandatoryRules;
     }
     return warnings;
@@ -22383,6 +22392,10 @@ function parseMandatoryRulesFrontmatter(content, setId) {
   return rules;
 }
 function readMandatoryRuleSet(cwd, id) {
+  if (!/^[a-z][a-z0-9-]*$/.test(id)) {
+    console.warn(`[specialist runner] Rejecting unsafe mandatory-rules set id '${id}' (must be kebab-case)`);
+    return null;
+  }
   const packageCanonicalDir = resolveCanonicalAssetDir("mandatory-rules");
   const candidates = [
     resolve2(cwd, `.specialists/user/mandatory-rules/${id}.md`),
@@ -25986,11 +25999,9 @@ function appliedRulesForSpec(spec, spec_template_sets, required2, defaults) {
   const out = new Map;
   for (const id of required2)
     out.set(id, { id, scope: "required" });
-  if (!spec.globals_disabled) {
-    for (const id of defaults)
-      if (!out.has(id))
-        out.set(id, { id, scope: "default" });
-  }
+  for (const id of defaults)
+    if (!out.has(id))
+      out.set(id, { id, scope: "default" });
   for (const id of spec_template_sets)
     if (!out.has(id))
       out.set(id, { id, scope: "role-specific" });
@@ -26019,7 +26030,7 @@ function renderMatrix(rules, specs) {
     lines.push(cells.join(" "));
   }
   lines.push("");
-  lines.push("  R = required (always)   D = default (unless disable_default_globals)   x = role-specific   . = not applied");
+  lines.push("  R = required (always)   D = default (index policy, always loaded)   x = role-specific   . = not applied");
   return lines.join(`
 `);
 }
@@ -26077,30 +26088,44 @@ async function run3() {
   const rules = discoverRuleSets(cwd);
   const specs = discoverSpecialists(cwd);
   const globalLocation = getGlobalUserConfigPath();
-  let globalConfig2 = null;
   if (globalLocation.exists) {
     try {
       const content = readFileSync8(globalLocation.path, "utf-8");
       const validation = validateGlobalUserConfig(content);
       if (!validation.valid) {
-        process.stderr.write(`[specialists] ignoring global mandatory_rules.template_sets overlay: ${globalLocation.path} failed validation: ` + `${validation.errors.map((error2) => `${error2.path}: ${error2.message}`).join("; ")}
+        process.stderr.write(`[specialists] global user config failed validation; mandatory-rules overlay hardened/fallback applies instead: ` + `${validation.errors.map((error2) => `${error2.path}: ${error2.message}`).join("; ")}
 `);
-      } else {
-        globalConfig2 = JSON.parse(content);
       }
     } catch (error2) {
       const message = error2 instanceof Error ? error2.message : String(error2);
-      process.stderr.write(`[specialists] ignoring global mandatory_rules.template_sets overlay: cannot read ${globalLocation.path}: ${message}
+      process.stderr.write(`[specialists] cannot read global user config ${globalLocation.path}: ${message}
 `);
     }
   }
+  const loader = new SpecialistLoader;
   for (const spec of specs) {
-    const parsed = JSON.parse(readFileSync8(spec.source_path, "utf-8"));
-    const fileSets = parsed?.specialist?.mandatory_rules?.template_sets ?? [];
-    const globalSelection = globalConfig2?.[spec.name]?.mandatory_rules?.template_sets;
-    const effectiveSets = Array.isArray(globalSelection) ? globalSelection : fileSets;
-    spec.effective_template_sets = effectiveSets;
-    spec.applied_rules = appliedRulesForSpec(spec, effectiveSets, required2, defaults);
+    let fileSets = [];
+    try {
+      const parsed = JSON.parse(readFileSync8(spec.source_path, "utf-8"));
+      fileSets = parsed?.specialist?.mandatory_rules?.template_sets ?? [];
+    } catch {}
+    let effectiveSpec = null;
+    try {
+      effectiveSpec = await loader.getEffective(spec.name);
+    } catch (error2) {
+      const message = error2 instanceof Error ? error2.message : String(error2);
+      process.stderr.write(`[specialists] cannot compute merged mandatory-rules selection for '${spec.name}'; using manifest defaults: ${message}
+`);
+    }
+    if (effectiveSpec) {
+      const rulesConfig = effectiveSpec.specialist.mandatory_rules;
+      spec.effective_template_sets = rulesConfig?.template_sets ?? [];
+      spec.inline_rule_count = rulesConfig?.inline_rules?.length ?? 0;
+      spec.globals_disabled = rulesConfig?.disable_default_globals ?? false;
+    } else {
+      spec.effective_template_sets = fileSets;
+    }
+    spec.applied_rules = appliedRulesForSpec(spec, spec.effective_template_sets, required2, defaults);
   }
   if (opts.filterRule) {
     const matchedSpecs = specs.map((s) => ({ name: s.name, source_tier: s.source_tier, scope: s.applied_rules.find((r) => r.id === opts.filterRule)?.scope })).filter((x) => !!x.scope);
@@ -26181,6 +26206,7 @@ var init_list_rules = __esm(() => {
   init_mandatory_rules();
   init_canonical_asset_resolver();
   init_global_config();
+  init_loader();
   RULE_TIERS = [
     { rel: ".specialists/user/mandatory-rules", tier: "user" },
     { rel: ".specialists/mandatory-rules", tier: "overlay" },

@@ -15676,6 +15676,10 @@ function parseMandatoryRulesFrontmatter(content, setId) {
   return rules;
 }
 function readMandatoryRuleSet(cwd, id) {
+  if (!/^[a-z][a-z0-9-]*$/.test(id)) {
+    console.warn(`[specialist runner] Rejecting unsafe mandatory-rules set id '${id}' (must be kebab-case)`);
+    return null;
+  }
   const packageCanonicalDir = resolveCanonicalAssetDir("mandatory-rules");
   const candidates = [
     resolve4(cwd, `.specialists/user/mandatory-rules/${id}.md`),
@@ -17969,7 +17973,16 @@ class SpecialistLoader {
       if (!Array.isArray(overrideValue))
         continue;
       const baseMandatoryRules = baseSpec.mandatory_rules ?? {};
-      baseMandatoryRules[field] = overrideValue;
+      const safeIds = [];
+      for (const rawId of overrideValue) {
+        if (typeof rawId === "string" && /^[a-z][a-z0-9-]*$/.test(rawId)) {
+          safeIds.push(rawId);
+        } else {
+          process.stderr.write(`[specialists] mandatory_rules.template_sets: dropping invalid set id '${String(rawId)}' for '${name}' (must be kebab-case)
+`);
+        }
+      }
+      baseMandatoryRules[field] = safeIds;
       baseSpec.mandatory_rules = baseMandatoryRules;
     }
     return warnings;
