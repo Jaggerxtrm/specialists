@@ -132,8 +132,22 @@ In every case the index-driven policy is untouched: `required_template_sets`
 and `default_template_sets` still load exactly as configured in the index
 union. The global layer cannot set `inline_rules` or `disable_default_globals`
 — those fields are rejected at the global surface and stripped with a warning
-if they sneak into `user.json`. Repo-local full manifests (`.specialists/user/`)
-retain full authority over all three fields.
+if they sneak into `user.json`.
+
+**Authority nuance — repo overlays use the same allowlist.**
+`.specialists/user/<name>.specialist.json` manifests propagate only the
+allowlisted override field set (the same `OVERRIDE_ALLOWED_*` contract,
+including `template_sets`, with repo winning over global). They do **not**
+propagate `inline_rules` or `disable_default_globals`: those fields are
+blocked at every overlay layer and ignored with a warning, even when a repo
+manifest is a verbatim copy of the package-canonical file. Renaming/changing
+them requires editing the package-canonical manifest itself
+(`config/specialists/<name>.specialist.json`).
+
+**Set id contract.** Every `template_sets` / index id must be kebab-case
+(`^[a-z][a-z0-9-]*$`). The loader merge drops invalid elements with a warning,
+and `readMandatoryRuleSet` rejects non-kebab ids outright (path-containment:
+an id can never traverse out of the rule tiers).
 
 ## Keep repo-specific rules out of canonical
 

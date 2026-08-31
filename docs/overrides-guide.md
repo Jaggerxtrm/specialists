@@ -205,7 +205,7 @@ Pitfall: raising this limit can produce very large logs and result files.
 ```
 
 - To clear the specialist-specific sets explicitly, set `template_sets: []`; the index-driven required/default sets still load.
-- Pitfall: `mandatory_rules.inline_rules` and `mandatory_rules.disable_default_globals` are **not** settable here. They are blocked fields: a `user.json` that tries to set them fails validation and is stripped with a `BlockedFieldWarning` at merge time. Repo-local full manifests (`.specialists/user/<name>.specialist.json`) remain the only override surface for those fields.
+- Pitfall: `mandatory_rules.inline_rules` and `mandatory_rules.disable_default_globals` are **not** settable here. They are blocked fields: a `user.json` that tries to set them fails validation and is stripped with a `BlockedFieldWarning` at merge time. Repo overlay manifests (`.specialists/user/<name>.specialist.json`) use the **same allowlist** — they cannot propagate a change to these fields either (they warn and are ignored, even for a verbatim fork of the manifest). They are configurable only in the package-canonical manifest (`config/specialists/<name>.specialist.json`). Index `required/default_template_sets` policy is configured through `config/mandatory-rules/index.json` and its overlays, never through any specialist override.
 
 ### `execution.fallback_model`
 

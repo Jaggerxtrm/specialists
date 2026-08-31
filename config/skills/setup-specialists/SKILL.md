@@ -419,11 +419,16 @@ falls through to `$EDITOR` in some environments (open follow-up). Prefer
 | `<name>.output_file` | string \| null | Path to write the rendered handoff block. **No env flag required** since `unitAI-f58ma`. |
 | `<name>.mandatory_rules.template_sets` | string[] \| null | Selects specialist-specific rule sets. `null` inherits the shipped list, `[]` selects none, non-empty replaces. Index required/default sets always load. |
 
-**Blocked at the global layer** (these MUST be overridden per-repo via
-`.specialists/user/<name>.specialist.json` if needed):
+**Blocked at the global layer — and at EVERY overlay layer** (repo
+`.specialists/user/<name>.specialist.json` manifests use the same
+`OVERRIDE_ALLOWED_*` allowlist; blocked fields are ignored there too, with a
+`sp doctor --specialists` warning, even in a verbatim manifest fork):
 `execution.permission_required`, `execution.bare`, `mandatory_rules.inline_rules`,
 `mandatory_rules.disable_default_globals`, `capabilities`, `output_schema`,
 `auto_commit`, `prompt.system`, `prompt.task_template`, `skills.scripts`.
+These require editing the package-canonical manifest
+(`config/specialists/<name>.specialist.json`); `auto_commit` and the
+mandatory-rules siblings are not settable from any override layer.
 
 A blocked field that sneaks in is **applied with a warning** (forward compat,
 v1) and surfaced by `sp doctor --specialists` as
