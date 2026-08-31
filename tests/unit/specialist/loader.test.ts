@@ -1108,6 +1108,117 @@ describe('KAN-90 — global override layer + null-model hard fail', () => {
     expect(warnings.every(warning => warning.severity === 'strip')).toBe(true);
   });
 
+  it('merge hardens global template_sets to kebab-case ids only, dropping invalid elements with a warning (unitAI-klo6k security)', async () => {
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
+    await writeGlobalUserJson({
+      demo: { mandatory_rules: { template_sets: ['ok-set', 'Bad_Id', '../../evil', 'ok-set-2'] } },
+    });
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const spec = await loader.get('demo');
+      expect(spec.specialist.mandatory_rules?.template_sets).toEqual(['ok-set', 'ok-set-2']);
+      const warned = stderrSpy.mock.calls.map(call => String(call[0])).join('');
+      expect(warned).toContain('dropping invalid set id');
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('merge hardens REPO overlay template_sets the same way (raw JSON is not schema-checked, unitAI-klo6k security)', async () => {
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
+    await mkdir(join(tmpProject, '.specialists', 'user'), { recursive: true });
+    await writeFile(
+      join(tmpProject, '.specialists', 'user', 'demo.specialist.json'),
+      JSON.stringify({
+        specialist: { mandatory_rules: { template_sets: ['repo-ok', 'Bad_Repo', '../../evil'] } },
+      }),
+    );
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const spec = await loader.get('demo');
+      expect(spec.specialist.mandatory_rules?.template_sets).toEqual(['repo-ok']);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('interplay: package → global → repo precedence for template_sets, repo wins (unitAI-klo6k F4)', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      JSON.stringify({
+        specialist: {
+          metadata: { name: 'demo', version: '1.0.0', description: 'demo', category: 'test' },
+          execution: { model: 'pkg/base-model', permission_required: 'READ_ONLY' },
+          prompt: { task_template: 'Do $prompt' },
+          mandatory_rules: { template_sets: ['pkg-set'] },
+        },
+      }),
+    );
+    await writeGlobalUserJson({
+      demo: { mandatory_rules: { template_sets: ['global-set'] } },
+    });
+    await mkdir(join(tmpProject, '.specialists', 'user'), { recursive: true });
+    await writeFile(
+      join(tmpProject, '.specialists', 'user', 'demo.specialist.json'),
+      JSON.stringify({ specialist: { mandatory_rules: { template_sets: ['repo-set'] } } }),
+    );
+
+    const spec = await loader.get('demo');
+    expect(spec.specialist.mandatory_rules?.template_sets).toEqual(['repo-set']);
+    expect(loader.getBlockedFieldWarnings('demo')).toEqual([]);
+  });
+
+  it('interplay: repo overlay with no selection inherits the global selection (unitAI-klo6k F4)', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      JSON.stringify({
+        specialist: {
+          metadata: { name: 'demo', version: '1.0.0', description: 'demo', category: 'test' },
+          execution: { model: 'pkg/base-model', permission_required: 'READ_ONLY' },
+          prompt: { task_template: 'Do $prompt' },
+          mandatory_rules: { template_sets: ['pkg-set'] },
+        },
+      }),
+    );
+    await writeGlobalUserJson({
+      demo: { mandatory_rules: { template_sets: ['global-set'] } },
+    });
+    await mkdir(join(tmpProject, '.specialists', 'user'), { recursive: true });
+    // Repo overlay exists but declares NO selection -> global survives.
+    await writeFile(
+      join(tmpProject, '.specialists', 'user', 'demo.specialist.json'),
+      JSON.stringify({ specialist: { execution: { model: 'pkg/base-model' } } }),
+    );
+
+    const spec = await loader.get('demo');
+    expect(spec.specialist.mandatory_rules?.template_sets).toEqual(['global-set']);
+  });
+
+  it('interplay: repo overlay explicitly [] clears what global selected (unitAI-klo6k F4)', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      JSON.stringify({
+        specialist: {
+          metadata: { name: 'demo', version: '1.0.0', description: 'demo', category: 'test' },
+          execution: { model: 'pkg/base-model', permission_required: 'READ_ONLY' },
+          prompt: { task_template: 'Do $prompt' },
+          mandatory_rules: { template_sets: ['pkg-set'] },
+        },
+      }),
+    );
+    await writeGlobalUserJson({
+      demo: { mandatory_rules: { template_sets: ['global-set'] } },
+    });
+    await mkdir(join(tmpProject, '.specialists', 'user'), { recursive: true });
+    await writeFile(
+      join(tmpProject, '.specialists', 'user', 'demo.specialist.json'),
+      JSON.stringify({ specialist: { mandatory_rules: { template_sets: [] } } }),
+    );
+
+    const spec = await loader.get('demo');
+    expect(spec.specialist.mandatory_rules?.template_sets).toEqual([]);
+  });
+
   describe('Phase 1 — six allowlisted user-environment fields', () => {
     it('overlays all six fields together, preserves untouched fields, and records no blocked warnings', async () => {
       const packageSpec = {
