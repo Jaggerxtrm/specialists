@@ -12,7 +12,7 @@ import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver
 import { detectDriftUnderRoot } from '../specialist/drift-detector.js';
 import { auditDeadJobs } from '../specialist/dead-job-audit.js';
 import { SpecialistLoader } from '../specialist/loader.js';
-import { readGlobalUserConfig } from '../specialist/global-config.js';
+import { readValidatedGlobalUserConfig } from '../specialist/global-config.js';
 import { formatVersionCheckNudge, getVersionCheckResult, localVersion, readCachedVersionCheck } from './version-check.js';
 
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -487,12 +487,21 @@ async function checkSpecialistOverrides(): Promise<boolean> {
   // template_sets driven by the global layer. `null` inherits the shipped sets,
   // `[]` explicitly clears them, non-empty arrays replace them; index
   // required/default sets always load regardless (see config/mandatory-rules/README.md).
+  // Fail-safe (unitAI-klo6k): a malformed user.json must never crash doctor —
+  // the shared readValidatedGlobalUserConfig warns and yields nothing, mirroring
+  // list-rules' degradation. Returns null when the file is invalid so the
+  // selection lines are skipped (the warning already explains the state).
   const selection = (() => {
-    if (!globalLayer.exists) return [];
-    const globalConfig = readGlobalUserConfig(globalLayer);
-    if (!globalConfig) return [];
+    if (!globalLayer.exists) return null;
+    const { config, invalidReason } = readValidatedGlobalUserConfig(globalLayer);
+    if (config === null) {
+      if (invalidReason !== null) {
+        warn(`global user config ${invalidReason}; mandatory-rules selection report skipped`);
+      }
+      return null;
+    }
     const entries: Array<{ name: string; template_sets: string[] | null }> = [];
-    for (const [name, override] of Object.entries(globalConfig)) {
+    for (const [name, override] of Object.entries(config)) {
       const templateSets = (override as { mandatory_rules?: { template_sets?: unknown } } | undefined)
         ?.mandatory_rules?.template_sets;
       if (templateSets === undefined || templateSets === null) continue;
@@ -501,9 +510,9 @@ async function checkSpecialistOverrides(): Promise<boolean> {
     return entries.sort((a, b) => a.name.localeCompare(b.name));
   })();
 
-  if (selection.length === 0) {
+  if (selection !== null && selection.length === 0) {
     ok('mandatory-rules selection: no global template_sets overrides (all specialists inherit shipped sets)');
-  } else {
+  } else if (selection !== null) {
     ok(`mandatory-rules selection: ${selection.length} specialist${selection.length === 1 ? '' : 's'} override template_sets globally`);
     for (const entry of selection) {
       hint(`${entry.name}: template_sets = ${JSON.stringify(entry.template_sets)}  ${dim('(null inherits, [] clears specialist-specific sets; index required/default sets always load)')}`);
