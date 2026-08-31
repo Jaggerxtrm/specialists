@@ -1,5 +1,6 @@
 import * as z from 'zod';
 import type { ManifestPolicyTier } from './manifest-resolver.js';
+export declare const KebabCase: z.ZodString;
 export declare const ExtensionToggleSchema: z.ZodBoolean;
 export declare const SpecialistSchema: z.ZodObject<{
     specialist: z.ZodObject<{
@@ -3103,13 +3104,21 @@ export declare const OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS: readonly ["extensi
 export declare const OVERRIDE_ALLOWED_STALL_DETECTION_PATHS: readonly ["waiting_auto_close_ms"];
 /** Prompt sub-fields an override layer may set. Relative to `specialist.prompt`. */
 export declare const OVERRIDE_ALLOWED_PROMPT_FIELDS: readonly ["system_prompt_mode"];
+/**
+ * Flat mandatory-rules sub-fields an override layer may set. Relative to
+ * `specialist.mandatory_rules`. Only `template_sets` is overridable: the
+ * global layer must never inject inline rule text or disable required/default
+ * index policy, so `inline_rules` and `disable_default_globals` stay in
+ * BLOCKED_OVERRIDE_FIELDS.
+ */
+export declare const OVERRIDE_ALLOWED_MANDATORY_RULES_FIELDS: readonly ["template_sets"];
 /** Top-level specialist fields an override layer may set. */
 export declare const OVERRIDE_ALLOWED_TOP_FIELDS: readonly ["beads_write_notes", "notes_mode", "output_file"];
 /**
  * Fields an override layer may NOT change. Dotted paths are schema-accurate.
  * `skills.paths` is exempt (append+dedup); `skills.scripts` is blocked.
  */
-export declare const BLOCKED_OVERRIDE_FIELDS: readonly ["execution.permission_required", "execution.auto_commit", "prompt.system", "prompt.output_schema", "skills.scripts", "mandatory_rules", "capabilities"];
+export declare const BLOCKED_OVERRIDE_FIELDS: readonly ["execution.permission_required", "execution.auto_commit", "prompt.system", "prompt.output_schema", "skills.scripts", "mandatory_rules.inline_rules", "mandatory_rules.disable_default_globals", "capabilities"];
 export type BlockedFieldSeverity = 'strip' | 'warn';
 /**
  * Recorded when an override layer attempts to set a blocked field.

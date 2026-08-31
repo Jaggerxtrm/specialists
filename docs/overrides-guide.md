@@ -12,7 +12,7 @@ The global override surface includes:
 - Preset references like `@preset/cheap` for model and fallback entries.
 - A top-level `_doc` sentinel in generated `user.json` pointing back to this guide. Keys starting with `_` are metadata, not specialist names.
 
-The examples below are delta snippets to add inside an existing specialist entry from `sp init --global`; they are not complete standalone `user.json` files. Keep the surrounding generated entry shape, including its `execution`, `prompt`, `stall_detection`, `beads_write_notes`, and `skills` keys, and change only the highlighted field.
+The examples below are delta snippets to add inside an existing specialist entry from `sp init --global`; they are not complete standalone `user.json` files. Keep the surrounding generated entry shape, including its `execution`, `prompt`, `stall_detection`, `beads_write_notes`, `skills`, and `mandatory_rules` keys, and change only the highlighted field.
 
 ## Per-field reference
 
@@ -187,6 +187,26 @@ Pitfall: raising this limit can increase token spend or provider rejection risk.
 
 Pitfall: raising this limit can produce very large logs and result files.
 
+### `mandatory_rules.template_sets`
+
+- Type: `string[] | null` (kebab-case set ids)
+- Default semantics: `null` inherits the shipped specialist's `template_sets`. `[]` explicitly selects **no** specialist-specific sets. A non-empty array replaces the shipped list.
+- Unaffected: index policy (`required_template_sets` / `default_template_sets` from `config/mandatory-rules/index.json` and its overlays) always loads exactly as configured — this field selects only the specialist-specific `template_sets` appended after it.
+- Example:
+
+```json
+{
+  "executor": {
+    "mandatory_rules": {
+      "template_sets": ["git-workflow-safe", "code-quality-defaults"]
+    }
+  }
+}
+```
+
+- To clear the specialist-specific sets explicitly, set `template_sets: []`; the index-driven required/default sets still load.
+- Pitfall: `mandatory_rules.inline_rules` and `mandatory_rules.disable_default_globals` are **not** settable here. They are blocked fields: a `user.json` that tries to set them fails validation and is stripped with a `BlockedFieldWarning` at merge time. Repo-local full manifests (`.specialists/user/<name>.specialist.json`) remain the only override surface for those fields.
+
 ### `execution.fallback_model`
 
 - Type: `string | null`
@@ -314,6 +334,9 @@ This is a complete `user.json` shape, not a delta snippet. It keeps every requir
     "output_file": null,
     "skills": {
       "paths": []
+    },
+    "mandatory_rules": {
+      "template_sets": ["git-workflow-safe", "per-turn-handoff-schema"]
     }
   }
 }

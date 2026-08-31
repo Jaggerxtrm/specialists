@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { SpecialistLoader } from '../../../src/specialist/loader.js';
+import { buildMandatoryRulesInjection } from '../../../src/specialist/mandatory-rules.js';
 
 describe('integration: SpecialistLoader global Phase 1 overlay', () => {
   let tempHome = '';
@@ -87,5 +88,64 @@ describe('integration: SpecialistLoader global Phase 1 overlay', () => {
         }),
       ]),
     );
+  });
+
+  it('global empty template_sets selection clears specialist-specific sets end-to-end but required/default index sets still load (unitAI-klo6k)', async () => {
+    tempHome = await mkdtemp(join(tmpdir(), 'specialists-loader-global-'));
+    originalHome = process.env.HOME;
+    originalXdg = process.env.XDG_CONFIG_HOME;
+    process.env.HOME = tempHome;
+    delete process.env.XDG_CONFIG_HOME;
+
+    // Global layer: explicit empty selection for the shipped executor specialist.
+    await writeUserConfig({
+      executor: {
+        execution: { model: 'openai-codex/gpt-5.4' },
+        mandatory_rules: { template_sets: [] },
+      },
+    });
+
+    const loader = new SpecialistLoader({ projectDir: process.cwd() });
+    const merged = await loader.get('executor');
+
+    // Merge contract: package specialist-specific sets are replaced with [].
+    expect(merged.specialist.mandatory_rules?.template_sets).toEqual([]);
+    expect(loader.getBlockedFieldWarnings('executor').map(w => w.field)).not.toContain('mandatory_rules.template_sets');
+
+    // Injection contract: shipped specialist-specific sets no longer load;
+    // index required/default policy still does.
+    const result = buildMandatoryRulesInjection({ cwd: process.cwd(), specialist: merged.specialist });
+    expect(result.block).not.toContain('### executor-delivery');
+    expect(result.block).not.toContain('### bead-id-verbatim');
+    expect(result.block).toContain('### core-session-boundary');
+    expect(result.block).toContain('### git-workflow-safe');
+  });
+
+  it('global replaced template_sets selection swaps specialist-specific sets end-to-end while index sets stay (unitAI-klo6k)', async () => {
+    tempHome = await mkdtemp(join(tmpdir(), 'specialists-loader-global-'));
+    originalHome = process.env.HOME;
+    originalXdg = process.env.XDG_CONFIG_HOME;
+    process.env.HOME = tempHome;
+    delete process.env.XDG_CONFIG_HOME;
+
+    await writeUserConfig({
+      reviewer: {
+        execution: { model: 'openai-codex/gpt-5.4' },
+        mandatory_rules: { template_sets: ['explorer-readonly'] },
+      },
+    });
+
+    const loader = new SpecialistLoader({ projectDir: process.cwd() });
+    const merged = await loader.get('reviewer');
+
+    expect(merged.specialist.mandatory_rules?.template_sets).toEqual(['explorer-readonly']);
+
+    const result = buildMandatoryRulesInjection({ cwd: process.cwd(), specialist: merged.specialist });
+    expect(result.block).toContain('### explorer-readonly');
+    // Removed reviewer-specific sets no longer load.
+    expect(result.block).not.toContain('### reviewer-verdict-format');
+    // Index required/default policy untouched.
+    expect(result.block).toContain('### core-session-boundary');
+    expect(result.block).toContain('### git-workflow-safe');
   });
 });

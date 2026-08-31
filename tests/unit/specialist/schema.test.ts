@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   OVERRIDE_ALLOWED_EXECUTION_FIELDS,
+  OVERRIDE_ALLOWED_MANDATORY_RULES_FIELDS,
   OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS,
   OVERRIDE_ALLOWED_PROMPT_FIELDS,
   OVERRIDE_ALLOWED_STALL_DETECTION_PATHS,
@@ -52,6 +53,7 @@ describe('override allowlist contract', () => {
       ...OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS.map(path => `execution.${path}`),
       ...OVERRIDE_ALLOWED_PROMPT_FIELDS.map(field => `prompt.${field}`),
       ...OVERRIDE_ALLOWED_STALL_DETECTION_PATHS.map(path => `stall_detection.${path}`),
+      ...OVERRIDE_ALLOWED_MANDATORY_RULES_FIELDS.map(field => `mandatory_rules.${field}`),
       ...OVERRIDE_ALLOWED_TOP_FIELDS,
       'skills.paths',
     ].sort();

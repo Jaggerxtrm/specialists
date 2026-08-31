@@ -105,4 +105,44 @@ describe('doctor --specialists  (KAN-90 override layer)', () => {
     expect(out).toMatch(/blocked-field overrides STRIPPED/);
     expect(out).toContain('execution.permission_required');
   });
+
+  it('reports a coherent global mandatory-rules selection (unitAI-klo6k)', async () => {
+    writeFileSync(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC('demo', 'pkg/m'));
+    writeGlobalUserJson({
+      demo: {
+        execution: { model: 'glm/glm-5.1' },
+        mandatory_rules: { template_sets: ['git-workflow-safe', 'core-session-boundary'] },
+      },
+    });
+    const out = await runDoctorSpecialists();
+    expect(out).toContain('mandatory-rules selection: 1 specialist');
+    expect(out).toContain('demo: template_sets = ["git-workflow-safe","core-session-boundary"]');
+    expect(out).not.toMatch(/blocked-field overrides STRIPPED/);
+  });
+
+  it('reports explicit empty selection and strips blocked inline_rules / disable_default_globals (unitAI-klo6k)', async () => {
+    writeFileSync(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC('demo', 'pkg/m'));
+    writeGlobalUserJson({
+      demo: {
+        execution: { model: 'glm/glm-5.1' },
+        mandatory_rules: {
+          template_sets: [],
+          disable_default_globals: true,
+          inline_rules: [{ id: 'x', text: 'y' }],
+        },
+      },
+    });
+    const out = await runDoctorSpecialists();
+    expect(out).toContain('demo: template_sets = []');
+    expect(out).toMatch(/blocked-field overrides STRIPPED/);
+    expect(out).toContain('mandatory_rules.inline_rules');
+    expect(out).toContain('mandatory_rules.disable_default_globals');
+  });
+
+  it('reports the inherit-default line when no global template_sets selection exists', async () => {
+    writeFileSync(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC('demo', 'pkg/m'));
+    writeGlobalUserJson({ demo: { execution: { model: 'glm/glm-5.1' } } });
+    const out = await runDoctorSpecialists();
+    expect(out).toContain('no global template_sets overrides (all specialists inherit shipped sets)');
+  });
 });

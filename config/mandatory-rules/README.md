@@ -26,12 +26,20 @@ letting a repo tailor or replace canonical rules without editing the source.
 At specialist spawn, the runner resolves sets from:
 
 1. `required_template_sets` — always loaded
-2. `default_template_sets` — loaded unless `mandatory_rules.disable_default_globals: true` on the specialist
+2. `default_template_sets` — always loaded (index-driven policy; `disable_default_globals` does NOT suppress these)
 3. `specialist.mandatory_rules.template_sets` — per-specialist additions
 4. `specialist.mandatory_rules.inline_rules` — per-specialist inline rules (no file)
 
 The resulting block is appended to the rendered task prompt as
 `## MANDATORY_RULES` with one `### <set-id>` section per set.
+
+> **`disable_default_globals` scope:** it suppresses only the inline
+> `STATIC_WORKFLOW_RULES_BLOCK` (the `## Beads Workflow Quick Rules` section
+> emitted as `workflow-quick-rules`). It does **not** suppress index-driven
+> sets — `default_template_sets` loads exactly like `required_template_sets`.
+> True user-rules-only runs need `disable_default_globals: true` **and** a
+> user overlay index in `.specialists/user/mandatory-rules/index.json` that
+> clears required/default sets.
 
 ## Authoring a rule set
 
@@ -94,6 +102,38 @@ Reference the set id in the specialist's JSON:
   }
 }
 ```
+
+### Option 3 — global user override (selection only)
+
+Users of shipped specialists can select the specialist-specific `template_sets`
+without forking a repo-local manifest, via `~/.config/specialists/user.json`
+(`sp edit --global` / `sp init --global`):
+
+```json
+// ~/.config/specialists/user.json
+{
+  "executor": {
+    "mandatory_rules": {
+      "template_sets": ["git-workflow-safe", "code-quality-defaults"]
+    }
+  }
+}
+```
+
+Contract for the global field (`string[] | null`):
+
+| Value | Effect |
+|-------|--------|
+| `null` (or absent) | Inherit the specialist's shipped `template_sets` |
+| `[]` | Explicitly select **no** specialist-specific sets |
+| non-empty array | Replace the shipped specialist-specific sets with this list |
+
+In every case the index-driven policy is untouched: `required_template_sets`
+and `default_template_sets` still load exactly as configured in the index
+union. The global layer cannot set `inline_rules` or `disable_default_globals`
+— those fields are rejected at the global surface and stripped with a warning
+if they sneak into `user.json`. Repo-local full manifests (`.specialists/user/`)
+retain full authority over all three fields.
 
 ## Keep repo-specific rules out of canonical
 

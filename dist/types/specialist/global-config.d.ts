@@ -84,6 +84,13 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
     }, {
         paths: string[];
     }>;
+    mandatory_rules: z.ZodOptional<z.ZodObject<{
+        template_sets: z.ZodNullable<z.ZodArray<z.ZodString, "many">>;
+    }, "strict", z.ZodTypeAny, {
+        template_sets: string[] | null;
+    }, {
+        template_sets: string[] | null;
+    }>>;
 }, "strict", z.ZodTypeAny, {
     execution: {
         model: string | null;
@@ -107,6 +114,9 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
     } | undefined;
     stall_detection?: {
         waiting_auto_close_ms?: number | null | undefined;
+    } | undefined;
+    mandatory_rules?: {
+        template_sets: string[] | null;
     } | undefined;
     output_file?: string | null | undefined;
     notes_mode?: "full-trail" | "final-only" | null | undefined;
@@ -133,6 +143,9 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
     } | undefined;
     stall_detection?: {
         waiting_auto_close_ms?: number | null | undefined;
+    } | undefined;
+    mandatory_rules?: {
+        template_sets: string[] | null;
     } | undefined;
     output_file?: string | null | undefined;
     notes_mode?: "full-trail" | "final-only" | null | undefined;
@@ -202,6 +215,13 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
     }, {
         paths: string[];
     }>;
+    mandatory_rules: z.ZodOptional<z.ZodObject<{
+        template_sets: z.ZodNullable<z.ZodArray<z.ZodString, "many">>;
+    }, "strict", z.ZodTypeAny, {
+        template_sets: string[] | null;
+    }, {
+        template_sets: string[] | null;
+    }>>;
 }, "strict", z.ZodTypeAny, {
     execution: {
         model: string | null;
@@ -225,6 +245,9 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
     } | undefined;
     stall_detection?: {
         waiting_auto_close_ms?: number | null | undefined;
+    } | undefined;
+    mandatory_rules?: {
+        template_sets: string[] | null;
     } | undefined;
     output_file?: string | null | undefined;
     notes_mode?: "full-trail" | "final-only" | null | undefined;
@@ -252,6 +275,9 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
     stall_detection?: {
         waiting_auto_close_ms?: number | null | undefined;
     } | undefined;
+    mandatory_rules?: {
+        template_sets: string[] | null;
+    } | undefined;
     output_file?: string | null | undefined;
     notes_mode?: "full-trail" | "final-only" | null | undefined;
 }>>, Record<string, {
@@ -277,6 +303,9 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
     } | undefined;
     stall_detection?: {
         waiting_auto_close_ms?: number | null | undefined;
+    } | undefined;
+    mandatory_rules?: {
+        template_sets: string[] | null;
     } | undefined;
     output_file?: string | null | undefined;
     notes_mode?: "full-trail" | "final-only" | null | undefined;

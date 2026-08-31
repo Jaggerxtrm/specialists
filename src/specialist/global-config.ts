@@ -22,7 +22,9 @@ import { homedir } from 'node:os';
 import * as z from 'zod';
 import {
   ExtensionToggleSchema,
+  KebabCase,
   OVERRIDE_ALLOWED_EXECUTION_FIELDS,
+  OVERRIDE_ALLOWED_MANDATORY_RULES_FIELDS,
   OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS,
   OVERRIDE_ALLOWED_PROMPT_FIELDS,
   OVERRIDE_ALLOWED_STALL_DETECTION_PATHS,
@@ -110,6 +112,20 @@ const OverrideSkillsSchema = z.object({
   paths: z.array(z.string()),
 }).strict();
 
+/**
+ * Global mandatory-rules selection surface. Deliberately narrow:
+ *   - `template_sets: string[]`  replaces the specialist-specific sets;
+ *   - `template_sets: null`      inherits the set list from the layer below;
+ *   - `template_sets: []`        explicitly selects NO specialist-specific sets
+ *                                 (index required/default policy still loads).
+ * `inline_rules` and `disable_default_globals` are NOT representable here —
+ * they stay in BLOCKED_OVERRIDE_FIELDS so global users cannot inject rule
+ * text or disable required/default policy through this surface.
+ */
+const OverrideMandatoryRulesSchema = z.object({
+  template_sets: z.array(KebabCase).nullable(),
+}).strict();
+
 export const GlobalSpecialistOverrideSchema = z.object({
   execution: OverrideExecutionSchema,
   prompt: OverridePromptSchema.optional(),
@@ -118,6 +134,7 @@ export const GlobalSpecialistOverrideSchema = z.object({
   notes_mode: z.enum(['full-trail', 'final-only']).nullable().optional(),
   output_file: z.string().nullable().optional(),
   skills: OverrideSkillsSchema,
+  mandatory_rules: OverrideMandatoryRulesSchema.optional(),
 }).strict();
 
 export type GlobalSpecialistOverride = z.infer<typeof GlobalSpecialistOverrideSchema>;
@@ -128,6 +145,7 @@ export function getGlobalSpecialistOverrideLeafPaths(): readonly string[] {
     ...OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS.map(path => `execution.${path}`),
     ...OVERRIDE_ALLOWED_PROMPT_FIELDS.map(field => `prompt.${field}`),
     ...OVERRIDE_ALLOWED_STALL_DETECTION_PATHS.map(path => `stall_detection.${path}`),
+    ...OVERRIDE_ALLOWED_MANDATORY_RULES_FIELDS.map(field => `mandatory_rules.${field}`),
     ...OVERRIDE_ALLOWED_TOP_FIELDS,
     'skills.paths',
   ];
@@ -182,6 +200,9 @@ export function buildSpecialistOverrideTemplate(): GlobalSpecialistOverride {
     notes_mode: null,
     output_file: null,
     skills: { paths: [] },
+    mandatory_rules: {
+      template_sets: null,
+    },
   };
 }
 

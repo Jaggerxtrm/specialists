@@ -708,16 +708,34 @@ OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS = [
 ]
 OVERRIDE_ALLOWED_STALL_DETECTION_PATHS = ['waiting_auto_close_ms']
 OVERRIDE_ALLOWED_PROMPT_FIELDS = ['system_prompt_mode']
+OVERRIDE_ALLOWED_MANDATORY_RULES_FIELDS = ['template_sets']
 OVERRIDE_ALLOWED_TOP_FIELDS = ['beads_write_notes', 'notes_mode', 'output_file']
 ```
 
 So `sp edit --global --set executor.notes_mode final-only` is allowed; the
-same effect for `permission_required`, `prompt.system`, `mandatory_rules`,
-`capabilities`, `output_schema`, `auto_commit`, `skills.scripts`, or
-`prompt.task_template` is **blocked at the global layer** and must be done
-per-repo in `.specialists/user/<name>.specialist.json`. A blocked field that
-sneaks into `user.json` is applied with a `BlockedFieldWarning` and reported
-by `sp doctor --specialists`.
+same effect for `permission_required`, `prompt.system`, `mandatory_rules.inline_rules`,
+`mandatory_rules.disable_default_globals`, `capabilities`, `output_schema`,
+`auto_commit`, `skills.scripts`, or `prompt.task_template` is **blocked at the
+global layer** and must be done per-repo in
+`.specialists/user/<name>.specialist.json`. A blocked field that sneaks into
+`user.json` is stripped with a `BlockedFieldWarning` and reported by
+`sp doctor --specialists`.
+
+`mandatory_rules.template_sets` **is** globally selectable (selection only — see
+`## specialist.mandatory_rules` above):
+
+```bash
+# Replace a shipped specialist's rule sets with a curated subset
+sp edit --global --set executor.mandatory_rules.template_sets '["git-workflow-safe","code-quality-defaults"]'
+# Explicitly select NO specialist-specific sets (index required/default still load)
+sp edit --global --set executor.mandatory_rules.template_sets '[]'
+# Reset to inherit the shipped sets
+sp edit --global --set executor.mandatory_rules.template_sets null
+```
+
+This is the only mandatory-rules surface at the global layer. Rule **content**
+(inline rules), the `disable_default_globals` flag, and index policy stay
+package/repo-owned.
 
 ### Same fields as the per-spec reference
 
