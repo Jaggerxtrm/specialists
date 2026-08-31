@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Never emit unresolved template placeholders ([333df3e](https://github.com/xtrm-dev/specialists/commit/333df3e58fc21c9f0e4620aed84400ac7da7e83b))
 - Reject pending RPC immediately when pi child exits (unitAI-u5xjk) ([2ffea6d](https://github.com/xtrm-dev/specialists/commit/2ffea6dbde3d1fb8893bc981e6684073fe13fe97))
 - Validate global template_sets before list-rules overlay (unitAI-klo6k seconder) ([410dbcf](https://github.com/xtrm-dev/specialists/commit/410dbcf7cc09b68880fb1010e2faa296dae7f47c))
+- Path-containment for mandatory-rules set ids (unitAI-klo6k security F2) ([51117a9](https://github.com/xtrm-dev/specialists/commit/51117a945c92a9edd44cc8b1afe3789080e7ea33))
+- Kebab-harden template_sets at merge (unitAI-klo6k security F1) ([2abfa25](https://github.com/xtrm-dev/specialists/commit/2abfa25241e8c7ad7c1e2270be859f9191659cfa))
+- List-rules true layered merge and runtime-parity defaults (unitAI-klo6k F2/F4) ([4140d56](https://github.com/xtrm-dev/specialists/commit/4140d5691623793b5b83e527dfbe7fef4cec3fed))
 
 ### Other changes
 - Support dynamic execution extension sources ([479d2b6](https://github.com/xtrm-dev/specialists/commit/479d2b69bce86b28c9556d21ecc00d27d10f2a74))
@@ -35,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rebuild 3.21.6 RC artifacts ([af65334](https://github.com/xtrm-dev/specialists/commit/af65334ba4dc55bb5731a95fce08fc314f9c1274))
 - Rebuild 3.21.6 artifacts after final extension fixes (unitAI-1d6ui) ([d39e17e](https://github.com/xtrm-dev/specialists/commit/d39e17eb0c0d09fa73c25de1c77b85f667b8a010))
 - Rebuild 3.21.6 artifacts after RPC fail-fast fix (unitAI-wuing) ([aa7975e](https://github.com/xtrm-dev/specialists/commit/aa7975e4d69e4453ccabb915acaa748fb1631275))
+- Repo-overlay authority nuance for mandatory-rules (unitAI-klo6k test-runner F1) ([76fc4e0](https://github.com/xtrm-dev/specialists/commit/76fc4e075a6a1855240547283fe87f839e6d0e49))
+- Rebuild dist for mandatory-rules selection hardening (unitAI-klo6k) ([da3a7b8](https://github.com/xtrm-dev/specialists/commit/da3a7b8166c5ed34ba0a1c8215b7756dd6dee6e3))
 
 ## [3.21.5] - 2026-08-20
 
