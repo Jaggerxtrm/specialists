@@ -716,10 +716,14 @@ So `sp edit --global --set executor.notes_mode final-only` is allowed; the
 same effect for `permission_required`, `prompt.system`, `mandatory_rules.inline_rules`,
 `mandatory_rules.disable_default_globals`, `capabilities`, `output_schema`,
 `auto_commit`, `skills.scripts`, or `prompt.task_template` is **blocked at the
-global layer** and must be done per-repo in
-`.specialists/user/<name>.specialist.json`. A blocked field that sneaks into
-`user.json` is stripped with a `BlockedFieldWarning` and reported by
-`sp doctor --specialists`.
+global layer**. A blocked field that sneaks into `user.json` is stripped with
+a `BlockedFieldWarning` and reported by `sp doctor --specialists`.
+
+Repo overlay manifests (`.specialists/user/<name>.specialist.json`) use the
+**same allowlist** — they cannot propagate `inline_rules` /
+`disable_default_globals` either (ignored with a warning, even in a verbatim
+manifest fork). Those fields plus `auto_commit` are configurable only in the
+package-canonical manifest (`config/specialists/<name>.specialist.json`).
 
 `mandatory_rules.template_sets` **is** globally selectable (selection only — see
 `## specialist.mandatory_rules` above):
@@ -735,7 +739,8 @@ sp edit --global --set executor.mandatory_rules.template_sets null
 
 This is the only mandatory-rules surface at the global layer. Rule **content**
 (inline rules), the `disable_default_globals` flag, and index policy stay
-package/repo-owned.
+package-canonical-owned: repo overlay manifests use the same allowlist and
+cannot set them either.
 
 ### Same fields as the per-spec reference
 
