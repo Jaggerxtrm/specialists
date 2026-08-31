@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Path-containment for mandatory-rules set ids (unitAI-klo6k security F2) ([51117a9](https://github.com/xtrm-dev/specialists/commit/51117a945c92a9edd44cc8b1afe3789080e7ea33))
 - Kebab-harden template_sets at merge (unitAI-klo6k security F1) ([2abfa25](https://github.com/xtrm-dev/specialists/commit/2abfa25241e8c7ad7c1e2270be859f9191659cfa))
 - List-rules true layered merge and runtime-parity defaults (unitAI-klo6k F2/F4) ([4140d56](https://github.com/xtrm-dev/specialists/commit/4140d5691623793b5b83e527dfbe7fef4cec3fed))
+- Doctor survives malformed global user.json (unitAI-klo6k final reviewer) ([937631e](https://github.com/xtrm-dev/specialists/commit/937631e78e027c6dd4085bcaedc306b84d1c6aa6))
 
 ### Other changes
 - Support dynamic execution extension sources ([479d2b6](https://github.com/xtrm-dev/specialists/commit/479d2b69bce86b28c9556d21ecc00d27d10f2a74))
