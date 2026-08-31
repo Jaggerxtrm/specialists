@@ -9,18 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Active-tool advisory startup context (unitAI-kaae7) ([c250936](https://github.com/xtrm-dev/specialists/commit/c250936e2e47d481ff9f7cc146df06c6ffa4a571))
+- Global mandatory-rules template_sets selection (unitAI-klo6k) ([84a261c](https://github.com/xtrm-dev/specialists/commit/84a261c987d0d85596e349e197b3ffc3906ee38c))
+
 ### Fixed
 - Repair bun observability baseline gate ([441558c](https://github.com/xtrm-dev/specialists/commit/441558ca021af24fc6385a7694c24a7a902b13ea))
 - Prevent forensic event seq overwrite ([91f2186](https://github.com/xtrm-dev/specialists/commit/91f2186dd708107bb9bb2d34554232dc347a04ef))
+- Expose enabled-extension tools via deny-list tool gate (unitAI-34pyf) ([6129ebb](https://github.com/xtrm-dev/specialists/commit/6129ebb1453991e9d5f5f30ac9468fc1f70dcdc7))
+- Fail-closed extension tool-policy gate (unitAI-34pyf security rework) ([b286e2c](https://github.com/xtrm-dev/specialists/commit/b286e2c87bb2325103a019cd155e2c985e42cf87))
+- Hard-fail policy gate, dead dist removal, raw-spawn assertion (unitAI-34pyf audit round 2) ([d444d6d](https://github.com/xtrm-dev/specialists/commit/d444d6d64c7037219d2e40825644d6ffbadaa5f8))
+- Never emit unresolved template placeholders ([333df3e](https://github.com/xtrm-dev/specialists/commit/333df3e58fc21c9f0e4620aed84400ac7da7e83b))
+- Reject pending RPC immediately when pi child exits (unitAI-u5xjk) ([2ffea6d](https://github.com/xtrm-dev/specialists/commit/2ffea6dbde3d1fb8893bc981e6684073fe13fe97))
 
 ### Other changes
 - Support dynamic execution extension sources ([479d2b6](https://github.com/xtrm-dev/specialists/commit/479d2b69bce86b28c9556d21ecc00d27d10f2a74))
 - Remove retired loose service-skills injections ([d7ebe5b](https://github.com/xtrm-dev/specialists/commit/d7ebe5bea5431071dc25ebec3bd81992f0bf3802))
+- Put exact bead id in every turn-1 initial prompt (unitAI-edfjs) ([cca1f3e](https://github.com/xtrm-dev/specialists/commit/cca1f3e1adb32f63c2189bbcaffb8bd4bd944a0c))
 
 ### Project maintenance
 - Reconcile Specialists canon with native XTRM runtime (#270) ([e200b17](https://github.com/xtrm-dev/specialists/commit/e200b175523aa4c755a1c270350038e2b163c105))
 - Consolidate current Specialists programme canon (#271) ([79dbecc](https://github.com/xtrm-dev/specialists/commit/79dbecc82789e8cbc02b733c50cd4c7d867043e1))
 - Finish extension integration coverage ([47ae461](https://github.com/xtrm-dev/specialists/commit/47ae461859901f4d16df374ba727341ec48f4b66))
+- Rebuild 3.21.6 RC artifacts ([af65334](https://github.com/xtrm-dev/specialists/commit/af65334ba4dc55bb5731a95fce08fc314f9c1274))
+- Rebuild 3.21.6 artifacts after final extension fixes (unitAI-1d6ui) ([d39e17e](https://github.com/xtrm-dev/specialists/commit/d39e17eb0c0d09fa73c25de1c77b85f667b8a010))
+- Rebuild 3.21.6 artifacts after RPC fail-fast fix (unitAI-wuing) ([aa7975e](https://github.com/xtrm-dev/specialists/commit/aa7975e4d69e4453ccabb915acaa748fb1631275))
 
 ## [3.21.5] - 2026-08-20
 
