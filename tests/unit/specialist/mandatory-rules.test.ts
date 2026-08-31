@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { writeFileSync, rmSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const packageCanonicalDirs = new Map<string, string | null>();
@@ -455,6 +456,68 @@ describe('mandatory rules resolution', () => {
     expect(result.block).toContain('### specialist-inline-rules');
     expect(result.setsLoaded).toEqual(['workflow-quick-rules']);
     expect(result.ruleCount).toBe(2);
+  });
+
+  it.each(['../../evil', 'a/b', '..\\evil'] as const)('rejects unsafe set id %s at the sink (path containment, unitAI-klo6k)', unsafeId => {
+    // External file OUTSIDE every rule tier, referenced by the traversal id.
+    // (Config is built inside the callback so it binds the CURRENT tempDir.)
+    const evilPath = join(dirname(tempDir), 'evil-escape.md');
+    writeFileSync(evilPath, '---\nrules:\n  - id: evil-1\n    level: required\n    text: EXTERNAL_SECRET_MARKER\n---\n');
+
+    try {
+      const { result, warnings } = captureWarnings(() => buildMandatoryRulesInjection({
+        cwd: tempDir,
+        specialist: { mandatory_rules: { template_sets: [unsafeId] } },
+      }));
+      expect(warnings.join('\n')).toContain('Rejecting unsafe mandatory-rules set id');
+      expect(result.block).not.toContain('EXTERNAL_SECRET_MARKER');
+      expect(result.setsLoaded).toEqual(['workflow-quick-rules']);
+    } finally {
+      rmSync(evilPath, { force: true });
+    }
+  });
+
+  it('rejects unsafe ids from the index-overlay route (required and default, unitAI-klo6k)', async () => {
+    await mkdir(join(tempDir, '.specialists', 'user', 'mandatory-rules'), { recursive: true });
+    await writeFile(
+      join(tempDir, '.specialists', 'user', 'mandatory-rules', 'index.json'),
+      JSON.stringify({
+        required_template_sets: ['../../evil-req'],
+        default_template_sets: ['../../evil-def'],
+      }),
+    );
+    const evilPath = join(dirname(tempDir), 'evil-index-escape.md');
+    writeFileSync(evilPath, '---\nrules:\n  - id: evil-1\n    level: required\n    text: EXTERNAL_INDEX_SECRET_MARKER\n---\n');
+
+    try {
+      const { result, warnings } = captureWarnings(() => buildMandatoryRulesInjection({
+        cwd: tempDir,
+        specialist: {},
+      }));
+      expect(warnings.join('\n')).toContain('Rejecting unsafe mandatory-rules set id');
+      expect(result.block).not.toContain('EXTERNAL_INDEX_SECRET_MARKER');
+      expect(result.setsLoaded).toEqual(['workflow-quick-rules']);
+    } finally {
+      rmSync(evilPath, { force: true });
+    }
+  });
+
+  it('still loads valid kebab-case ids alongside rejected unsafe ones (unitAI-klo6k)', async () => {
+    await mkdir(join(tempDir, '.specialists', 'default', 'mandatory-rules'), { recursive: true });
+    await writeFile(join(tempDir, '.specialists', 'default', 'mandatory-rules', 'good-set.md'), '---\nrules:\n  - id: good-1\n    level: required\n    text: good rule\n---\n');
+
+    const { result, warnings } = captureWarnings(() => buildMandatoryRulesInjection({
+      cwd: tempDir,
+      specialist: {
+        mandatory_rules: {
+          template_sets: ['good-set', '../../evil'],
+        },
+      },
+    }));
+
+    expect(warnings.join('\n')).toContain('Rejecting unsafe mandatory-rules set id');
+    expect(result.block).toContain('### good-set');
+    expect(result.setsLoaded).toContain('good-set');
   });
 });
 

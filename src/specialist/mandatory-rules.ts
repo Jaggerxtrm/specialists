@@ -270,6 +270,18 @@ function parseMandatoryRulesFrontmatter(content: string, setId: string): Mandato
 }
 
 function readMandatoryRuleSet(cwd: string, id: string): MandatoryRuleSet | null {
+  // Path-containment (security, unitAI-klo6k): set ids are file names resolved
+  // INTO the tier directories below. Reject anything that is not a plain
+  // kebab-case id so neither a specialist `template_sets` value nor an index
+  // id (required/default_template_sets from any tier) can traverse
+  // (`../../...`) out of the tiers and read arbitrary files into the prompt.
+  // This is the single sink that every id route funnels through, so guarding
+  // here closes both the override and index-overlay routes.
+  if (!/^[a-z][a-z0-9-]*$/.test(id)) {
+    console.warn(`[specialist runner] Rejecting unsafe mandatory-rules set id '${id}' (must be kebab-case)`);
+    return null;
+  }
+
   const packageCanonicalDir = resolveCanonicalAssetDir('mandatory-rules');
   const candidates = [
     resolve(cwd, `.specialists/user/mandatory-rules/${id}.md`),
