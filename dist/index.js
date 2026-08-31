@@ -26077,7 +26077,23 @@ async function run3() {
   const rules = discoverRuleSets(cwd);
   const specs = discoverSpecialists(cwd);
   const globalLocation = getGlobalUserConfigPath();
-  const globalConfig2 = globalLocation.exists ? readGlobalUserConfig(globalLocation) : null;
+  let globalConfig2 = null;
+  if (globalLocation.exists) {
+    try {
+      const content = readFileSync8(globalLocation.path, "utf-8");
+      const validation = validateGlobalUserConfig(content);
+      if (!validation.valid) {
+        process.stderr.write(`[specialists] ignoring global mandatory_rules.template_sets overlay: ${globalLocation.path} failed validation: ` + `${validation.errors.map((error2) => `${error2.path}: ${error2.message}`).join("; ")}
+`);
+      } else {
+        globalConfig2 = JSON.parse(content);
+      }
+    } catch (error2) {
+      const message = error2 instanceof Error ? error2.message : String(error2);
+      process.stderr.write(`[specialists] ignoring global mandatory_rules.template_sets overlay: cannot read ${globalLocation.path}: ${message}
+`);
+    }
+  }
   for (const spec of specs) {
     const parsed = JSON.parse(readFileSync8(spec.source_path, "utf-8"));
     const fileSets = parsed?.specialist?.mandatory_rules?.template_sets ?? [];

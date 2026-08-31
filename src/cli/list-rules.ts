@@ -10,7 +10,11 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve, join, basename } from 'node:path';
 import { loadMandatoryRulesIndex } from '../specialist/mandatory-rules.js';
 import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
-import { getGlobalUserConfigPath, readGlobalUserConfig } from '../specialist/global-config.js';
+import {
+  getGlobalUserConfigPath,
+  readGlobalUserConfig,
+  validateGlobalUserConfig,
+} from '../specialist/global-config.js';
 import type { SpecialistMandatoryRulesConfig } from '../specialist/mandatory-rules.js';
 
 interface RuleSetEntry {
@@ -214,8 +218,32 @@ export async function run(): Promise<void> {
   // specialist-specific sets from the manifest file, exactly like the loader
   // merge. `null` / absent inherits; `[]` explicitly clears them (index
   // required/default sets still load below).
+  //
+  // The file is schema-validated BEFORE any value is trusted (unitAI-klo6k
+  // seconder): a malformed file (bad JSON, wrong shape, non-kebab ids, blocked
+  // fields) disables the overlay with an actionable stderr warning instead of
+  // silently applying or silently ignoring a garbage selection.
   const globalLocation = getGlobalUserConfigPath();
-  const globalConfig = globalLocation.exists ? readGlobalUserConfig(globalLocation) : null;
+  let globalConfig: ReturnType<typeof readGlobalUserConfig> | null = null;
+  if (globalLocation.exists) {
+    try {
+      const content = readFileSync(globalLocation.path, 'utf-8');
+      const validation = validateGlobalUserConfig(content);
+      if (!validation.valid) {
+        process.stderr.write(
+          `[specialists] ignoring global mandatory_rules.template_sets overlay: ${globalLocation.path} failed validation: ` +
+            `${validation.errors.map(error => `${error.path}: ${error.message}`).join('; ')}\n`,
+        );
+      } else {
+        globalConfig = JSON.parse(content) as ReturnType<typeof readGlobalUserConfig>;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(
+        `[specialists] ignoring global mandatory_rules.template_sets overlay: cannot read ${globalLocation.path}: ${message}\n`,
+      );
+    }
+  }
 
   for (const spec of specs) {
     const parsed = JSON.parse(readFileSync(spec.source_path, 'utf-8'));
@@ -223,6 +251,8 @@ export async function run(): Promise<void> {
     const globalSelection = (globalConfig?.[spec.name] as
       | { mandatory_rules?: { template_sets?: unknown } }
       | undefined)?.mandatory_rules?.template_sets;
+    // Validation above guarantees `string[] | null` here; the shape guard stays
+    // as defense-in-depth if a future schema change loosens the contract.
     const effectiveSets = Array.isArray(globalSelection)
       ? (globalSelection as string[])
       : fileSets;
