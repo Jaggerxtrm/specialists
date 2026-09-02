@@ -23,6 +23,7 @@ import {
   type GlobalUserConfigPath,
 } from './global-config.js';
 import { loadPresets, resolvePresetReference } from './preset-resolver.js';
+import { resolveSkillPath } from './project-pack-skill-resolver.js';
 
 export interface StallDetectionConfig {
   running_silence_warn_ms?: number;
@@ -397,7 +398,7 @@ export class SpecialistLoader {
 
     // The TOP layer (highest-priority hit) drives the SpecialistSummary scope/source.
     const top = hits[hits.length - 1];
-    resolveSkillsPaths(base, baseHit.dir.path);
+    resolveSkillsPaths(base, baseHit.dir.path, this.projectDir);
     return {
       spec: base,
       topLayer: {
@@ -620,13 +621,12 @@ function emitPresetResolved(
   })}\n`);
 }
 
-function resolveSkillsPaths(spec: Specialist, fileDir: string): void {
+function resolveSkillsPaths(spec: Specialist, fileDir: string, consumerRoot: string): void {
   const rawPaths = spec.specialist.skills?.paths;
   if (!rawPaths?.length) return;
-  const resolved = rawPaths.map(p => {
-    if (p.startsWith('~/')) return join(process.env.HOME || '', p.slice(2));
-    if (p.startsWith('./')) return join(fileDir, p.slice(2));
-    return p; // absolute
-  });
+  // Shared seam (unitAI-jndsb.11): `~/` -> home, `./` -> manifest dir, bare
+  // logical names -> exactly one consumer project-pack <root>/.xtrm/skills/
+  // <pack>/<skill>/ dir (or the global-default candidate), all others verbatim.
+  const resolved = rawPaths.map(p => resolveSkillPath(p, { consumerRoot, fileDir }));
   (spec.specialist.skills as Record<string, unknown>).paths = resolved;
 }

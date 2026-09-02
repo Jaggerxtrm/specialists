@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { join, resolve, isAbsolute } from 'node:path';
 import { validateBeforeRun } from '../../../src/specialist/runner.js';
 import { SpecialistLoader } from '../../../src/specialist/loader.js';
+import { isBareLogicalSkillName, resolveBareLogicalSkill } from '../../../src/specialist/project-pack-skill-resolver.js';
 
 const REPO = resolve(__dirname, '../../..');
 const SPECIALISTS_DIR = join(REPO, 'config/specialists');
@@ -31,10 +32,13 @@ function declaredPaths(): Array<{ specialist: string; path: string }> {
   });
 }
 
-// Mirrors loader.resolveSkillsPaths: '~/' -> $HOME, './' -> spec file dir, else verbatim.
+// Mirrors loader.resolveSkillsPaths (via the shared resolver, unitAI-jndsb.11):
+// '~/' -> $HOME, './' -> spec file dir, bare logical name -> consumer project
+// pack or global-default candidate, else verbatim.
 function resolveLikeLoader(path: string): string {
   if (path.startsWith('~/')) return join(homedir(), path.slice(2));
   if (path.startsWith('./')) return join(SPECIALISTS_DIR, path.slice(2));
+  if (isBareLogicalSkillName(path)) return resolveBareLogicalSkill(path, process.cwd());
   return path;
 }
 
@@ -70,11 +74,18 @@ describe('package contract: shipped specialists declare resolvable skills', () =
   });
 
   it('every declared skill path is in a canonical, cwd-independent form', () => {
-    // Bare names ('test-planning') and repo-relative paths ('config/skills/...') both
-    // resolve against process.cwd(), so they break the moment a specialist runs from a
-    // worktree or a consumer repo. Only '~/' (global) and './' (spec-relative) are stable.
+    // Bare logical names ('service-knowledge') are resolved by the shared
+    // resolver into <consumerRoot>/.xtrm/skills/<pack>/<skill>/ (project-pack
+    // wins, global-default candidate otherwise — unitAI-jndsb.11), so they are
+    // canonical. '~/' (global), './' (spec-relative), and absolute are stable.
+    // Only literal relative paths with separators ('config/skills/...') resolve
+    // against process.cwd() and break from a worktree or consumer repo.
     const bad = declaredPaths().filter(
-      (entry) => !entry.path.startsWith('~/') && !entry.path.startsWith('./') && !isAbsolute(entry.path),
+      (entry) =>
+        !entry.path.startsWith('~/') &&
+        !entry.path.startsWith('./') &&
+        !isAbsolute(entry.path) &&
+        !isBareLogicalSkillName(entry.path),
     );
     expect(bad).toEqual([]);
   });
