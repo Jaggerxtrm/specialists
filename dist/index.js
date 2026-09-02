@@ -21007,7 +21007,8 @@ var init_schema = __esm(() => {
   ScriptEntrySchema = objectType({
     run: stringType(),
     phase: enumType(["pre", "post"]),
-    inject_output: booleanType().default(false)
+    inject_output: booleanType().default(false),
+    required: booleanType().optional()
   }).passthrough();
   SkillsSchema = objectType({
     paths: arrayType(stringType()).optional(),
@@ -24716,27 +24717,101 @@ function dedupeModels(models) {
 var exports_runner = {};
 __export(exports_runner, {
   validateBeforeRun: () => validateBeforeRun,
+  sanitizeScriptName: () => sanitizeScriptName,
   runScript: () => runScript,
   formatScriptOutput: () => formatScriptOutput,
-  SpecialistRunner: () => SpecialistRunner
+  formatRequiredPreScriptFailure: () => formatRequiredPreScriptFailure,
+  findRequiredPreScriptFailure: () => findRequiredPreScriptFailure,
+  SpecialistRunner: () => SpecialistRunner,
+  RequiredPreScriptError: () => RequiredPreScriptError
 });
 import { createHash as createHash4 } from "crypto";
 import { execSync as execSync2, spawnSync as spawnSync4 } from "child_process";
 import { existsSync as existsSync11, readFileSync as readFileSync7 } from "fs";
 import { basename as basename3, resolve as resolve6 } from "path";
 import { homedir as homedir4 } from "os";
+function sanitizeScriptName(name) {
+  const cleaned = name.replace(/[\u0000-\u001f\u007f-\u009f"\\<>]/g, "").slice(0, 128);
+  return /^[A-Za-z0-9:][A-Za-z0-9._:-]{0,127}$/.test(cleaned) ? cleaned : "unknown";
+}
+function capStream(value, limitBytes = SCRIPT_OUTPUT_LIMIT_BYTES) {
+  const buf = Buffer.from(value, "utf8");
+  if (buf.length <= limitBytes)
+    return value;
+  return buf.subarray(0, limitBytes).toString("utf8");
+}
 function runScript(command, cwd) {
   const run = (command ?? "").trim();
   if (!run) {
-    return { name: "unknown", output: "Missing script command (expected `run` or legacy `path`).", exitCode: 1 };
+    return { name: "unknown", output: "Missing script command (expected `run` or legacy `path`).", stderr: "", exitCode: 1 };
   }
-  const scriptName = basename3(run.split(" ")[0]);
-  try {
-    const output = execSync2(run, { encoding: "utf8", timeout: 30000, cwd });
-    return { name: scriptName, output, exitCode: 0 };
-  } catch (e) {
-    return { name: scriptName, output: e.stdout ?? e.message ?? "", exitCode: e.status ?? 1 };
+  const scriptName = sanitizeScriptName(basename3(run.split(" ")[0]));
+  const result = spawnSync4(run, {
+    encoding: "utf8",
+    timeout: 30000,
+    cwd,
+    shell: true,
+    maxBuffer: SCRIPT_OUTPUT_LIMIT_BYTES
+  });
+  const exitCode = typeof result.status === "number" ? result.status : 1;
+  const output = capStream(result.stdout ?? "");
+  const stderr = capStream(result.stderr ?? "");
+  if (exitCode === 0 && !result.error) {
+    return { name: scriptName, output, stderr, exitCode: 0 };
   }
+  const rawErrorCode = result.error?.code;
+  const spawnError = typeof rawErrorCode === "string" && /^[A-Z0-9_]{1,32}$/.test(rawErrorCode) ? rawErrorCode : result.error ? "SPAWN_ERROR" : undefined;
+  const notes = [stderr.trim(), spawnError ? `spawn error: ${spawnError}` : ""].filter(Boolean).join(`
+`);
+  return {
+    name: scriptName,
+    output,
+    stderr: notes,
+    exitCode,
+    ...result.signal ? { signal: result.signal } : {},
+    ...spawnError ? { spawnError } : {}
+  };
+}
+function findRequiredPreScriptFailure(scripts, results) {
+  for (let i = 0;i < scripts.length; i += 1) {
+    const script = scripts[i];
+    if (script.phase !== "pre" || script.required !== true)
+      continue;
+    const result = results[i];
+    if (result && result.exitCode !== 0) {
+      return {
+        name: result.name,
+        exitCode: result.exitCode,
+        stdout: result.output,
+        stderr: result.stderr,
+        ...result.signal ? { signal: result.signal } : {},
+        ...result.spawnError ? { spawnError: result.spawnError } : {}
+      };
+    }
+  }
+  return null;
+}
+function sanitizeDiagnostic(text, limitBytes) {
+  const clean = text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, "");
+  if (Buffer.byteLength(clean, "utf8") <= limitBytes)
+    return clean;
+  let slice = clean.slice(0, limitBytes);
+  while (Buffer.byteLength(slice, "utf8") > limitBytes)
+    slice = slice.slice(0, -1);
+  return `${slice}
+... (truncated)`;
+}
+function formatRequiredPreScriptFailure(failure) {
+  const context = failure.signal ? ` (signal ${failure.signal})` : failure.spawnError ? ` (${failure.spawnError})` : "";
+  return [
+    `Required pre-script '${failure.name}' failed with exit code ${failure.exitCode}${context}.`,
+    "The run was aborted before the model session started; no model fallback or retry is performed.",
+    `--- stdout (bounded to ${PRE_SCRIPT_DIAGNOSTIC_LIMIT_BYTES} bytes) ---`,
+    sanitizeDiagnostic(failure.stdout, PRE_SCRIPT_DIAGNOSTIC_LIMIT_BYTES),
+    `--- stderr (bounded to ${PRE_SCRIPT_DIAGNOSTIC_LIMIT_BYTES} bytes) ---`,
+    sanitizeDiagnostic(failure.stderr, PRE_SCRIPT_DIAGNOSTIC_LIMIT_BYTES)
+  ].join(`
+`);
 }
 function buildReviewedGitnexusSummary(opts) {
   const jobId = opts.reusedFromJobId?.trim();
@@ -25290,8 +25365,12 @@ ${buildBeadBoundaryInstruction(runCwd, options.worktreeBoundary)}`.trim();
     validateBeforeRun(spec, permissionLevel, resolvedToolContract);
     const runCwd = resolve6(options.workingDirectory ?? process.cwd());
     const preScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "pre") ?? [];
-    const preResults = preScripts.map((s) => runScript(s.run ?? s.path, runCwd)).filter((_, i) => preScripts[i].inject_output);
-    const preScriptOutput = formatScriptOutput(preResults);
+    const preScriptResults = preScripts.map((s) => runScript(s.run ?? s.path, runCwd));
+    const requiredPreFailure = findRequiredPreScriptFailure(preScripts, preScriptResults);
+    if (requiredPreFailure) {
+      throw new RequiredPreScriptError(formatRequiredPreScriptFailure(requiredPreFailure));
+    }
+    const preScriptOutput = formatScriptOutput(preScriptResults.filter((_, i) => preScripts[i].inject_output));
     const payloadComponents = [];
     const beadReader = beadsClient ?? new BeadsClient;
     const bead = options.inputBeadId ? beadReader.readBead(options.inputBeadId) : null;
@@ -25815,7 +25894,7 @@ ${outputContractWarnings.map((msg) => `  \u26A0 ${msg}`).join(`
     return jobId;
   }
 }
-var SHELL_BUILTINS, PERMISSION_GATED_TOOLS, RETRY_BASE_DELAY_MS = 1000, RETRY_MAX_JITTER = 0.2, BASE_OUTPUT_SCHEMA, IMPACT_REPORT_SCHEMA, OUTPUT_TYPE_SCHEMA_EXTENSIONS, OUTPUT_TYPE_GUIDANCE;
+var SCRIPT_OUTPUT_LIMIT_BYTES, RequiredPreScriptError, PRE_SCRIPT_DIAGNOSTIC_LIMIT_BYTES = 4096, SHELL_BUILTINS, PERMISSION_GATED_TOOLS, RETRY_BASE_DELAY_MS = 1000, RETRY_MAX_JITTER = 0.2, BASE_OUTPUT_SCHEMA, IMPACT_REPORT_SCHEMA, OUTPUT_TYPE_SCHEMA_EXTENSIONS, OUTPUT_TYPE_GUIDANCE;
 var init_runner = __esm(() => {
   init_templateEngine();
   init_task_prompt();
@@ -25826,6 +25905,14 @@ var init_runner = __esm(() => {
   init_resolved_tool_contract();
   init_beads();
   init_memory_retrieval();
+  SCRIPT_OUTPUT_LIMIT_BYTES = 1024 * 1024;
+  RequiredPreScriptError = class RequiredPreScriptError extends Error {
+    code = "pre_script_failed";
+    constructor(message) {
+      super(message);
+      this.name = "RequiredPreScriptError";
+    }
+  };
   SHELL_BUILTINS = new Set([
     "if",
     "then",
@@ -33680,11 +33767,29 @@ async function runScriptSpecialist(input2, options) {
     const executableScripts = trust.allowLocalScripts ? localScripts : [];
     const preScripts = executableScripts.filter((script) => script.phase === "pre");
     const postScripts = executableScripts.filter((script) => script.phase === "post");
+    const preScriptResults = preScripts.map((script) => runScript(getLocalScriptCommand(script), baseDir));
+    const requiredPreFailure = findRequiredPreScriptFailure(preScripts, preScriptResults);
+    if (requiredPreFailure) {
+      const modelCandidates2 = collectModelCandidates(input2, spec, options);
+      return {
+        success: false,
+        error: formatRequiredPreScriptFailure(requiredPreFailure),
+        error_type: "pre_script_failed",
+        meta: {
+          specialist: resolvedSpecialist,
+          requested_specialist: input2.requested_specialist ?? input2.specialist,
+          resolved_specialist: resolvedSpecialist,
+          model: modelCandidates2[0],
+          duration_ms: Date.now() - startedAt,
+          trace_id: traceId
+        }
+      };
+    }
     const runPostScripts = () => {
       for (const script of postScripts)
         runScript(getLocalScriptCommand(script), baseDir);
     };
-    const preScriptOutput = formatScriptOutput(preScripts.map((script) => runScript(getLocalScriptCommand(script), baseDir)).filter((_, index) => preScripts[index].inject_output));
+    const preScriptOutput = formatScriptOutput(preScriptResults.filter((_, index) => preScripts[index].inject_output));
     let template;
     try {
       template = resolveRequestedTemplate(input2, spec);

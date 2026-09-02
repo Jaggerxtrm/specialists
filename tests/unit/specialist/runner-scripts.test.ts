@@ -4,15 +4,16 @@ import { SpecialistRunner } from '../../../src/specialist/runner.js';
 import { HookEmitter } from '../../../src/specialist/hooks.js';
 import { CircuitBreaker } from '../../../src/utils/circuitBreaker.js';
 
-// Mock execSync — scripts run locally, not via pi RPC
+// Mock spawnSync — scripts run locally via spawnSync(shell), not via pi RPC.
+// Also serves commandExists (`which`) pre-run validation with status 0.
 vi.mock('node:child_process', () => ({
-  execSync: vi.fn().mockReturnValue('script output\n'),
+  execSync: vi.fn(),
   spawn: vi.fn(),
-  spawnSync: vi.fn().mockReturnValue({ status: 0 }),
+  spawnSync: vi.fn().mockReturnValue({ status: 0, stdout: 'script output\n', stderr: '' }),
 }));
 
-import { execSync } from 'node:child_process';
-const mockExecSync = execSync as unknown as ReturnType<typeof vi.fn>;
+import { spawnSync } from 'node:child_process';
+const mockSpawnSync = spawnSync as unknown as ReturnType<typeof vi.fn>;
 
 function makeMockSession() {
   return {
@@ -27,7 +28,15 @@ function makeMockSession() {
   };
 }
 
-function makeLoader(scripts?: Array<{ path: string; phase: 'pre' | 'post'; inject_output: boolean }>) {
+interface TestScript {
+  path?: string;
+  run?: string;
+  phase: 'pre' | 'post';
+  inject_output: boolean;
+  required?: boolean;
+}
+
+function makeLoader(scripts?: TestScript[]) {
   return {
     get: vi.fn().mockResolvedValue({
       specialist: {
@@ -42,95 +51,167 @@ function makeLoader(scripts?: Array<{ path: string; phase: 'pre' | 'post'; injec
   } as any;
 }
 
-describe('SpecialistRunner — script execution', () => {
-  let mockSession: ReturnType<typeof makeMockSession>;
+function makeRunner(scripts?: TestScript[], session = makeMockSession()) {
+  const sessionFactory = vi.fn().mockResolvedValue(session);
+  const runner = new SpecialistRunner({
+    loader: makeLoader(scripts),
+    hooks: new HookEmitter({ tracePath: '/tmp/test-runner-scripts.jsonl' }),
+    circuitBreaker: new CircuitBreaker(),
+    sessionFactory,
+  });
+  return { runner, sessionFactory, session };
+}
 
+describe('SpecialistRunner — script execution', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSession = makeMockSession();
-    mockExecSync.mockReturnValue('script output\n');
+    mockSpawnSync.mockReturnValue({ status: 0, stdout: 'script output\n', stderr: '' });
   });
 
-  it('runs pre-phase scripts and injects XML-formatted output into prompt', async () => {
-    mockExecSync.mockReturnValue('tree output here\n');
-    const runner = new SpecialistRunner({
-      loader: makeLoader([{ path: 'tree .', phase: 'pre', inject_output: true }]),
-      hooks: new HookEmitter({ tracePath: '/tmp/test-runner-scripts.jsonl' }),
-      circuitBreaker: new CircuitBreaker(),
-      sessionFactory: vi.fn().mockResolvedValue(mockSession),
-    });
+  it('runs pre-phase scripts via shell-equivalent spawnSync', async () => {
+    mockSpawnSync.mockReturnValue({ status: 0, stdout: 'tree output here\n', stderr: '' });
+    const { runner } = makeRunner([{ path: 'tree .', phase: 'pre', inject_output: true }]);
     await runner.run({ name: 'test-spec', prompt: 'analyze' });
 
-    expect(mockExecSync).toHaveBeenCalledWith('tree .', expect.objectContaining({ encoding: 'utf8' }));
+    expect(mockSpawnSync).toHaveBeenCalledWith('tree .', expect.objectContaining({ encoding: 'utf8', shell: true }));
+  });
 
-    const promptArg = mockSession.prompt.mock.calls[0][0] as string;
+  it('injects pre-script stdout into the session prompt', async () => {
+    mockSpawnSync.mockReturnValue({ status: 0, stdout: 'tree output here\n', stderr: '' });
+    const { runner, session } = makeRunner([{ path: 'tree .', phase: 'pre', inject_output: true }]);
+    await runner.run({ name: 'test-spec', prompt: 'analyze' });
+
+    const promptArg = session.prompt.mock.calls[0][0] as string;
     expect(promptArg).toContain('<pre_flight_context>');
     expect(promptArg).toContain('tree output here');
     expect(promptArg).toContain('</pre_flight_context>');
   });
 
-  it('runs post-phase scripts after getting output', async () => {
-    const runner = new SpecialistRunner({
-      loader: makeLoader([{ path: 'echo done', phase: 'post', inject_output: false }]),
-      hooks: new HookEmitter({ tracePath: '/tmp/test-runner-scripts2.jsonl' }),
-      circuitBreaker: new CircuitBreaker(),
-      sessionFactory: vi.fn().mockResolvedValue(mockSession),
-    });
+  it('runs post-phase scripts after the session produced output', async () => {
+    const { runner, session } = makeRunner([{ path: 'echo done', phase: 'post', inject_output: false }]);
     await runner.run({ name: 'test-spec', prompt: 'do thing' });
 
-    // execSync (post script) must be called after getLastOutput
-    const execOrder = mockExecSync.mock.invocationCallOrder[0];
-    const outputOrder = mockSession.getLastOutput.mock.invocationCallOrder[0];
+    const execOrder = mockSpawnSync.mock.invocationCallOrder.at(-1)!;
+    const outputOrder = session.getLastOutput.mock.invocationCallOrder[0];
     expect(outputOrder).toBeLessThan(execOrder);
   });
 
   it('does not inject output when inject_output is false', async () => {
-    const runner = new SpecialistRunner({
-      loader: makeLoader([{ path: 'ls', phase: 'pre', inject_output: false }]),
-      hooks: new HookEmitter({ tracePath: '/tmp/test-runner-scripts3.jsonl' }),
-      circuitBreaker: new CircuitBreaker(),
-      sessionFactory: vi.fn().mockResolvedValue(mockSession),
-    });
+    const { runner, session } = makeRunner([{ path: 'ls', phase: 'pre', inject_output: false }]);
     await runner.run({ name: 'test-spec', prompt: 'x' });
 
     // Script still runs (for side effects)
-    expect(mockExecSync).toHaveBeenCalledWith('ls', expect.anything());
+    expect(mockSpawnSync).toHaveBeenCalledWith('ls', expect.anything());
 
     // But output is not injected into the prompt
-    const promptArg = mockSession.prompt.mock.calls[0][0] as string;
+    const promptArg = session.prompt.mock.calls[0][0] as string;
     expect(promptArg).not.toContain('<pre_flight_context>');
     expect(promptArg).not.toContain('script output');
   });
 
   it('works without any scripts defined', async () => {
-    const runner = new SpecialistRunner({
-      loader: makeLoader(undefined),
-      hooks: new HookEmitter({ tracePath: '/tmp/test-runner-scripts4.jsonl' }),
-      circuitBreaker: new CircuitBreaker(),
-      sessionFactory: vi.fn().mockResolvedValue(mockSession),
-    });
+    const { runner, session } = makeRunner(undefined);
     const result = await runner.run({ name: 'test-spec', prompt: 'no scripts' });
 
-    expect(mockExecSync).not.toHaveBeenCalled();
+    expect(mockSpawnSync).not.toHaveBeenCalledWith('tree .', expect.anything());
     expect(result.output).toBe('final output');
+    expect(session.start).toHaveBeenCalled();
   });
 
-  it('includes exit_code attribute when script fails', async () => {
-    const err: any = new Error('command failed');
-    err.stdout = 'partial output\n';
-    err.status = 1;
-    mockExecSync.mockImplementationOnce(() => { throw err; });
-
-    const runner = new SpecialistRunner({
-      loader: makeLoader([{ path: 'failing-check.sh', phase: 'pre', inject_output: true }]),
-      hooks: new HookEmitter({ tracePath: '/tmp/test-runner-scripts5.jsonl' }),
-      circuitBreaker: new CircuitBreaker(),
-      sessionFactory: vi.fn().mockResolvedValue(mockSession),
-    });
+  it('includes exit_code attribute when optional script fails (existing injection preserved)', async () => {
+    mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: '', stderr: '' }); // which probe
+    mockSpawnSync.mockReturnValueOnce({ status: 1, stdout: 'partial output\n', stderr: '' });
+    const { runner, session } = makeRunner([{ path: 'failing-check.sh', phase: 'pre', inject_output: true }]);
     await runner.run({ name: 'test-spec', prompt: 'run' });
 
-    const promptArg = mockSession.prompt.mock.calls[0][0] as string;
+    const promptArg = session.prompt.mock.calls[0][0] as string;
     expect(promptArg).toContain('exit_code="1"');
     expect(promptArg).toContain('partial output');
+  });
+
+  it('aborts before session factory when a required pre script exits nonzero (stderr-only)', async () => {
+    mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: '', stderr: '' }); // which probe
+    mockSpawnSync.mockReturnValueOnce({ status: 1, stdout: '', stderr: 'drift machinery missing\n' }); // pre script
+    const { runner, sessionFactory, session } = makeRunner([
+      { path: 'preflight.sh', phase: 'pre', inject_output: true, required: true },
+    ]);
+
+    await expect(runner.run({ name: 'test-spec', prompt: 'run' })).rejects.toThrow(/pre-script/i);
+
+    expect(sessionFactory).not.toHaveBeenCalled();
+    expect(session.start).not.toHaveBeenCalled();
+    expect(session.prompt).not.toHaveBeenCalled();
+  });
+
+  it('required failure diagnostics retain bounded stdout and stderr with exact exit code', async () => {
+    mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: '', stderr: '' }); // which probe
+    mockSpawnSync.mockReturnValueOnce({
+      status: 3,
+      stdout: `${'o'.repeat(50_000)}`,
+      stderr: 'scope.py missing machinery\u009b31m\n',
+    });
+    const { runner } = makeRunner([
+      { path: 'preflight.sh', phase: 'pre', inject_output: true, required: true },
+    ]);
+
+    const error = await runner.run({ name: 'test-spec', prompt: 'run' }).then(
+      () => { throw new Error('expected rejection'); },
+      (err: Error) => err,
+    );
+
+    const message = error.message;
+    expect(message).toContain('preflight.sh');
+    expect(message).toContain('exit code 3');
+    expect(message).toContain('scope.py missing machinery31m');
+    expect(message).not.toContain('\u009b');
+    expect(message).toContain('truncated');
+    // Bounded: 4KB per stream + wrapper, even with a 50KB stdout.
+    expect(message.length).toBeLessThan(10_000);
+  });
+
+  it('aborts on required timeout and represents the signal', async () => {
+    mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: '', stderr: '' }); // which probe
+    mockSpawnSync.mockReturnValueOnce({ status: null, signal: 'SIGTERM', stdout: '', stderr: '' });
+    const { runner, sessionFactory } = makeRunner([
+      { path: 'slow-preflight.sh', phase: 'pre', inject_output: false, required: true },
+    ]);
+
+    await expect(runner.run({ name: 'test-spec', prompt: 'run' })).rejects.toThrow(/SIGTERM/);
+    expect(sessionFactory).not.toHaveBeenCalled();
+  });
+
+  it('optional nonzero scripts keep the session running (no gating)', async () => {
+    mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: '', stderr: '' }); // which probe
+    mockSpawnSync.mockReturnValueOnce({ status: 1, stdout: 'warn text\n', stderr: 'warn-stderr\n' });
+    const { runner, sessionFactory } = makeRunner([
+      { path: 'warn-check.sh', phase: 'pre', inject_output: true },
+    ]);
+
+    await expect(runner.run({ name: 'test-spec', prompt: 'run' })).resolves.toBeDefined();
+    expect(sessionFactory).toHaveBeenCalled();
+  });
+
+  it('post-phase script failure does not abort the run', async () => {
+    mockSpawnSync.mockReturnValueOnce({ status: 0, stdout: '', stderr: '' }); // which probe
+    mockSpawnSync.mockReturnValueOnce({ status: 1, stdout: '', stderr: 'post failure\n' });
+    const { runner, session } = makeRunner([{ path: 'post-fail.sh', phase: 'post', inject_output: false }]);
+
+    await expect(runner.run({ name: 'test-spec', prompt: 'run' })).resolves.toBeDefined();
+    expect(session.prompt).toHaveBeenCalled();
+  });
+
+  it('mixed scripts: optional failure does not gate, later required success continues', async () => {
+    mockSpawnSync
+      .mockReturnValueOnce({ status: 0, stdout: '', stderr: '' }) // which: optional.sh
+      .mockReturnValueOnce({ status: 0, stdout: '', stderr: '' }) // which: required.sh
+      .mockReturnValueOnce({ status: 1, stdout: '', stderr: 'optional noise\n' }) // pre: optional.sh
+      .mockReturnValueOnce({ status: 0, stdout: 'ok data\n', stderr: '' }); // pre: required.sh
+    const { runner, sessionFactory } = makeRunner([
+      { path: 'optional.sh', phase: 'pre', inject_output: true },
+      { path: 'required.sh', phase: 'pre', inject_output: true, required: true },
+    ]);
+
+    await expect(runner.run({ name: 'test-spec', prompt: 'run' })).resolves.toBeDefined();
+    expect(sessionFactory).toHaveBeenCalled();
   });
 });

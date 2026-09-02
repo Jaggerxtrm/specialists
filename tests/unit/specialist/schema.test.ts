@@ -357,3 +357,25 @@ describe('parseSpecialist', () => {
     });
   });
 });
+
+describe('skills.scripts required field (unitAI-x64ys)', () => {
+  it('parses required: true on a pre script', async () => {
+    const spec = createValidSpec();
+    spec.specialist.skills = { scripts: [{ run: './scripts/pre.sh', phase: 'pre', inject_output: true, required: true }] };
+    const result = await parseSpecialist(toJson(spec));
+    expect(result.specialist.skills?.scripts?.[0]).toMatchObject({ required: true, phase: 'pre' });
+  });
+
+  it('keeps scripts without required parse-compatible (defaulted false at use sites)', async () => {
+    const spec = createValidSpec();
+    spec.specialist.skills = { scripts: [{ run: './scripts/pre.sh', phase: 'pre', inject_output: true }] };
+    const result = await parseSpecialist(toJson(spec));
+    expect(result.specialist.skills?.scripts?.[0]?.required).toBeUndefined();
+  });
+
+  it('rejects non-boolean required with a clear field path', async () => {
+    const spec = createValidSpec() as any;
+    spec.specialist.skills = { scripts: [{ run: 'a', phase: 'pre', inject_output: false, required: 'yes' }] };
+    await expect(parseSpecialist(toJson(spec))).rejects.toThrow(/scripts\.\[0\]\.required/);
+  });
+});

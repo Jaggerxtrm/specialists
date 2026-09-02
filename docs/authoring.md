@@ -275,7 +275,8 @@ Use `execution.extensions` only for trusted executable extension config.
       {
         "run": "./scripts/pre-check.sh",
         "phase": "pre",
-        "inject_output": true
+        "inject_output": true,
+        "required": true
       },
       {
         "run": "bd ready",
@@ -303,13 +304,14 @@ Use `execution.extensions` only for trusted executable extension config.
   - a shell command (`bd ready`, `git status`).
 - `phase` can be `"pre"` or `"post"`.
 - `inject_output: true` makes script stdout available as `$pre_script_output`.
+- `required: true` on a `pre` script makes a nonzero exit abort the run before the model session starts (no fallback/retry). Default `false`: failure is injected/ignored as before.
 
 ### Pre/post script execution details
 - Scripts run **locally**, outside the specialist model session.
 - `pre` scripts run before session start.
 - `post` scripts run after completion.
 - Timeout is 30 seconds per script.
-- Exit code is captured, but script failure does **not** abort the run.
+- Exit code is captured, but script failure does **not** abort the run unless the script is `pre` with `required: true`.
 - Pre-run validation checks:
   - file paths exist,
   - command binaries exist on `PATH`,

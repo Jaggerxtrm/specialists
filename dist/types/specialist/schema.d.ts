@@ -171,14 +171,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -188,14 +194,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -205,14 +217,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
         capabilities: z.ZodOptional<z.ZodObject<{
@@ -513,14 +531,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -530,14 +554,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -547,14 +577,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
         capabilities: z.ZodOptional<z.ZodObject<{
@@ -855,14 +891,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -872,14 +914,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -889,14 +937,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
         capabilities: z.ZodOptional<z.ZodObject<{
@@ -1199,14 +1253,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -1216,14 +1276,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -1233,14 +1299,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
         capabilities: z.ZodOptional<z.ZodObject<{
@@ -1541,14 +1613,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -1558,14 +1636,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -1575,14 +1659,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
         capabilities: z.ZodOptional<z.ZodObject<{
@@ -1883,14 +1973,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -1900,14 +1996,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -1917,14 +2019,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
         capabilities: z.ZodOptional<z.ZodObject<{
@@ -2227,14 +2335,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -2244,14 +2358,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -2261,14 +2381,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
         capabilities: z.ZodOptional<z.ZodObject<{
@@ -2569,14 +2695,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -2586,14 +2718,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -2603,14 +2741,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
         capabilities: z.ZodOptional<z.ZodObject<{
@@ -2911,14 +3055,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -2928,14 +3078,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -2945,14 +3101,20 @@ export declare const SpecialistSchema: z.ZodObject<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
                 run: z.ZodString;
                 phase: z.ZodEnum<["pre", "post"]>;
                 inject_output: z.ZodDefault<z.ZodBoolean>;
+                /** `pre` only: nonzero exit aborts the run before the model session starts. Default false. */
+                required: z.ZodOptional<z.ZodBoolean>;
             }, z.ZodTypeAny, "passthrough">>, "many">>;
         }, z.ZodTypeAny, "passthrough">>>;
         capabilities: z.ZodOptional<z.ZodObject<{
@@ -3093,6 +3255,7 @@ export type ScriptEntry = {
     run: string;
     phase: 'pre' | 'post';
     inject_output: boolean;
+    required?: boolean;
 };
 /** Flat execution sub-fields an override layer may set. */
 export declare const OVERRIDE_ALLOWED_EXECUTION_FIELDS: readonly ["model", "fallback_model", "fallback_models", "timeout_ms", "stall_timeout_ms", "interactive", "thinking_level", "max_retries", "prompt_limit_bytes", "stdout_limit_bytes"];
