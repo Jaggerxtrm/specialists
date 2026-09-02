@@ -165,6 +165,7 @@ export function runScript(command: string | undefined, cwd: string): ScriptResul
   const scriptName = sanitizeScriptName(basename(run.split(' ')[0]));
   // shell: true keeps the previous execSync /bin/sh -c semantics: `run` is a
   // shell command string, never re-tokenized (unitAI-x64ys).
+  // nosemgrep: javascript.lang.security.audit.spawn-shell-true.spawn-shell-true -- trusted opt-in script definitions require shell grammar.
   const result = spawnSync(run, {
     encoding: 'utf8',
     timeout: 30_000,
