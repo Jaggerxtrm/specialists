@@ -55,6 +55,7 @@ export interface SkillSource {
     path: string;
     sha256: string;
     source: 'skills.paths' | 'prompt.skill_inherit';
+    attestation: 'observation_time_only';
 }
 export interface ScriptRunnerOptions {
     loader: SpecialistLoader;

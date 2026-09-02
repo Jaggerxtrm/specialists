@@ -974,8 +974,10 @@ describe('runScriptSpecialist skill forwarding', () => {
     const skillDir = mkdtempSync(join(tmpdir(), 'sp-skill-forwarding-'));
     const skillOne = join(skillDir, 'one-SKILL.md');
     const skillTwo = join(skillDir, 'two-SKILL.md');
+    const inherited = join(skillDir, 'inherited-SKILL.md');
     writeFileSync(skillOne, '# skill one');
     writeFileSync(skillTwo, '# skill two');
+    writeFileSync(inherited, '# inherited skill');
 
     const specWithSkills = {
       ...baseSpec,
@@ -983,7 +985,7 @@ describe('runScriptSpecialist skill forwarding', () => {
         ...baseSpec.specialist,
         prompt: {
           ...baseSpec.specialist.prompt,
-          skill_inherit: '/skills/inherited/SKILL.md',
+          skill_inherit: inherited,
         },
         skills: { paths: [skillOne, skillTwo], scripts: [] },
       },
@@ -1007,8 +1009,9 @@ describe('runScriptSpecialist skill forwarding', () => {
       .map(({ next }) => next);
 
     expect(spawnArgs).toContain('--no-skills');
-    expect(forwardedSkills).toEqual([skillOne, skillTwo, '/skills/inherited/SKILL.md']);
+    expect(forwardedSkills).toEqual([skillOne, skillTwo, inherited]);
     expect(spawnArgs.filter((arg) => arg === '--skill')).toHaveLength(3);
+    rmSync(skillDir, { recursive: true, force: true });
   });
 });
 

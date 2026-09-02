@@ -6946,7 +6946,17 @@ var require_public_api = __commonJS((exports) => {
 // src/specialist/script-runner.ts
 import { spawn as spawn2 } from "node:child_process";
 import { createHash as createHash3, randomUUID } from "node:crypto";
-import { existsSync as existsSync9, readFileSync as readFileSync6 } from "node:fs";
+import {
+  accessSync,
+  closeSync,
+  constants,
+  existsSync as existsSync9,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readFileSync as readFileSync6,
+  realpathSync
+} from "node:fs";
 import { homedir as homedir3 } from "node:os";
 import { isAbsolute as isAbsolute2, join as join6, relative, resolve as resolve6 } from "node:path";
 
@@ -16288,18 +16298,51 @@ function normalizePath(path, baseDir) {
     return path;
   return resolve6(baseDir ?? process.cwd(), path);
 }
-function isPathWithinRoot(candidatePath, rootPath) {
-  const candidate = resolve6(candidatePath);
-  const root = resolve6(rootPath);
+function isPathWithinRoot(candidate, root) {
   const rel = relative(root, candidate);
   return rel === "" || rel.length > 0 && !rel.startsWith("..") && !isAbsolute2(rel);
 }
-function assertSkillPathWithinRoots(field, path, roots, baseDir) {
-  const candidate = normalizePath(path, baseDir);
-  const allowed = roots.some((root) => isPathWithinRoot(candidate, root));
-  if (!allowed) {
-    throw new CompatGuardError(field, `skill path '${path}' not under any --allow-skills-roots entry`);
+function canonicalizeSkillRoot(root, baseDir) {
+  try {
+    const normalized = normalizePath(root, baseDir);
+    lstatSync(normalized);
+    const canonical = realpathSync(normalized);
+    const stat = lstatSync(canonical);
+    if (!stat.isDirectory())
+      throw new Error("not a directory");
+    accessSync(canonical, constants.R_OK | constants.X_OK);
+    return canonical;
+  } catch {
+    throw new CompatGuardError("skills.paths", "--allow-skills-roots entry is not usable; rejected");
   }
+}
+function canonicalizeSkillPath(field, path, baseDir) {
+  try {
+    const normalized = normalizePath(path, baseDir);
+    lstatSync(normalized);
+    const canonical = realpathSync(normalized);
+    const stat = lstatSync(canonical);
+    if (!stat.isFile() && !stat.isDirectory())
+      throw new Error("not a file or directory");
+    accessSync(canonical, stat.isDirectory() ? constants.R_OK | constants.X_OK : constants.R_OK);
+    if (stat.isDirectory()) {
+      const skillFile = join6(canonical, "SKILL.md");
+      const skillStat = lstatSync(skillFile);
+      if (skillStat.isSymbolicLink() || !skillStat.isFile())
+        throw new Error("invalid SKILL.md");
+      accessSync(skillFile, constants.R_OK);
+    }
+    return canonical;
+  } catch {
+    throw new CompatGuardError(field, "skill path is not usable; rejected");
+  }
+}
+function assertSkillPathWithinRoots(field, path, canonicalRoots, baseDir) {
+  const candidate = canonicalizeSkillPath(field, path, baseDir);
+  if (!canonicalRoots.some((root) => isPathWithinRoot(candidate, root))) {
+    throw new CompatGuardError(field, "skill path is not under any --allow-skills-roots entry");
+  }
+  return candidate;
 }
 function hasUnsubstitutedVariables(template, variables) {
   const matches = template.match(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g) ?? [];
@@ -16331,12 +16374,14 @@ function compatGuard(spec, trust) {
   if (hasSkillInherit && !trust?.allowSkills) {
     throw new CompatGuardError("prompt.skill_inherit", "skills not allowed (enable with --allow-skills)");
   }
-  if (trust?.allowSkills && trust.allowSkillsRoots && trust.allowSkillsRoots.length > 0) {
+  if (trust?.allowSkills) {
+    const canonicalRoots = (trust.allowSkillsRoots ?? []).map((root) => canonicalizeSkillRoot(root, trust.baseDir));
     const paths = spec.specialist.skills?.paths ?? [];
-    for (const path of paths)
-      assertSkillPathWithinRoots("skills.paths", path, trust.allowSkillsRoots, trust.baseDir);
+    const canonicalPaths = paths.map((path) => canonicalRoots.length > 0 ? assertSkillPathWithinRoots("skills.paths", path, canonicalRoots, trust.baseDir) : canonicalizeSkillPath("skills.paths", path, trust.baseDir));
+    if (spec.specialist.skills?.paths)
+      spec.specialist.skills.paths = canonicalPaths;
     if (typeof spec.specialist.prompt.skill_inherit === "string") {
-      assertSkillPathWithinRoots("prompt.skill_inherit", spec.specialist.prompt.skill_inherit, trust.allowSkillsRoots, trust.baseDir);
+      spec.specialist.prompt.skill_inherit = canonicalRoots.length > 0 ? assertSkillPathWithinRoots("prompt.skill_inherit", spec.specialist.prompt.skill_inherit, canonicalRoots, trust.baseDir) : canonicalizeSkillPath("prompt.skill_inherit", spec.specialist.prompt.skill_inherit, trust.baseDir);
     }
   }
 }
@@ -16349,16 +16394,45 @@ function collectSkillPathEntries(spec, baseDir) {
 function collectSkillPaths(spec, baseDir) {
   return collectSkillPathEntries(spec, baseDir).map((entry) => entry.path);
 }
+function requireNoFollowFlag() {
+  if (typeof constants.O_NOFOLLOW !== "number") {
+    throw new CompatGuardError("skills.paths", "secure no-follow skill source opening is unavailable; rejected");
+  }
+  return constants.O_NOFOLLOW;
+}
+function readSkillSourceBytes(path, noFollowFlag) {
+  if (realpathSync(path) !== path)
+    throw new Error("skill source canonical path changed");
+  const declaredStat = lstatSync(path);
+  if (declaredStat.isSymbolicLink())
+    throw new Error("symlinked skill source");
+  const sourcePath = declaredStat.isDirectory() ? join6(path, "SKILL.md") : path;
+  if (realpathSync(sourcePath) !== sourcePath)
+    throw new Error("skill file canonical path changed");
+  const sourceStat = lstatSync(sourcePath);
+  if (sourceStat.isSymbolicLink() || !sourceStat.isFile())
+    throw new Error("skill source is not a regular file");
+  accessSync(sourcePath, constants.R_OK);
+  const fd = openSync(sourcePath, constants.O_RDONLY | noFollowFlag);
+  try {
+    if (!fstatSync(fd).isFile())
+      throw new Error("skill source is not a regular file");
+    return readFileSync6(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
 function computeSkillSources(spec, baseDir) {
   const entries = collectSkillPathEntries(spec, baseDir);
+  const noFollowFlag = entries.length > 0 ? requireNoFollowFlag() : 0;
   const sources = [];
   for (const { path, source } of entries) {
     try {
-      const content = readFileSync6(path);
+      const content = readSkillSourceBytes(path, noFollowFlag);
       const sha256 = createHash3("sha256").update(content).digest("hex");
-      sources.push({ path, sha256, source });
+      sources.push({ path, sha256, source, attestation: "observation_time_only" });
     } catch {
-      sources.push({ path, sha256: "unreadable", source });
+      sources.push({ path, sha256: "unreadable", source, attestation: "observation_time_only" });
     }
   }
   return sources;
@@ -16713,7 +16787,6 @@ async function runScriptSpecialist(input, options) {
     const trust = { ...options.trust, baseDir };
     compatGuard(spec, trust);
     const skillPaths = trust.allowSkills ? collectSkillPaths(spec, baseDir) : [];
-    const skillSources = trust.allowSkills ? computeSkillSources(spec, baseDir) : undefined;
     const permissionLevel = spec.specialist.execution.permission_required;
     const specialistName = spec.specialist.metadata?.name ?? resolvedSpecialist;
     const specialistPermissions = spec.specialist.permissions;
@@ -16811,6 +16884,11 @@ ${mandatoryRulesBlock}`;
     const assistantTextLimitBytes = resolveAssistantTextLimitBytes(spec);
     const expectedKeys = collectRequiredOutputKeys(spec);
     const shouldParseJson = spec.specialist.execution.response_format === "json" || expectedKeys.length > 0;
+    const skillSources = trust.allowSkills ? computeSkillSources(spec, baseDir) : undefined;
+    const unreadableSkillSource = skillSources?.find((source) => source.sha256 === "unreadable");
+    if (unreadableSkillSource) {
+      throw new CompatGuardError(unreadableSkillSource.source, "skill source is unreadable after trusted pre-scripts; rejected");
+    }
     const observability = input.trace !== false ? openObservabilityClient(options) : null;
     const scriptRunStartedAt = Date.now();
     if (observability) {
@@ -17297,7 +17375,7 @@ function isAuthFailureMessage(message) {
 }
 // src/specialist/loader.ts
 import { readdir, readFile, stat } from "node:fs/promises";
-import { basename as basename2, join as join9 } from "node:path";
+import { basename as basename2, join as join10 } from "node:path";
 import { existsSync as existsSync12 } from "node:fs";
 
 // ../../../node_modules/yaml/dist/index.js
@@ -17830,6 +17908,192 @@ function formatReferenceLocation(specialist, fieldPath) {
   return specialist ? `${specialist}.${fieldPath}` : fieldPath;
 }
 
+// src/specialist/project-pack-skill-resolver.ts
+import { accessSync as accessSync2, constants as constants2, readdirSync, lstatSync as lstatSync2, realpathSync as realpathSync2 } from "node:fs";
+import { homedir as homedir5 } from "node:os";
+import { join as join9, relative as relative2, isAbsolute as isAbsolute3 } from "node:path";
+var RESERVED_SKILL_ROOTS = [
+  "default",
+  "optional",
+  "user",
+  "active",
+  "local-legacy"
+];
+
+class ProjectPackSkillAmbiguityError extends Error {
+  skillName;
+  consumerRoot;
+  matches;
+  constructor(skillName, consumerRoot, matches, displayLines) {
+    super(`skills.paths: logical skill '${escapeDiagnostic(skillName)}' is ambiguous — matches more than one project pack:
+` + `${displayLines.map((line) => `    ${escapeDiagnostic(line)}`).join(`
+`)}
+` + `Disambiguate with an explicit path: .xtrm/skills/<pack>/<skill> (consumer-relative), an absolute path, or a ~/ path.`);
+    this.skillName = skillName;
+    this.consumerRoot = consumerRoot;
+    this.matches = matches;
+    this.name = "ProjectPackSkillAmbiguityError";
+  }
+}
+
+class ProjectPackSkillSecurityError extends Error {
+  skillName;
+  repoRelativePath;
+  constructor(skillName, repoRelativePath, detail) {
+    super(`skills.paths: logical skill '${escapeDiagnostic(skillName)}' — '${escapeDiagnostic(repoRelativePath)}' ${detail}`);
+    this.skillName = skillName;
+    this.repoRelativePath = repoRelativePath;
+    this.name = "ProjectPackSkillSecurityError";
+  }
+}
+function escapeDiagnostic(value) {
+  return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, (char) => {
+    const codeHex = (char.codePointAt(0) ?? 0).toString(16).padStart(4, "0");
+    return `\\u${codeHex}`;
+  });
+}
+function wrapFsError(skillName, repoRelativePath, operation, error) {
+  const code = escapeDiagnostic(error?.code ?? "UNKNOWN");
+  const wrapped = new ProjectPackSkillSecurityError(skillName, repoRelativePath, `is not usable (${code}) while ${operation}; rejected`);
+  Object.assign(wrapped, { cause: error });
+  return wrapped;
+}
+function isBareLogicalSkillName(declared) {
+  if (declared.length === 0)
+    return false;
+  if (declared === "." || declared === "..")
+    return false;
+  if (declared.startsWith("~"))
+    return false;
+  return !declared.includes("/") && !declared.includes("\\");
+}
+function resolveSkillPath(declared, ctx) {
+  if (declared.startsWith("~/"))
+    return join9(process.env.HOME || "", declared.slice(2));
+  if (declared.startsWith("./"))
+    return join9(ctx.fileDir, declared.slice(2));
+  if (isBareLogicalSkillName(declared))
+    return resolveBareLogicalSkill(declared, ctx.consumerRoot);
+  return declared;
+}
+function isPathInside(candidate, root) {
+  const rel = relative2(root, candidate);
+  return rel === "" || rel.length > 0 && !rel.startsWith("..") && !isAbsolute3(rel);
+}
+function globalDefaultCandidate(skillName) {
+  return join9(homedir5(), ".xtrm", "skills", "default", skillName);
+}
+function probeCandidate(skillName, canonicalConsumer, canonicalSkillsRoot, candidate) {
+  const candidateRel = relative2(canonicalConsumer, candidate);
+  let dirStat;
+  try {
+    dirStat = lstatSync2(candidate);
+  } catch (error) {
+    if (error?.code === "ENOENT")
+      return null;
+    throw wrapFsError(skillName, candidateRel, "probing the skill directory", error);
+  }
+  if (dirStat.isSymbolicLink()) {
+    throw new ProjectPackSkillSecurityError(skillName, candidateRel, "is a symlink; symlinked skill directories are rejected");
+  }
+  if (!dirStat.isDirectory()) {
+    throw new ProjectPackSkillSecurityError(skillName, candidateRel, "is not a directory (ENOTDIR); expected a skill directory");
+  }
+  const skillFile = join9(candidate, "SKILL.md");
+  const skillFileRel = relative2(canonicalConsumer, skillFile);
+  let mdStat;
+  try {
+    mdStat = lstatSync2(skillFile);
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      throw new ProjectPackSkillSecurityError(skillName, skillFileRel, "is missing SKILL.md (ENOENT); a discovered skill directory must contain a regular SKILL.md file");
+    }
+    throw wrapFsError(skillName, skillFileRel, "probing the skill file", error);
+  }
+  if (mdStat.isSymbolicLink()) {
+    throw new ProjectPackSkillSecurityError(skillName, skillFileRel, "is a symlink; symlinked SKILL.md files are rejected");
+  }
+  if (!mdStat.isFile()) {
+    throw new ProjectPackSkillSecurityError(skillName, skillFileRel, "exists but is not a regular file; expected SKILL.md as a file");
+  }
+  try {
+    accessSync2(skillFile, constants2.R_OK);
+  } catch (error) {
+    throw wrapFsError(skillName, skillFileRel, "checking skill file readability", error);
+  }
+  let canonicalCandidate;
+  let canonicalSkillFile;
+  try {
+    canonicalCandidate = realpathSync2(candidate);
+    canonicalSkillFile = realpathSync2(skillFile);
+  } catch (error) {
+    throw wrapFsError(skillName, candidateRel, "canonicalizing the skill path", error);
+  }
+  if (!isPathInside(canonicalCandidate, canonicalSkillsRoot) || !isPathInside(canonicalSkillFile, canonicalSkillsRoot)) {
+    throw new ProjectPackSkillSecurityError(skillName, candidateRel, "resolves outside the consumer skills root; rejected");
+  }
+  return canonicalCandidate;
+}
+function resolveBareLogicalSkill(skillName, consumerRoot) {
+  let canonicalConsumer;
+  try {
+    canonicalConsumer = realpathSync2(consumerRoot);
+  } catch (error) {
+    if (error?.code === "ENOENT")
+      return globalDefaultCandidate(skillName);
+    throw wrapFsError(skillName, ".", "resolving the consumer root", error);
+  }
+  const skillsRoot = join9(canonicalConsumer, ".xtrm", "skills");
+  let canonicalSkillsRoot;
+  try {
+    canonicalSkillsRoot = realpathSync2(skillsRoot);
+  } catch (error) {
+    if (error?.code === "ENOENT")
+      return globalDefaultCandidate(skillName);
+    throw wrapFsError(skillName, ".xtrm/skills", "resolving the skills root", error);
+  }
+  if (!isPathInside(canonicalSkillsRoot, canonicalConsumer)) {
+    throw new ProjectPackSkillSecurityError(skillName, ".xtrm/skills", "resolves outside the consumer root; rejected");
+  }
+  let packs = [];
+  let entries;
+  try {
+    entries = readdirSync(canonicalSkillsRoot, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === "ENOENT")
+      return globalDefaultCandidate(skillName);
+    throw wrapFsError(skillName, ".xtrm/skills", "listing the skills root", error);
+  }
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) {
+      if (!RESERVED_SKILL_ROOTS.includes(entry.name)) {
+        throw new ProjectPackSkillSecurityError(skillName, join9(".xtrm", "skills", entry.name), "is a symlink; symlinked pack directories are rejected");
+      }
+      continue;
+    }
+    if (!entry.isDirectory())
+      continue;
+    if (RESERVED_SKILL_ROOTS.includes(entry.name))
+      continue;
+    packs.push(entry.name);
+  }
+  packs.sort();
+  const matches = [];
+  for (const pack of packs) {
+    const candidate = join9(canonicalSkillsRoot, pack, skillName);
+    const resolved = probeCandidate(skillName, canonicalConsumer, canonicalSkillsRoot, candidate);
+    if (resolved)
+      matches.push(resolved);
+  }
+  matches.sort();
+  if (matches.length > 1) {
+    throw new ProjectPackSkillAmbiguityError(skillName, consumerRoot, matches, matches.map((m) => relative2(canonicalConsumer, m)));
+  }
+  if (matches.length === 1)
+    return matches[0];
+  return globalDefaultCandidate(skillName);
+}
+
 // src/specialist/loader.ts
 class SpecialistMissingModelError extends Error {
   specialistName;
@@ -17848,9 +18112,9 @@ class SpecialistLoader {
   }
   getScanDirs() {
     const dirs = [
-      { path: join9(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
-      { path: join9(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
-      { path: join9(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
+      { path: join10(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
+      { path: join10(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
+      { path: join10(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
       { path: resolveCanonicalAssetDir("specialists") ?? "", scope: "package", source: "package-live" }
     ];
     return dirs.filter((d) => d.path && existsSync12(d.path));
@@ -17861,11 +18125,11 @@ class SpecialistLoader {
     return JSON.stringify($parse(content));
   }
   resolveSpecialistPath(dirPath, specialistName) {
-    const jsonPath = join9(dirPath, `${specialistName}.specialist.json`);
+    const jsonPath = join10(dirPath, `${specialistName}.specialist.json`);
     if (existsSync12(jsonPath)) {
       return { filePath: jsonPath, deprecatedYaml: false };
     }
-    const yamlPath = join9(dirPath, `${specialistName}.specialist.yaml`);
+    const yamlPath = join10(dirPath, `${specialistName}.specialist.yaml`);
     if (existsSync12(yamlPath)) {
       return { filePath: yamlPath, deprecatedYaml: true };
     }
@@ -18033,7 +18297,7 @@ class SpecialistLoader {
       warnings.push(...this.applyOverrideFields(name, base, overrideRaw, "user"));
     }
     const top = hits[hits.length - 1];
-    resolveSkillsPaths(base, baseHit.dir.path);
+    resolveSkillsPaths(base, baseHit.dir.path, this.projectDir);
     return {
       spec: base,
       topLayer: {
@@ -18221,17 +18485,11 @@ function emitPresetResolved(specialist, field, presetName, resolvedValue, depth)
   })}
 `);
 }
-function resolveSkillsPaths(spec, fileDir) {
+function resolveSkillsPaths(spec, fileDir, consumerRoot) {
   const rawPaths = spec.specialist.skills?.paths;
   if (!rawPaths?.length)
     return;
-  const resolved = rawPaths.map((p) => {
-    if (p.startsWith("~/"))
-      return join9(process.env.HOME || "", p.slice(2));
-    if (p.startsWith("./"))
-      return join9(fileDir, p.slice(2));
-    return p;
-  });
+  const resolved = rawPaths.map((p) => resolveSkillPath(p, { consumerRoot, fileDir }));
   spec.specialist.skills.paths = resolved;
 }
 // src/specialist/launch-outcome.ts
@@ -18481,7 +18739,7 @@ function projectLaunchOutcome(outcome) {
 }
 // src/specialist/citation-evidence.ts
 import { realpath, readFile as readFile2 } from "node:fs/promises";
-import { isAbsolute as isAbsolute3, relative as relative2, resolve as resolve7 } from "node:path";
+import { isAbsolute as isAbsolute4, relative as relative3, resolve as resolve7 } from "node:path";
 function positiveInteger(value, fallback, name) {
   const resolved = value ?? fallback;
   if (!Number.isInteger(resolved) || resolved < 1) {
@@ -18493,7 +18751,7 @@ async function safeCitationPath(path, trustedRoot = process.cwd()) {
   if (/[\u0000-\u001f\u007f]/u.test(path)) {
     throw new TypeError("path must not contain control characters");
   }
-  if (isAbsolute3(path)) {
+  if (isAbsolute4(path)) {
     throw new TypeError("path must be relative to trusted root");
   }
   if (path.split(/[\\/]/u).includes("..")) {
@@ -18501,8 +18759,8 @@ async function safeCitationPath(path, trustedRoot = process.cwd()) {
   }
   const canonicalRoot = await realpath(trustedRoot);
   const canonicalPath = await realpath(resolve7(canonicalRoot, path));
-  const pathFromRoot = relative2(canonicalRoot, canonicalPath);
-  if (pathFromRoot === ".." || pathFromRoot.startsWith(`..${resolve7("/").slice(0, 1)}`) || isAbsolute3(pathFromRoot)) {
+  const pathFromRoot = relative3(canonicalRoot, canonicalPath);
+  if (pathFromRoot === ".." || pathFromRoot.startsWith(`..${resolve7("/").slice(0, 1)}`) || isAbsolute4(pathFromRoot)) {
     throw new TypeError("path must remain within trusted root");
   }
   return canonicalPath;
