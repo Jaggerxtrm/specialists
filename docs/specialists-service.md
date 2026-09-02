@@ -178,8 +178,10 @@ Flags:
 
 Audit behavior:
 
-- when `--allow-skills` on, each resolved skill source gets `{ path, sha256 }` in status audit data
-- unreadable file records `sha256: "unreadable"`
+- when `--allow-skills` is on, each resolved skill source gets `{ path, sha256, source, attestation: "observation_time_only" }` in status audit data
+- the hash is computed after trusted pre-scripts, immediately before Pi launch
+- Pi reopens the mutable path, so the hash is observation-time audit evidence, not proof of bytes consumed
+- an unreadable final observation fails closed before Pi starts; no host path is included in the failure
 - compat guard still blocks interactive, worktree, and all `skills.scripts` cases
 
 ### Hot reload

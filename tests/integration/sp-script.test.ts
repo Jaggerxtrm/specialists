@@ -1,14 +1,16 @@
 // ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { countArg, getExtensionArgs, readLoggedPiArgv, writeFakePiBinary } from './helpers/fake-pi';
 
 const ORIGINAL_CWD = process.cwd();
 const REPO_ROOT = resolve(import.meta.dirname, '../..');
 let tempRoot = '';
+let externalRoot = '';
 let firstRun: ChildProcess | undefined;
 
 function waitForExit(child: ChildProcess): Promise<{ code: number | null; stdout: string; stderr: string }> {
@@ -72,6 +74,7 @@ afterEach(() => {
   delete process.env.PI_FAKE_STDERR;
   process.chdir(ORIGINAL_CWD);
   if (tempRoot) rmSync(tempRoot, { recursive: true, force: true });
+  if (externalRoot) rmSync(externalRoot, { recursive: true, force: true });
 });
 
 describe('sp script', () => {
@@ -115,6 +118,217 @@ describe('sp script', () => {
     expect(query.status).toBe(0);
     const rows = JSON.parse(query.stdout.trim()) as Array<{ count: number }>;
     expect(rows[0].count).toBe(1);
+  });
+
+  it('records post-pre-script skill bytes in skill_sources', async () => {
+    const skillDir = join(tempRoot, 'skills', 'mutable');
+    const skillFile = join(skillDir, 'SKILL.md');
+    const preScript = join(tempRoot, 'mutate-skill.sh');
+    const dbPath = join(tempRoot, 'state', 'observability.db');
+    const postScriptContent = '# post-script bytes\n';
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(skillFile, '# stale pre-script bytes\n');
+    writeFileSync(preScript, `#!/bin/sh\nprintf '${postScriptContent.replace(/\n/g, '\\n')}' > "$PWD/skills/mutable/SKILL.md"\n`);
+    chmodSync(preScript, 0o700);
+    writeFileSync(
+      join(tempRoot, '.specialists', 'user', 'mutable-skill.specialist.json'),
+      JSON.stringify({
+        specialist: {
+          metadata: { name: 'mutable-skill', version: '1.0.0', description: 'test', category: 'test' },
+          execution: {
+            mode: 'auto',
+            model: 'mock/model',
+            timeout_ms: 1000,
+            interactive: false,
+            response_format: 'json',
+            output_type: 'custom',
+            permission_required: 'READ_ONLY',
+            requires_worktree: false,
+            max_retries: 0,
+          },
+          prompt: {
+            task_template: 'say hi',
+            output_schema: { type: 'object', required: ['message'] },
+            examples: [],
+          },
+          skills: {
+            paths: ['skills/mutable'],
+            scripts: [{ run: './mutate-skill.sh', phase: 'pre', inject_output: false }],
+          },
+        },
+      }),
+    );
+    const queryScript = join(tempRoot, 'query-skill-source.mjs');
+    writeFileSync(queryScript, [
+      "import { Database } from 'bun:sqlite';",
+      'const db = new Database(process.argv[2]);',
+      "const row = db.query('SELECT status_json FROM specialist_jobs LIMIT 1').get();",
+      'console.log(row.status_json);',
+      'db.close();',
+    ].join('\n'));
+
+    const run = spawn('bun', [
+      join(REPO_ROOT, 'src/index.ts'),
+      'script',
+      'mutable-skill',
+      '--user-dir', tempRoot,
+      '--db-path', dbPath,
+      '--allow-local-scripts',
+      '--json',
+    ], {
+      cwd: tempRoot,
+      env: { ...process.env, PATH: `${join(tempRoot, 'bin')}:${process.env.PATH ?? ''}` },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const result = await waitForExit(run);
+    const query = spawnSync('bun', [queryScript, dbPath], { encoding: 'utf-8' });
+    const status = JSON.parse(query.stdout.trim()) as { skill_sources: Array<{ sha256: string }> };
+
+    expect(result.code).toBe(0);
+    expect(query.status).toBe(0);
+    expect(status.skill_sources).toEqual([{
+      path: skillDir,
+      sha256: createHash('sha256').update(postScriptContent).digest('hex'),
+      source: 'skills.paths',
+      attestation: 'observation_time_only',
+    }]);
+  });
+
+  it('rejects a post-pre-script symlink swap before Pi starts without disclosing host paths', async () => {
+    const skillDir = join(tempRoot, 'skills', 'swapped');
+    const skillFile = join(skillDir, 'SKILL.md');
+    const replacement = join(tempRoot, 'replacement.md');
+    const preScript = join(tempRoot, 'swap-skill.sh');
+    const argvLog = join(tempRoot, 'pi-argv.jsonl');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(skillFile, '# validated bytes\n');
+    writeFileSync(replacement, '# replacement bytes\n');
+    writeFileSync(preScript, '#!/bin/sh\nrm "$PWD/skills/swapped/SKILL.md"\nln -s "$PWD/replacement.md" "$PWD/skills/swapped/SKILL.md"\n');
+    chmodSync(preScript, 0o700);
+    writeFileSync(
+      join(tempRoot, '.specialists', 'user', 'swapped-skill.specialist.json'),
+      JSON.stringify({
+        specialist: {
+          metadata: { name: 'swapped-skill', version: '1.0.0', description: 'test', category: 'test' },
+          execution: {
+            mode: 'auto',
+            model: 'mock/model',
+            timeout_ms: 1000,
+            interactive: false,
+            response_format: 'json',
+            output_type: 'custom',
+            permission_required: 'READ_ONLY',
+            requires_worktree: false,
+            max_retries: 0,
+          },
+          prompt: {
+            task_template: 'say hi',
+            output_schema: { type: 'object', required: ['message'] },
+            examples: [],
+          },
+          skills: {
+            paths: ['skills/swapped'],
+            scripts: [{ run: './swap-skill.sh', phase: 'pre', inject_output: false }],
+          },
+        },
+      }),
+    );
+
+    const run = spawn('bun', [
+      join(REPO_ROOT, 'src/index.ts'),
+      'script',
+      'swapped-skill',
+      '--user-dir', tempRoot,
+      '--allow-local-scripts',
+      '--json',
+    ], {
+      cwd: tempRoot,
+      env: {
+        ...process.env,
+        PATH: `${join(tempRoot, 'bin')}:${process.env.PATH ?? ''}`,
+        PI_ARGV_LOG: argvLog,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const result = await waitForExit(run);
+    const output = `${result.stdout}${result.stderr}`;
+
+    expect(result.code).toBe(1);
+    expect(existsSync(argvLog)).toBe(false);
+    expect(output).toContain('skill source is unreadable after trusted pre-scripts; rejected');
+    expect(output).not.toContain(tempRoot);
+    expect(output).not.toContain(homedir());
+  });
+
+  it('rejects a post-pre-script intermediate-directory escape before Pi starts', async () => {
+    const skillDir = join(tempRoot, 'skills', 'ancestor-swap');
+    const preScript = join(tempRoot, 'swap-ancestor.sh');
+    const argvLog = join(tempRoot, 'pi-ancestor-swap.jsonl');
+    externalRoot = mkdtempSync(join(tmpdir(), 'sp-script-external-'));
+    const externalSkills = join(externalRoot, 'skills');
+    mkdirSync(skillDir, { recursive: true });
+    mkdirSync(join(externalSkills, 'ancestor-swap'), { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'), '# validated bytes\n');
+    writeFileSync(join(externalSkills, 'ancestor-swap', 'SKILL.md'), '# escaped bytes\n');
+    writeFileSync(
+      preScript,
+      `#!/bin/sh\nmv "$PWD/skills" "$PWD/skills-original"\nln -s "${externalSkills}" "$PWD/skills"\n`,
+    );
+    chmodSync(preScript, 0o700);
+    writeFileSync(
+      join(tempRoot, '.specialists', 'user', 'ancestor-swap.specialist.json'),
+      JSON.stringify({
+        specialist: {
+          metadata: { name: 'ancestor-swap', version: '1.0.0', description: 'test', category: 'test' },
+          execution: {
+            mode: 'auto',
+            model: 'mock/model',
+            timeout_ms: 1000,
+            interactive: false,
+            response_format: 'json',
+            output_type: 'custom',
+            permission_required: 'READ_ONLY',
+            requires_worktree: false,
+            max_retries: 0,
+          },
+          prompt: {
+            task_template: 'say hi',
+            output_schema: { type: 'object', required: ['message'] },
+            examples: [],
+          },
+          skills: {
+            paths: ['skills/ancestor-swap'],
+            scripts: [{ run: './swap-ancestor.sh', phase: 'pre', inject_output: false }],
+          },
+        },
+      }),
+    );
+
+    const run = spawn('bun', [
+      join(REPO_ROOT, 'src/index.ts'),
+      'script',
+      'ancestor-swap',
+      '--user-dir', tempRoot,
+      '--allow-local-scripts',
+      '--json',
+    ], {
+      cwd: tempRoot,
+      env: {
+        ...process.env,
+        PATH: `${join(tempRoot, 'bin')}:${process.env.PATH ?? ''}`,
+        PI_ARGV_LOG: argvLog,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const result = await waitForExit(run);
+    const output = `${result.stdout}${result.stderr}`;
+
+    expect(result.code).toBe(1);
+    expect(existsSync(argvLog)).toBe(false);
+    expect(output).toContain('skill source is unreadable after trusted pre-scripts; rejected');
+    expect(output).not.toContain(tempRoot);
+    expect(output).not.toContain(externalRoot);
+    expect(output).not.toContain(homedir());
   });
 
   it('forwards ordered enabled extension sources through direct script path and drops offline for remote sources', async () => {

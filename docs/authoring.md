@@ -649,7 +649,7 @@ sp serve --allow-skills --allow-skills-roots /safe/path:/another/safe/path
 | `--allow-skills-roots <p1>:<p2>:...` | Restricts permitted skill paths to entries under listed roots (requires `--allow-skills`) |
 | `--allow-local-scripts` | Unsupported; `skills.scripts` are always rejected in service/script mode |
 
-When `--allow-skills` is active, each skill path is resolved and hashed. The `status_json.skill_sources` field in the trace row contains `{path, sha256}` entries for audit. Unreadable files produce `sha256: 'unreadable'` rather than throwing.
+When `--allow-skills` is active, each skill path is resolved and hashed after all trusted pre-scripts, immediately before Pi launch. The `status_json.skill_sources` field contains `{path, sha256, source, attestation: "observation_time_only"}` entries. Pi reopens the mutable path when it loads the skill, so this hash is observation-time audit evidence, not proof of the bytes Pi consumed. The exported audit computation represents unreadable files with `sha256: "unreadable"`; the direct/script runtime rejects any such final observation before Pi starts.
 
 > **Default-reject is intentional:** Single-tenant deployments must opt-in. Multi-tenant authn is a non-goal for v1.
 

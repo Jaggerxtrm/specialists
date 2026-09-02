@@ -1,6 +1,16 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import {
+  accessSync,
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { PiAgentSession, applyExtensionToolPolicyGate, resolveExecutionExtensionSelection, resolveRuntimeToolContract } from '../pi/session.js';
@@ -90,6 +100,7 @@ export interface SkillSource {
   path: string;
   sha256: string;
   source: 'skills.paths' | 'prompt.skill_inherit';
+  attestation: 'observation_time_only';
 }
 
 export interface ScriptRunnerOptions {
@@ -108,19 +119,56 @@ function normalizePath(path: string, baseDir?: string): string {
   return resolve(baseDir ?? process.cwd(), path);
 }
 
-function isPathWithinRoot(candidatePath: string, rootPath: string): boolean {
-  const candidate = resolve(candidatePath);
-  const root = resolve(rootPath);
+function isPathWithinRoot(candidate: string, root: string): boolean {
   const rel = relative(root, candidate);
   return rel === '' || (rel.length > 0 && !rel.startsWith('..') && !isAbsolute(rel));
 }
 
-function assertSkillPathWithinRoots(field: 'skills.paths' | 'prompt.skill_inherit', path: string, roots: string[], baseDir?: string): void {
-  const candidate = normalizePath(path, baseDir);
-  const allowed = roots.some((root) => isPathWithinRoot(candidate, root));
-  if (!allowed) {
-    throw new CompatGuardError(field, `skill path '${path}' not under any --allow-skills-roots entry`);
+function canonicalizeSkillRoot(root: string, baseDir?: string): string {
+  try {
+    const normalized = normalizePath(root, baseDir);
+    lstatSync(normalized);
+    const canonical = realpathSync(normalized);
+    const stat = lstatSync(canonical);
+    if (!stat.isDirectory()) throw new Error('not a directory');
+    accessSync(canonical, constants.R_OK | constants.X_OK);
+    return canonical;
+  } catch {
+    throw new CompatGuardError('skills.paths', '--allow-skills-roots entry is not usable; rejected');
   }
+}
+
+function canonicalizeSkillPath(field: 'skills.paths' | 'prompt.skill_inherit', path: string, baseDir?: string): string {
+  try {
+    const normalized = normalizePath(path, baseDir);
+    lstatSync(normalized);
+    const canonical = realpathSync(normalized);
+    const stat = lstatSync(canonical);
+    if (!stat.isFile() && !stat.isDirectory()) throw new Error('not a file or directory');
+    accessSync(canonical, stat.isDirectory() ? constants.R_OK | constants.X_OK : constants.R_OK);
+    if (stat.isDirectory()) {
+      const skillFile = join(canonical, 'SKILL.md');
+      const skillStat = lstatSync(skillFile);
+      if (skillStat.isSymbolicLink() || !skillStat.isFile()) throw new Error('invalid SKILL.md');
+      accessSync(skillFile, constants.R_OK);
+    }
+    return canonical;
+  } catch {
+    throw new CompatGuardError(field, 'skill path is not usable; rejected');
+  }
+}
+
+function assertSkillPathWithinRoots(
+  field: 'skills.paths' | 'prompt.skill_inherit',
+  path: string,
+  canonicalRoots: string[],
+  baseDir?: string,
+): string {
+  const candidate = canonicalizeSkillPath(field, path, baseDir);
+  if (!canonicalRoots.some((root) => isPathWithinRoot(candidate, root))) {
+    throw new CompatGuardError(field, 'skill path is not under any --allow-skills-roots entry');
+  }
+  return candidate;
 }
 
 function hasUnsubstitutedVariables(template: string, variables: Record<string, string>): string | null {
@@ -154,11 +202,21 @@ export function compatGuard(spec: Specialist, trust?: TrustOptions): void {
     throw new CompatGuardError('prompt.skill_inherit', 'skills not allowed (enable with --allow-skills)');
   }
 
-  if (trust?.allowSkills && trust.allowSkillsRoots && trust.allowSkillsRoots.length > 0) {
+  if (trust?.allowSkills) {
+    // Pi accepts only paths, not open file descriptors. Canonical paths are persisted
+    // before trusted pre-scripts, then forensic hashes are computed after every pre-script
+    // immediately before observability/model startup. This closes deterministic pre-script
+    // mutation; an external actor can still replace an inode before Pi reopens the path.
+    const canonicalRoots = (trust.allowSkillsRoots ?? []).map((root) => canonicalizeSkillRoot(root, trust.baseDir));
     const paths = spec.specialist.skills?.paths ?? [];
-    for (const path of paths) assertSkillPathWithinRoots('skills.paths', path, trust.allowSkillsRoots, trust.baseDir);
+    const canonicalPaths = paths.map((path) => canonicalRoots.length > 0
+      ? assertSkillPathWithinRoots('skills.paths', path, canonicalRoots, trust.baseDir)
+      : canonicalizeSkillPath('skills.paths', path, trust.baseDir));
+    if (spec.specialist.skills?.paths) spec.specialist.skills.paths = canonicalPaths;
     if (typeof spec.specialist.prompt.skill_inherit === 'string') {
-      assertSkillPathWithinRoots('prompt.skill_inherit', spec.specialist.prompt.skill_inherit, trust.allowSkillsRoots, trust.baseDir);
+      spec.specialist.prompt.skill_inherit = canonicalRoots.length > 0
+        ? assertSkillPathWithinRoots('prompt.skill_inherit', spec.specialist.prompt.skill_inherit, canonicalRoots, trust.baseDir)
+        : canonicalizeSkillPath('prompt.skill_inherit', spec.specialist.prompt.skill_inherit, trust.baseDir);
     }
   }
 }
@@ -176,16 +234,43 @@ function collectSkillPaths(spec: Specialist, baseDir?: string): string[] {
   return collectSkillPathEntries(spec, baseDir).map((entry) => entry.path);
 }
 
+function requireNoFollowFlag(): number {
+  if (typeof constants.O_NOFOLLOW !== 'number') {
+    throw new CompatGuardError('skills.paths', 'secure no-follow skill source opening is unavailable; rejected');
+  }
+  return constants.O_NOFOLLOW;
+}
+
+function readSkillSourceBytes(path: string, noFollowFlag: number): Buffer {
+  if (realpathSync(path) !== path) throw new Error('skill source canonical path changed');
+  const declaredStat = lstatSync(path);
+  if (declaredStat.isSymbolicLink()) throw new Error('symlinked skill source');
+  const sourcePath = declaredStat.isDirectory() ? join(path, 'SKILL.md') : path;
+  if (realpathSync(sourcePath) !== sourcePath) throw new Error('skill file canonical path changed');
+  const sourceStat = lstatSync(sourcePath);
+  if (sourceStat.isSymbolicLink() || !sourceStat.isFile()) throw new Error('skill source is not a regular file');
+  accessSync(sourcePath, constants.R_OK);
+
+  const fd = openSync(sourcePath, constants.O_RDONLY | noFollowFlag);
+  try {
+    if (!fstatSync(fd).isFile()) throw new Error('skill source is not a regular file');
+    return readFileSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+
 export function computeSkillSources(spec: Specialist, baseDir?: string): SkillSource[] {
   const entries = collectSkillPathEntries(spec, baseDir);
+  const noFollowFlag = entries.length > 0 ? requireNoFollowFlag() : 0;
   const sources: SkillSource[] = [];
   for (const { path, source } of entries) {
     try {
-      const content = readFileSync(path);
+      const content = readSkillSourceBytes(path, noFollowFlag);
       const sha256 = createHash('sha256').update(content).digest('hex');
-      sources.push({ path, sha256, source });
+      sources.push({ path, sha256, source, attestation: 'observation_time_only' });
     } catch {
-      sources.push({ path, sha256: 'unreadable', source });
+      sources.push({ path, sha256: 'unreadable', source, attestation: 'observation_time_only' });
     }
   }
   return sources;
@@ -672,7 +757,6 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
     const trust = { ...options.trust, baseDir };
     compatGuard(spec, trust);
     const skillPaths = trust.allowSkills ? collectSkillPaths(spec, baseDir) : [];
-    const skillSources = trust.allowSkills ? computeSkillSources(spec, baseDir) : undefined;
     const permissionLevel = spec.specialist.execution.permission_required;
     const specialistName = spec.specialist.metadata?.name ?? resolvedSpecialist;
     const specialistPermissions = spec.specialist.permissions;
@@ -774,6 +858,11 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
     const assistantTextLimitBytes = resolveAssistantTextLimitBytes(spec);
     const expectedKeys = collectRequiredOutputKeys(spec);
     const shouldParseJson = spec.specialist.execution.response_format === 'json' || expectedKeys.length > 0;
+    const skillSources = trust.allowSkills ? computeSkillSources(spec, baseDir) : undefined;
+    const unreadableSkillSource = skillSources?.find((source) => source.sha256 === 'unreadable');
+    if (unreadableSkillSource) {
+      throw new CompatGuardError(unreadableSkillSource.source, 'skill source is unreadable after trusted pre-scripts; rejected');
+    }
     const observability = input.trace !== false ? openObservabilityClient(options) : null;
     const scriptRunStartedAt = Date.now();
     if (observability) {
