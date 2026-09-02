@@ -273,6 +273,7 @@ describe('sp serve', () => {
 
     const port = 8133;
     await startServer(port);
+    // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request -- isolated loopback test server
     const response = await fetch(`http://127.0.0.1:${port}/v1/generate`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
