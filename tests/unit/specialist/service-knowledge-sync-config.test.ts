@@ -14,6 +14,8 @@ const CONFIG_TEXT = readFileSync(CONFIG_PATH, 'utf8');
 const CONFIG = SpecialistSchema.parse(JSON.parse(CONFIG_TEXT));
 const SPECIALIST = CONFIG.specialist;
 const SCRIPT = SPECIALIST.skills?.scripts?.[0]?.run ?? '';
+const HELPER_RAW_OUTPUT_LIMIT_BYTES = 65_536;
+const HELPER_RENDERED_OUTPUT_LIMIT_BYTES = 131_072;
 
 const sandboxes: string[] = [];
 afterEach(async () => {
@@ -115,6 +117,110 @@ describe('service-knowledge-sync v2 role binding', () => {
       ].join('\n'),
     });
     expect(SCRIPT).not.toContain('not available');
+  });
+
+  it.each([21_119, 43_505, 65_536])(
+    'injects complete labeled helper output at the evidenced or exact boundary: %i bytes',
+    async (size) => {
+      const root = await seedConsumer(['infra']);
+      await seedMachinery(root);
+      const scripts = join(root, '.xtrm', 'skills', 'default', 'service-knowledge', 'scripts');
+      await writeFile(join(scripts, 'drift_detector.py'), [
+        'import sys',
+        'assert sys.argv[1:] == ["scan"]',
+        'tail = b"\\ndrift useful tail\\n"',
+        `payload = b"drift head\\n" + b"x" * (${size} - len(b"drift head\\n") - len(tail)) + tail`,
+        `assert len(payload) == ${size}`,
+        'sys.stdout.buffer.write(payload)',
+        '',
+      ].join('\n'));
+
+      const result = runScript(SCRIPT, root);
+
+      expect(SCRIPT).toContain('MAX_BYTES = 65536');
+      expect(SCRIPT).toContain('MAX_RENDERED_BYTES = 131072');
+      expect(result.exitCode).toBe(0);
+      expect(result.output).toContain('PRE_SCRIPT_SCOPE: scope: registry loaded');
+      expect(result.output).toContain('PRE_SCRIPT_DRIFT: drift useful tail');
+      expect(result.output.indexOf('scope: registry loaded')).toBeLessThan(result.output.indexOf('drift useful tail'));
+      expect(result.output.endsWith('PRE_SCRIPT_DATA_END\n')).toBe(true);
+      expect(Buffer.byteLength(result.output)).toBeLessThanOrEqual(HELPER_RENDERED_OUTPUT_LIMIT_BYTES + 512);
+      for (const line of result.output.trim().split('\n').slice(1, -1)) {
+        expect(line).toMatch(/^PRE_SCRIPT_(?:SCOPE|DRIFT|ERROR): /);
+      }
+    },
+  );
+
+  it('captures substantial scope and drift output within the aggregate runner buffer', async () => {
+    const root = await seedConsumer(['infra']);
+    await seedMachinery(root);
+    const scripts = join(root, '.xtrm', 'skills', 'default', 'service-knowledge', 'scripts');
+    await writeFile(join(scripts, 'scope.py'), [
+      'tail = b"\\nscope useful tail\\n"',
+      'payload = b"scope head\\n" + b"x" * (43505 - len(b"scope head\\n") - len(tail)) + tail',
+      'assert len(payload) == 43505',
+      'import sys; sys.stdout.buffer.write(payload)',
+      '',
+    ].join('\n'));
+    await writeFile(join(scripts, 'drift_detector.py'), [
+      'import sys',
+      'assert sys.argv[1:] == ["scan"]',
+      'tail = b"\\ndrift useful tail\\n"',
+      'payload = b"drift head\\n" + b"x" * (21119 - len(b"drift head\\n") - len(tail)) + tail',
+      'assert len(payload) == 21119',
+      'sys.stdout.buffer.write(payload)',
+      '',
+    ].join('\n'));
+
+    const result = runScript(SCRIPT, root);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain('PRE_SCRIPT_SCOPE: scope useful tail');
+    expect(result.output).toContain('PRE_SCRIPT_DRIFT: drift useful tail');
+    expect(result.output.endsWith('PRE_SCRIPT_DATA_END\n')).toBe(true);
+    expect(Buffer.byteLength(result.output)).toBeLessThan(HELPER_RENDERED_OUTPUT_LIMIT_BYTES * 2 + 512);
+  });
+
+  it('rejects 65,537 raw newline bytes without rendering the truncated payload', async () => {
+    const root = await seedConsumer(['infra']);
+    await seedMachinery(root);
+    const scripts = join(root, '.xtrm', 'skills', 'default', 'service-knowledge', 'scripts');
+    await writeFile(join(scripts, 'drift_detector.py'), [
+      'import sys',
+      'assert sys.argv[1:] == ["scan"]',
+      'sys.stdout.buffer.write(b"\\n" * 65537)',
+      '',
+    ].join('\n'));
+
+    const result = runScript(SCRIPT, root);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain('PRE_SCRIPT_SCOPE: scope: registry loaded');
+    expect(result.output).toContain('PRE_SCRIPT_ERROR: ERROR: drift_detector.py output exceeded 65536 bytes');
+    expect(result.output).not.toContain('PRE_SCRIPT_DRIFT: ');
+    expect(result.output.endsWith('PRE_SCRIPT_DATA_END\n')).toBe(true);
+    expect(Buffer.byteLength(result.output)).toBeLessThan(512);
+  });
+
+  it('rejects rendered label amplification below the raw boundary with fixed bounded output', async () => {
+    const root = await seedConsumer(['infra']);
+    await seedMachinery(root);
+    const scripts = join(root, '.xtrm', 'skills', 'default', 'service-knowledge', 'scripts');
+    await writeFile(join(scripts, 'drift_detector.py'), [
+      'import sys',
+      'assert sys.argv[1:] == ["scan"]',
+      'sys.stdout.buffer.write(b"\\n" * 65536)',
+      '',
+    ].join('\n'));
+
+    const result = runScript(SCRIPT, root);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain('PRE_SCRIPT_ERROR: ERROR: drift_detector.py rendered output exceeded 131072 bytes');
+    expect(result.output).not.toContain('PRE_SCRIPT_DRIFT: ');
+    expect(result.output.endsWith('PRE_SCRIPT_DATA_END\n')).toBe(true);
+    expect(Buffer.byteLength(result.output)).toBeLessThan(512);
+    expect(HELPER_RAW_OUTPUT_LIMIT_BYTES).toBe(65_536);
   });
 
   it('uses production helpers to retain ERROR and exit_code when scope fails without running drift', async () => {
