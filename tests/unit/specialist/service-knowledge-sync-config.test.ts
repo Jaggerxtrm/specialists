@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SpecialistLoader } from '../../../src/specialist/loader.js';
 import { SpecialistSchema, validateSpecialist } from '../../../src/specialist/schema.js';
 import { formatScriptOutput, runScript, validateBeforeRun } from '../../../src/specialist/runner.js';
@@ -18,7 +18,21 @@ const HELPER_RAW_OUTPUT_LIMIT_BYTES = 65_536;
 const HELPER_RENDERED_OUTPUT_LIMIT_BYTES = 131_072;
 
 const sandboxes: string[] = [];
+let originalHome: string | undefined;
+let homeSandbox: string | null = null;
+
+beforeEach(async () => {
+  // Hermetic HOME (unitAI-o1fs4): the real ~/.config/specialists/user.json must never leak into
+  // loader-driven tests — a legacy unpinned npm key there now fails closed at the merge boundary.
+  originalHome = process.env.HOME;
+  homeSandbox = await mkdtemp(join(tmpdir(), 'sks-home-'));
+  sandboxes.push(homeSandbox);
+  process.env.HOME = homeSandbox;
+});
+
 afterEach(async () => {
+  if (originalHome === undefined) delete process.env.HOME;
+  else process.env.HOME = originalHome;
   await Promise.all(sandboxes.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
@@ -50,7 +64,17 @@ describe('service-knowledge-sync v2 role binding', () => {
   it('validates and preserves the RC execution contract', async () => {
     expect(await validateSpecialist(CONFIG_TEXT)).toMatchObject({ valid: true, errors: [] });
     expect(SPECIALIST.metadata).toMatchObject({ version: '1.10.0', updated: '2026-09-02' });
-    expect(SPECIALIST.execution.extensions).toEqual({ 'npm:@jaggerxtrm/pi-service-knowledge': true });
+    expect(SPECIALIST.execution.extensions).toEqual({ 'npm:@jaggerxtrm/pi-service-knowledge@1.0.0': true });
+  });
+
+  it('pins the executable pi-service-knowledge source to exact reviewed semver', () => {
+    const extensions = SPECIALIST.execution.extensions ?? {};
+    const knowledgeKeys = Object.keys(extensions).filter((key) =>
+      key.startsWith('npm:@jaggerxtrm/pi-service-knowledge'),
+    );
+    expect(knowledgeKeys).toEqual(['npm:@jaggerxtrm/pi-service-knowledge@1.0.0']);
+    expect(extensions['npm:@jaggerxtrm/pi-service-knowledge@1.0.0']).toBe(true);
+    expect(CONFIG_TEXT).not.toContain('"npm:@jaggerxtrm/pi-service-knowledge":');
     expect(SPECIALIST.skills?.paths).toEqual([
       'service-knowledge',
       '~/.xtrm/skills/default/gitnexus-impact-analysis',

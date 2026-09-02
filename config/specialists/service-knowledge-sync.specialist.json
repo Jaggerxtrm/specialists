@@ -32,7 +32,7 @@
         "actions"
       ],
       "extensions": {
-        "npm:@jaggerxtrm/pi-service-knowledge": true
+        "npm:@jaggerxtrm/pi-service-knowledge@1.0.0": true
       }
     },
     "prompt": {

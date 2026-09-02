@@ -37,6 +37,10 @@ export declare class SpecialistMissingModelError extends Error {
     readonly specialistName: string;
     constructor(specialistName: string);
 }
+/** Thrown when config layers resolve two distinct enabled `npm:` specs for the same package. */
+export declare class SpecialistExtensionSourceCollisionError extends Error {
+    constructor(specialistName: string, packageName: string);
+}
 /** Returns STALE, AGED, or OK based on file mtimes vs metadata.updated */
 export declare function checkStaleness(summary: SpecialistSummary): Promise<'OK' | 'STALE' | 'AGED'>;
 interface LoaderOptions {

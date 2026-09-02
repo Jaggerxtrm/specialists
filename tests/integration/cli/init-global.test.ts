@@ -34,8 +34,13 @@ describe('integration: specialists init --global', () => {
 
   it('writes doc sentinel, full override templates, discovery hints, and stays idempotent', async () => {
     tempHome = await mkdtemp(join(tmpdir(), 'specialists-int-init-global-'));
+    // Hermetic HOME (unitAI-o1fs4): list() must see only the package layer, never the live
+    // user.json — a legacy unpinned npm key there now fails closed at the merge boundary.
+    const originalHome = process.env.HOME;
+    process.env.HOME = tempHome;
     const loader = new SpecialistLoader({ projectDir: repoRoot });
     const shipped = await loader.list();
+    process.env.HOME = originalHome;
     const shippedNames = shipped.map(item => item.name).sort();
 
     expect(shippedNames).not.toContain('_doc');
@@ -65,7 +70,7 @@ describe('integration: specialists init --global', () => {
     execution.model = 'openai-codex/gpt-5.4-mini';
     execution.extensions = {
       gitnexus: false,
-      'npm:@jaggerxtrm/pi-service-knowledge': true,
+      'npm:@jaggerxtrm/pi-service-knowledge@1.0.0': true,
     };
     await writeFile(userConfigPath, `${JSON.stringify(firstParsed, null, 2)}\n`, 'utf-8');
 
@@ -80,7 +85,7 @@ describe('integration: specialists init --global', () => {
     expect(secondExecution.model).toBe('openai-codex/gpt-5.4-mini');
     expect(secondExecution.extensions).toEqual({
       gitnexus: false,
-      'npm:@jaggerxtrm/pi-service-knowledge': true,
+      'npm:@jaggerxtrm/pi-service-knowledge@1.0.0': true,
     });
     expect(Object.keys(secondParsed).filter(name => name === '_doc')).toHaveLength(1);
   });

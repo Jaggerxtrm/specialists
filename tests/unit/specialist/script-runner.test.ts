@@ -1020,13 +1020,13 @@ describe('resolveExecutionExtensionSelection', () => {
     expect(resolveExecutionExtensionSelection({
       serena: false,
       gitnexus: false,
-      'npm:@jaggerxtrm/pi-service-knowledge': true,
+      'npm:@jaggerxtrm/pi-service-knowledge@1.0.0': true,
       './local-extension': true,
       'http://example.test/ext': true,
       disabled: false,
     })).toEqual({
       excludeExtensions: ['pi-gitnexus'],
-      extensionSources: ['npm:@jaggerxtrm/pi-service-knowledge', './local-extension', 'http://example.test/ext'],
+      extensionSources: ['npm:@jaggerxtrm/pi-service-knowledge@1.0.0', './local-extension', 'http://example.test/ext'],
       offline: false,
     });
   });
@@ -1109,7 +1109,7 @@ describe('runScriptSpecialist system prompt forwarding', () => {
             extensions: {
               serena: false,
               gitnexus: false,
-              'npm:@jaggerxtrm/pi-service-knowledge': true,
+              'npm:@jaggerxtrm/pi-service-knowledge@1.0.0': true,
               './local-extension': true,
               disabled: false,
             },
@@ -1134,7 +1134,7 @@ describe('runScriptSpecialist system prompt forwarding', () => {
         .filter((value): value is string => Boolean(value));
       expect(extensionPairs).toContain(join(homeDir, '.pi', 'agent', 'extensions', 'caveman'));
       expect(extensionPairs).not.toContain(join(homeDir, '.pi', 'agent', 'extensions', 'service-skills'));
-      expect(extensionPairs).toContain('npm:@jaggerxtrm/pi-service-knowledge');
+      expect(extensionPairs).toContain('npm:@jaggerxtrm/pi-service-knowledge@1.0.0');
       expect(extensionPairs).toContain('./local-extension');
     });
   });

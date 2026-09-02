@@ -71,6 +71,18 @@ export class SpecialistMissingModelError extends Error {
   }
 }
 
+/** Thrown when config layers resolve two distinct enabled `npm:` specs for the same package. */
+export class SpecialistExtensionSourceCollisionError extends Error {
+  constructor(specialistName: string, packageName: string) {
+    super(
+      `specialist '${specialistName}' resolves multiple enabled npm extension sources for package '${packageName}' ` +
+      `(distinct specs across config layers). Refusing to forward: keep exactly one spec per package, ` +
+      `pinned to an exact reviewed version.`,
+    );
+    this.name = 'SpecialistExtensionSourceCollisionError';
+  }
+}
+
 /** Returns STALE, AGED, or OK based on file mtimes vs metadata.updated */
 export async function checkStaleness(
   summary: SpecialistSummary,
@@ -232,6 +244,7 @@ export class SpecialistLoader {
       baseExecution[field] = this.resolveOverrideValue(name, `specialist.execution.${field}`, overrideValue);
     }
     mergeExecutionExtensionOverrides({
+      specialist: name,
       baseExecution,
       overrideExecution,
       resolveValue: (path, value) => this.resolveOverrideValue(name, `specialist.execution.${path}`, value),
@@ -420,6 +433,7 @@ export class SpecialistLoader {
       execution[field] = this.resolveOverrideValue(name, `specialist.execution.${field}`, value);
     }
     mergeExecutionExtensionOverrides({
+      specialist: name,
       baseExecution: execution,
       overrideExecution: execution,
       resolveValue: (path, value) => this.resolveOverrideValue(name, `specialist.execution.${path}`, value),
@@ -555,6 +569,7 @@ const PROTOTYPE_POLLUTION_KEYS = new Set(['__proto__', 'constructor', 'prototype
 // not user-controlled). Semgrep's prototype-pollution-loop rule fires on the AST shape regardless,
 // so the indexed read carries an inline `nosemgrep:` waiver on the same line.
 function mergeExecutionExtensionOverrides(options: {
+  specialist: string;
   baseExecution: Record<string, unknown>;
   overrideExecution: Record<string, unknown>;
   resolveValue: (path: string, value: unknown) => unknown;
@@ -571,7 +586,48 @@ function mergeExecutionExtensionOverrides(options: {
       if (value === null || value === undefined) continue;
       mergedExtensions[key] = options.resolveValue(`${path}.${key}`, value);
     }
+    rejectNpmSourceCollisions(options.specialist, mergedExtensions);
     writeDottedPath(options.baseExecution, path, mergedExtensions);
+  }
+}
+
+// npm package-name grammar (new-package rules): lowercase URL-safe chars, no leading `.`/`_`, max 214.
+// Matching names are safe to embed verbatim in error messages: the character class admits no control
+// characters, and the length cap bounds the message. Non-matching keys carry no usable identity and
+// are skipped rather than rejected here — collision detection needs two provably-identical packages.
+const NPM_NAME_RE = /^[a-z0-9][a-z0-9._~-]{0,213}$/;
+const NPM_SCOPED_NAME_RE = /^@[a-z0-9][a-z0-9._~-]{0,212}\/[a-z0-9][a-z0-9._~-]{0,213}$/;
+
+/** Extract the npm package identity from an enabled `npm:<name>[@<spec>]` source key, or null. */
+function parseNpmSourceName(key: string): string | null {
+  if (!key.startsWith('npm:')) return null;
+  const spec = key.slice('npm:'.length);
+  let name: string;
+  if (spec.startsWith('@')) {
+    const slash = spec.indexOf('/');
+    if (slash < 0) return null;
+    const rest = spec.slice(slash + 1);
+    const at = rest.indexOf('@');
+    name = at < 0 ? spec : spec.slice(0, slash + 1 + at);
+  } else {
+    const at = spec.indexOf('@');
+    name = at < 0 ? spec : spec.slice(0, at);
+  }
+  return name.length <= 214 && (name.startsWith('@') ? NPM_SCOPED_NAME_RE.test(name) : NPM_NAME_RE.test(name)) ? name : null;
+}
+
+/** Fail closed (unitAI-o1fs4): two distinct enabled specs for one npm package must not both forward to Pi. */
+function rejectNpmSourceCollisions(specialist: string, extensions: Record<string, unknown>): void {
+  const seen = new Map<string, string>();
+  for (const [key, value] of Object.entries(extensions)) {
+    if (value !== true) continue;
+    const name = parseNpmSourceName(key);
+    if (!name) continue;
+    const existing = seen.get(name);
+    if (existing !== undefined && existing !== key) {
+      throw new SpecialistExtensionSourceCollisionError(specialist, name);
+    }
+    seen.set(name, key);
   }
 }
 

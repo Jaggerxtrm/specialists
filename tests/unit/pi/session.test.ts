@@ -136,13 +136,13 @@ describe('resolveExecutionExtensionSelection', () => {
     expect(resolveExecutionExtensionSelection({
       serena: false,
       gitnexus: false,
-      'npm:@jaggerxtrm/pi-service-knowledge': true,
+      'npm:@jaggerxtrm/pi-service-knowledge@1.0.0': true,
       './local-extension': true,
       'https://example.test/ext': true,
       disabled: false,
     })).toEqual({
       excludeExtensions: ['pi-gitnexus'],
-      extensionSources: ['npm:@jaggerxtrm/pi-service-knowledge', './local-extension', 'https://example.test/ext'],
+      extensionSources: ['npm:@jaggerxtrm/pi-service-knowledge@1.0.0', './local-extension', 'https://example.test/ext'],
       offline: false,
     });
   });
@@ -524,7 +524,7 @@ describe('PiAgentSession', () => {
       const session = await PiAgentSession.create({
         model: 'gemini',
         permissionLevel: 'MEDIUM',
-        extensionSources: ['npm:@jaggerxtrm/pi-service-knowledge', './local-extension'],
+        extensionSources: ['npm:@jaggerxtrm/pi-service-knowledge@1.0.0', './local-extension'],
         offline: false,
       });
       await session.start();
@@ -538,7 +538,7 @@ describe('PiAgentSession', () => {
       expect(extensionPairs).toContain(join(homeDir, '.pi', 'agent', 'extensions', 'caveman'));
       expect(extensionPairs).not.toContain(join(homeDir, '.pi', 'agent', 'extensions', 'service-skills'));
       expect(extensionPairs).toEqual(expect.arrayContaining([
-        'npm:@jaggerxtrm/pi-service-knowledge',
+        'npm:@jaggerxtrm/pi-service-knowledge@1.0.0',
         './local-extension',
       ]));
     });

@@ -5,7 +5,7 @@ import { mkdtemp, writeFile, mkdir, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
 import { rm } from 'node:fs/promises';
-import { SpecialistLoader, checkStaleness, type SpecialistSummary } from '../../../src/specialist/loader.js';
+import { SpecialistExtensionSourceCollisionError, SpecialistLoader, checkStaleness, type SpecialistSummary } from '../../../src/specialist/loader.js';
 import { loadPresets } from '../../../src/specialist/preset-resolver.js';
 
 const MINIMAL_YAML = (name: string) => JSON.stringify({
@@ -947,6 +947,85 @@ describe('KAN-90 — global override layer + null-model hard fail', () => {
       'npm:@pkg/base': true,
       'npm:@global/keep': true,
       'npm:@repo/last': true,
+    });
+  });
+
+  it('fails closed when the global layer enables a floating spec for the same pinned npm package', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      BASE_SPEC({ extensions: { 'npm:@jaggerxtrm/pi-service-knowledge@1.0.0': true } }),
+    );
+    await writeGlobalUserJson({
+      demo: { execution: { extensions: { 'npm:@jaggerxtrm/pi-service-knowledge': true } } },
+    });
+
+    await expect(loader.get('demo')).rejects.toBeInstanceOf(SpecialistExtensionSourceCollisionError);
+    await expect(loader.get('demo')).rejects.toThrow('@jaggerxtrm/pi-service-knowledge');
+  });
+
+  it('fails closed when the repo layer enables a range spec for the same pinned npm package', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      BASE_SPEC({ extensions: { 'npm:@jaggerxtrm/pi-service-knowledge@1.0.0': true } }),
+    );
+    await mkdir(join(tmpProject, '.specialists', 'user'), { recursive: true });
+    await writeFile(
+      join(tmpProject, '.specialists', 'user', 'demo.specialist.json'),
+      JSON.stringify({ specialist: { execution: { extensions: { 'npm:@jaggerxtrm/pi-service-knowledge@^1': true } } } }),
+    );
+
+    await expect(loader.get('demo')).rejects.toBeInstanceOf(SpecialistExtensionSourceCollisionError);
+  });
+
+  it('fails closed on scoped npm package collisions across layers', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      BASE_SPEC({ extensions: { 'npm:@scope/pkg@1.0.0': true } }),
+    );
+    await writeGlobalUserJson({ demo: { execution: { extensions: { 'npm:@scope/pkg@latest': true } } } });
+
+    await expect(loader.get('demo')).rejects.toThrow('@scope/pkg');
+  });
+
+  it('fails closed on unscoped npm package collisions across layers', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      BASE_SPEC({ extensions: { 'npm:demo-ext@1.0.0': true } }),
+    );
+    await writeGlobalUserJson({ demo: { execution: { extensions: { 'npm:demo-ext': true } } } });
+
+    await expect(loader.get('demo')).rejects.toThrow('demo-ext');
+  });
+
+  it('keeps distinct npm package specs merging additively across layers', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      BASE_SPEC({ extensions: { 'npm:@scope/pkg@1.0.0': true } }),
+    );
+    await writeGlobalUserJson({ demo: { execution: { extensions: { 'npm:other-ext@2.0.0': true } } } });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.execution.extensions).toEqual({
+      'npm:@scope/pkg@1.0.0': true,
+      'npm:other-ext@2.0.0': true,
+    });
+  });
+
+  it('identical npm keys keep override semantics for false and true without collision errors', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      BASE_SPEC({ extensions: { 'npm:demo-ext@1.0.0': true, 'npm:other-ext@1.0.0': false } }),
+    );
+    await writeGlobalUserJson({
+      demo: { execution: { extensions: { 'npm:demo-ext@1.0.0': false, 'npm:other-ext@1.0.0': true } } },
+    });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.execution.extensions).toEqual({
+      'npm:demo-ext@1.0.0': false,
+      'npm:other-ext@1.0.0': true,
     });
   });
 

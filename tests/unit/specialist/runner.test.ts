@@ -351,7 +351,7 @@ describe('SpecialistRunner', () => {
         extensions: {
           serena: false,
           gitnexus: false,
-          'npm:@jaggerxtrm/pi-service-knowledge': true,
+          'npm:@jaggerxtrm/pi-service-knowledge@1.0.0': true,
           './local-extension': false,
         },
       }),
@@ -364,7 +364,7 @@ describe('SpecialistRunner', () => {
 
     expect(sessionFactory).toHaveBeenCalledWith(expect.objectContaining({
       excludeExtensions: ['pi-gitnexus'],
-      extensionSources: ['npm:@jaggerxtrm/pi-service-knowledge'],
+      extensionSources: ['npm:@jaggerxtrm/pi-service-knowledge@1.0.0'],
       offline: false,
     }));
   });
