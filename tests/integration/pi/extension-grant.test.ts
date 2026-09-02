@@ -63,11 +63,9 @@ export default function (pi) {
 }
 `;
 
-// Advisory fixture (unitAI-kaae7): registers an ACTIVE high-leverage tool
-// (ast_grep, cli source — has reviewed guidance) and a CONFIGURED-BUT-DENIED
-// tool (denied_probe, sdk source). The policy refuses to activate sdk-source
-// tools, so denied_probe must never appear in the advisory even though it is
-// registered by an enabled source. Only ast_grep (active + reviewed) surfaces.
+// Advisory fixture (unitAI-kaae7): registers two active extension tools.
+// ast_grep has reviewed guidance and extension_probe does not, so only ast_grep
+// belongs in the advisory even though both must be present in the active set.
 const ADVISORY_FIXTURE_EXTENSION = `export default function (pi) {
   pi.registerTool({
     name: "ast_grep",
@@ -78,11 +76,11 @@ const ADVISORY_FIXTURE_EXTENSION = `export default function (pi) {
     async execute() { return { content: [{ type: "text", text: "AST-OK" }] }; },
   });
   pi.registerTool({
-    name: "denied_probe",
-    label: "denied-probe",
-    description: "Configured-but-denied tool (sdk source): must not be claimed active.",
+    name: "extension_probe",
+    label: "extension-probe",
+    description: "Active extension tool without advisory guidance.",
     parameters: { type: "object", properties: {}, additionalProperties: false },
-    async execute() { return { content: [{ type: "text", text: "DENIED-OK" }] }; },
+    async execute() { return { content: [{ type: "text", text: "EXTENSION-PROBE-OK" }] }; },
   });
 }
 `;
@@ -97,6 +95,7 @@ const ADVISORY_CAPTURE_EXTENSION = `export default function (pi) {
     const sp = event.systemPrompt ?? "";
     const i = sp.indexOf("Active extension tools");
     const block = i >= 0 ? sp.slice(i, i + 300) : "<no-advisory-block>";
+    console.error("ACTIVE_TOOLS_CAPTURED_START:" + JSON.stringify(pi.getActiveTools()) + ":ACTIVE_TOOLS_CAPTURED_END");
     console.error("ADVISORY_CAPTURED_START:" + block + ":ADVISORY_CAPTURED_END");
   });
 }
@@ -189,9 +188,9 @@ describeIntegration('extension exposure model-backed regression', () => {
     }
   });
 
-  it('advisory presence matches active tools and omits configured-but-denied tools', () => {
-    // AST-grep (active, reviewed guidance) MUST be listed; denied_probe (sdk
-    // source, configured but never activated by the policy) MUST be absent.
+  it('advisory is derived from the actual active set and reviewed guidance', () => {
+    // Both extension tools MUST be active. Only ast_grep has reviewed guidance
+    // and belongs in the advisory. The denied bash builtin MUST stay inactive.
     const dir = mkdtempSync(join(tmpdir(), 'advisory-model-'));
     writeFileSync(join(dir, 'index.mjs'), ADVISORY_FIXTURE_EXTENSION, 'utf8');
     const captureDir = mkdtempSync(join(tmpdir(), 'advisory-capture-'));
@@ -247,11 +246,15 @@ describeIntegration('extension exposure model-backed regression', () => {
       // appended to the system prompt sent to the model.
       const captured = stderr.match(/ADVISORY_CAPTURED_START:([\s\S]*?):ADVISORY_CAPTURED_END/)?.[1] ?? '';
       expect(captured).not.toBe('');
-      // Presence: the active ast_grep tool reached the advisory block.
+      const activeJson = stderr.match(/ACTIVE_TOOLS_CAPTURED_START:([^\n]*):ACTIVE_TOOLS_CAPTURED_END/)?.[1] ?? '[]';
+      const active = JSON.parse(activeJson) as string[];
+      expect(active).toContain('read');
+      expect(active).toContain('ast_grep');
+      expect(active).toContain('extension_probe');
+      expect(active).not.toContain('bash');
+      // Only the active tool with reviewed guidance reaches the advisory.
       expect(captured).toContain('ast_grep');
-      // Absence: the configured-but-denied sdk tool was never claimed active
-      // in the advisory that reached the model (deterministic read-back).
-      expect(captured).not.toContain('denied_probe');
+      expect(captured).not.toContain('extension_probe');
       // Non-mandatory wording: advisory invites use, never forces it.
       expect(captured).toMatch(/use when relevant/i);
     } finally {

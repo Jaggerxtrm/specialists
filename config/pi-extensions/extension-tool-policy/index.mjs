@@ -84,10 +84,18 @@ export default function extensionToolPolicy(pi) {
       const active = selectActiveTools(allTools, process.env.PI_SPECIALIST_ALLOWED_NATIVE_TOOLS);
       pi.setActiveTools(active);
     } catch (error) {
-      // The tool-policy extension must never take the session down. On
-      // failure the session keeps the --no-builtin-tools empty active set,
-      // which is fail-closed (no native tools, no extension tools).
       console.error(`[xtrm-tool-policy] failed to apply tool policy: ${error?.message ?? String(error)}`);
+      // Selection may fail after another extension or runtime layer activated
+      // tools. Explicitly reset to empty rather than assuming
+      // --no-builtin-tools still owns the active set. Pi catches extension
+      // handler exceptions and continues, so a failed reset must terminate the
+      // child process to prevent a model turn with an unverified tool set.
+      try {
+        pi.setActiveTools([]);
+      } catch (resetError) {
+        console.error(`[xtrm-tool-policy] failed to clear active tools: ${resetError?.message ?? String(resetError)}`);
+        process.exit(1);
+      }
     }
   });
 
