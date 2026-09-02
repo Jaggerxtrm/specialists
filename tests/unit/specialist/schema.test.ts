@@ -221,13 +221,13 @@ describe('parseSpecialist', () => {
     (spec.specialist.execution as Record<string, unknown>).extensions = {
       serena: false,
       gitnexus: false,
-      'npm:@jaggerxtrm/pi-service-knowledge': true,
+      'npm:@jaggerxtrm/pi-service-knowledge@1.0.0': true,
       './relative-extension': true,
     };
     const result = await parseSpecialist(toJson(spec));
     expect(result.specialist.execution.extensions?.serena).toBe(false);
     expect(result.specialist.execution.extensions?.gitnexus).toBe(false);
-    expect(result.specialist.execution.extensions?.['npm:@jaggerxtrm/pi-service-knowledge']).toBe(true);
+    expect(result.specialist.execution.extensions?.['npm:@jaggerxtrm/pi-service-knowledge@1.0.0']).toBe(true);
     expect(result.specialist.execution.extensions?.['./relative-extension']).toBe(true);
   });
 

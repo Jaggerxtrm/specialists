@@ -81,7 +81,7 @@ describe('global specialist override config', () => {
           thinking_level: null,
           max_retries: null,
           extensions: {
-            'npm:@jaggerxtrm/pi-service-knowledge': true,
+            'npm:@jaggerxtrm/pi-service-knowledge@1.0.0': true,
           },
         },
         beads_write_notes: false,
@@ -105,7 +105,7 @@ describe('global specialist override config', () => {
         prompt_limit_bytes: null,
         stdout_limit_bytes: null,
         extensions: {
-          'npm:@jaggerxtrm/pi-service-knowledge': true,
+          'npm:@jaggerxtrm/pi-service-knowledge@1.0.0': true,
           gitnexus: null,
         },
       },
@@ -293,7 +293,7 @@ describe('global specialist override config', () => {
           extensions: {
             serena: null,
             gitnexus: null,
-            'npm:@jaggerxtrm/pi-service-knowledge': true,
+            'npm:@jaggerxtrm/pi-service-knowledge@1.0.0': true,
             './local-extension': false,
           },
         },

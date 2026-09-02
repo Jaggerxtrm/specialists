@@ -21829,6 +21829,7 @@ class SpecialistLoader {
       baseExecution[field] = this.resolveOverrideValue(name, `specialist.execution.${field}`, overrideValue);
     }
     mergeExecutionExtensionOverrides({
+      specialist: name,
       baseExecution,
       overrideExecution,
       resolveValue: (path, value) => this.resolveOverrideValue(name, `specialist.execution.${path}`, value)
@@ -21973,6 +21974,7 @@ class SpecialistLoader {
       execution[field] = this.resolveOverrideValue(name, `specialist.execution.${field}`, value);
     }
     mergeExecutionExtensionOverrides({
+      specialist: name,
       baseExecution: execution,
       overrideExecution: execution,
       resolveValue: (path, value) => this.resolveOverrideValue(name, `specialist.execution.${path}`, value)
@@ -22092,7 +22094,41 @@ function mergeExecutionExtensionOverrides(options) {
         continue;
       mergedExtensions[key] = options.resolveValue(`${path}.${key}`, value);
     }
+    rejectNpmSourceCollisions(options.specialist, mergedExtensions);
     writeDottedPath(options.baseExecution, path, mergedExtensions);
+  }
+}
+function parseNpmSourceName(key) {
+  if (!key.startsWith("npm:"))
+    return null;
+  const spec = key.slice("npm:".length);
+  let name;
+  if (spec.startsWith("@")) {
+    const slash = spec.indexOf("/");
+    if (slash < 0)
+      return null;
+    const rest = spec.slice(slash + 1);
+    const at = rest.indexOf("@");
+    name = at < 0 ? spec : spec.slice(0, slash + 1 + at);
+  } else {
+    const at = spec.indexOf("@");
+    name = at < 0 ? spec : spec.slice(0, at);
+  }
+  return name.length <= 214 && (name.startsWith("@") ? NPM_SCOPED_NAME_RE.test(name) : NPM_NAME_RE.test(name)) ? name : null;
+}
+function rejectNpmSourceCollisions(specialist, extensions) {
+  const seen = new Map;
+  for (const [key, value] of Object.entries(extensions)) {
+    if (value !== true)
+      continue;
+    const name = parseNpmSourceName(key);
+    if (!name)
+      continue;
+    const existing = seen.get(name);
+    if (existing !== undefined && existing !== key) {
+      throw new SpecialistExtensionSourceCollisionError(specialist, name);
+    }
+    seen.set(name, key);
   }
 }
 function readDottedPath(obj, dotted) {
@@ -22144,7 +22180,7 @@ function resolveSkillsPaths(spec, fileDir, consumerRoot) {
   const resolved = rawPaths.map((p) => resolveSkillPath(p, { consumerRoot, fileDir }));
   spec.specialist.skills.paths = resolved;
 }
-var SpecialistMissingModelError, PROTOTYPE_POLLUTION_KEYS;
+var SpecialistMissingModelError, SpecialistExtensionSourceCollisionError, PROTOTYPE_POLLUTION_KEYS, NPM_NAME_RE, NPM_SCOPED_NAME_RE;
 var init_loader = __esm(() => {
   init_dist();
   init_schema();
@@ -22160,7 +22196,15 @@ var init_loader = __esm(() => {
       this.name = "SpecialistMissingModelError";
     }
   };
+  SpecialistExtensionSourceCollisionError = class SpecialistExtensionSourceCollisionError extends Error {
+    constructor(specialistName, packageName) {
+      super(`specialist '${specialistName}' resolves multiple enabled npm extension sources for package '${packageName}' ` + `(distinct specs across config layers). Refusing to forward: keep exactly one spec per package, ` + `pinned to an exact reviewed version.`);
+      this.name = "SpecialistExtensionSourceCollisionError";
+    }
+  };
   PROTOTYPE_POLLUTION_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+  NPM_NAME_RE = /^[a-z0-9][a-z0-9._~-]{0,213}$/;
+  NPM_SCOPED_NAME_RE = /^@[a-z0-9][a-z0-9._~-]{0,212}\/[a-z0-9][a-z0-9._~-]{0,213}$/;
 });
 
 // src/specialist/job-file-output.ts

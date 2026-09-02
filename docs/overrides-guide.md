@@ -70,6 +70,11 @@ The value has no runtime effect. Specialists no longer probes, loads, or starts 
 - Type: `Record<string, boolean | null> | null`
 - Trust boundary: keys are executable extension sources. Set them only from reviewed config files, never prompts or untrusted payloads.
 - Merge semantics: package/global/repo layers merge per key; siblings are preserved.
+- Fail-closed duplicate detection: if any layers resolve two distinct `npm:` keys for the
+  same npm package (for example an exact pinned canonical key plus a legacy floating
+  `npm:@scope/pkg` or range `npm:@scope/pkg@^1` override), config resolution rejects
+  before Pi spawns. Fix the overlay by removing the duplicate key or aligning it to the
+  exact canonical pinned spec. Identical keys keep normal override semantics (`true`/`false`).
 - Runtime semantics:
   - `gitnexus: false` disables default GitNexus injection.
   - `serena` is deprecated and ignored.
@@ -84,7 +89,7 @@ The value has no runtime effect. Specialists no longer probes, loads, or starts 
     "execution": {
       "extensions": {
         "gitnexus": false,
-        "npm:@jaggerxtrm/pi-service-knowledge": true
+        "npm:@jaggerxtrm/pi-service-knowledge@1.0.0": true
       }
     }
   }

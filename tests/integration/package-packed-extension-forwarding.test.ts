@@ -49,7 +49,7 @@ describePacked('packed extension forwarding smoke', () => {
             max_retries: 0,
             extensions: {
               serena: false,
-              'npm:@jaggerxtrm/pi-service-knowledge': true,
+              'npm:@jaggerxtrm/pi-service-knowledge@1.0.0': true,
               './local-extension': true,
               'https://example.test/disabled': false,
             },
@@ -92,11 +92,11 @@ describePacked('packed extension forwarding smoke', () => {
     const extensionArgs = getExtensionArgs(argv);
     expect(JSON.parse(run.stdout).success).toBe(true);
     expect(argv).not.toContain('--offline');
-    expect(extensionArgs.filter((value) => ['npm:@jaggerxtrm/pi-service-knowledge', './local-extension'].includes(value))).toEqual([
-      'npm:@jaggerxtrm/pi-service-knowledge',
+    expect(extensionArgs.filter((value) => ['npm:@jaggerxtrm/pi-service-knowledge@1.0.0', './local-extension'].includes(value))).toEqual([
+      'npm:@jaggerxtrm/pi-service-knowledge@1.0.0',
       './local-extension',
     ]);
-    expect(countArg(extensionArgs, 'npm:@jaggerxtrm/pi-service-knowledge')).toBe(1);
+    expect(countArg(extensionArgs, 'npm:@jaggerxtrm/pi-service-knowledge@1.0.0')).toBe(1);
     expect(countArg(extensionArgs, './local-extension')).toBe(1);
     expect(extensionArgs).not.toContain('https://example.test/disabled');
     expect(extensionArgs).not.toContain('serena');

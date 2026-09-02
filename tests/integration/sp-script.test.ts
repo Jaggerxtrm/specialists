@@ -352,7 +352,7 @@ describe('sp script', () => {
             extensions: {
               serena: false,
               gitnexus: false,
-              'npm:@jaggerxtrm/pi-service-knowledge': true,
+              'npm:@jaggerxtrm/pi-service-knowledge@1.0.0': true,
               './local-extension': true,
               'git:https://example.test/ext.git': true,
               'https://example.test/disabled': false,
@@ -380,13 +380,13 @@ describe('sp script', () => {
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout).success).toBe(true);
     expect(argv).not.toContain('--offline');
-    expect(extensionArgs).toEqual(expect.arrayContaining(['npm:@jaggerxtrm/pi-service-knowledge', './local-extension', 'git:https://example.test/ext.git']));
-    expect(extensionArgs.filter((value) => ['npm:@jaggerxtrm/pi-service-knowledge', './local-extension', 'git:https://example.test/ext.git'].includes(value))).toEqual([
-      'npm:@jaggerxtrm/pi-service-knowledge',
+    expect(extensionArgs).toEqual(expect.arrayContaining(['npm:@jaggerxtrm/pi-service-knowledge@1.0.0', './local-extension', 'git:https://example.test/ext.git']));
+    expect(extensionArgs.filter((value) => ['npm:@jaggerxtrm/pi-service-knowledge@1.0.0', './local-extension', 'git:https://example.test/ext.git'].includes(value))).toEqual([
+      'npm:@jaggerxtrm/pi-service-knowledge@1.0.0',
       './local-extension',
       'git:https://example.test/ext.git',
     ]);
-    expect(countArg(extensionArgs, 'npm:@jaggerxtrm/pi-service-knowledge')).toBe(1);
+    expect(countArg(extensionArgs, 'npm:@jaggerxtrm/pi-service-knowledge@1.0.0')).toBe(1);
     expect(countArg(extensionArgs, './local-extension')).toBe(1);
     expect(countArg(extensionArgs, 'git:https://example.test/ext.git')).toBe(1);
     expect(extensionArgs).not.toContain('serena');
