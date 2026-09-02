@@ -92,9 +92,36 @@ interface RunnerDeps {
 interface ScriptResult {
     name: string;
     output: string;
+    stderr: string;
     exitCode: number;
+    signal?: string;
+    spawnError?: string;
 }
+/** Bounds the name and strips control/XML-significant characters so a
+ *  script-controlled command string cannot break the `<script name="...">`
+ *  wrapper or terminal rendering (unitAI-x64ys). */
+export declare function sanitizeScriptName(name: string): string;
 export declare function runScript(command: string | undefined, cwd: string): ScriptResult;
+export interface RequiredPreScriptFailure {
+    name: string;
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+    signal?: string;
+    spawnError?: string;
+}
+/** Shared required-preflight decision: the first `pre` script marked
+ *  `required: true` whose result is nonzero aborts the run. Optional scripts
+ *  (required omitted/false) never gate — legacy injection behavior is kept. */
+export declare function findRequiredPreScriptFailure(scripts: ReadonlyArray<{
+    phase?: string;
+    required?: boolean;
+}>, results: ReadonlyArray<ScriptResult>): RequiredPreScriptFailure | null;
+export declare class RequiredPreScriptError extends Error {
+    readonly code = "pre_script_failed";
+    constructor(message: string);
+}
+export declare function formatRequiredPreScriptFailure(failure: RequiredPreScriptFailure): string;
 export declare function formatScriptOutput(results: ScriptResult[]): string;
 export declare function validateBeforeRun(spec: {
     specialist: {

@@ -1,7 +1,7 @@
 import { type ChildProcess } from 'node:child_process';
 import { SpecialistLoader } from './loader.js';
 import type { Specialist } from './schema.js';
-export type ScriptSpecialistErrorType = 'specialist_not_found' | 'specialist_load_error' | 'template_variable_missing' | 'template_field_misuse' | 'auth' | 'quota' | 'timeout' | 'network' | 'invalid_json' | 'prompt_too_large' | 'output_too_large' | 'internal';
+export type ScriptSpecialistErrorType = 'specialist_not_found' | 'specialist_load_error' | 'pre_script_failed' | 'template_variable_missing' | 'template_field_misuse' | 'auth' | 'quota' | 'timeout' | 'network' | 'invalid_json' | 'prompt_too_large' | 'output_too_large' | 'internal';
 export interface ScriptGenerateRequest {
     specialist: string;
     requested_specialist?: string;

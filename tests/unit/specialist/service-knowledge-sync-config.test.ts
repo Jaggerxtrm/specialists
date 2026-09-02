@@ -115,6 +115,7 @@ describe('service-knowledge-sync v2 role binding', () => {
   });
 
   it('unsets inherited selectors and passes validation through the leading shell builtin', () => {
+    expect(SPECIALIST.skills?.scripts?.[0]).toMatchObject({ phase: 'pre', inject_output: true, required: true });
     expect(SCRIPT).toMatch(/^: ; unset SERVICE_REGISTRY_PATH CLAUDE_PROJECT_DIR XTRM_PACK;/);
     expect(SCRIPT).not.toMatch(/\b(?:export|set)\s+(?:SERVICE_REGISTRY_PATH|CLAUDE_PROJECT_DIR|XTRM_PACK)/);
     expect(() => validateBeforeRun({
@@ -132,6 +133,7 @@ describe('service-knowledge-sync v2 role binding', () => {
     expect(runScript(SCRIPT, root)).toEqual({
       name: ':',
       exitCode: 0,
+      stderr: '',
       output: [
         'PRE_SCRIPT_DATA_BEGIN',
         'PRE_SCRIPT_SCOPE: scope: registry loaded',

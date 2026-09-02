@@ -133,22 +133,130 @@ interface RunnerDeps {
 interface ScriptResult {
   name: string;
   output: string;
+  stderr: string;
   exitCode: number;
+  signal?: string;
+  spawnError?: string;
+}
+
+/** Bounds the name and strips control/XML-significant characters so a
+ *  script-controlled command string cannot break the `<script name="...">`
+ *  wrapper or terminal rendering (unitAI-x64ys). */
+export function sanitizeScriptName(name: string): string {
+  const cleaned = name.replace(/[\u0000-\u001f\u007f-\u009f"\\<>]/g, '').slice(0, 128);
+  return /^[A-Za-z0-9:][A-Za-z0-9._:-]{0,127}$/.test(cleaned) ? cleaned : 'unknown';
+}
+
+const SCRIPT_OUTPUT_LIMIT_BYTES = 1024 * 1024;
+
+// Hard byte cap applied in-process: not every runtime honors spawnSync maxBuffer.
+function capStream(value: string, limitBytes: number = SCRIPT_OUTPUT_LIMIT_BYTES): string {
+  const buf = Buffer.from(value, 'utf8');
+  if (buf.length <= limitBytes) return value;
+  return buf.subarray(0, limitBytes).toString('utf8');
 }
 
 export function runScript(command: string | undefined, cwd: string): ScriptResult {
   const run = (command ?? '').trim();
   if (!run) {
-    return { name: 'unknown', output: 'Missing script command (expected `run` or legacy `path`).', exitCode: 1 };
+    return { name: 'unknown', output: 'Missing script command (expected `run` or legacy `path`).', stderr: '', exitCode: 1 };
   }
 
-  const scriptName = basename(run.split(' ')[0]);
-  try {
-    const output = execSync(run, { encoding: 'utf8', timeout: 30_000, cwd });
-    return { name: scriptName, output, exitCode: 0 };
-  } catch (e: any) {
-    return { name: scriptName, output: e.stdout ?? e.message ?? '', exitCode: e.status ?? 1 };
+  const scriptName = sanitizeScriptName(basename(run.split(' ')[0]));
+  // shell: true keeps the previous execSync /bin/sh -c semantics: `run` is a
+  // shell command string, never re-tokenized (unitAI-x64ys).
+  const result = spawnSync(run, {
+    encoding: 'utf8',
+    timeout: 30_000,
+    cwd,
+    shell: true,
+    maxBuffer: SCRIPT_OUTPUT_LIMIT_BYTES,
+  });
+  const exitCode = typeof result.status === 'number' ? result.status : 1;
+  const output = capStream(result.stdout ?? '');
+  const stderr = capStream(result.stderr ?? '');
+  if (exitCode === 0 && !result.error) {
+    return { name: scriptName, output, stderr, exitCode: 0 };
   }
+  const rawErrorCode = (result.error as NodeJS.ErrnoException | undefined)?.code;
+  const spawnError = typeof rawErrorCode === 'string' && /^[A-Z0-9_]{1,32}$/.test(rawErrorCode)
+    ? rawErrorCode
+    : result.error ? 'SPAWN_ERROR' : undefined;
+  const notes = [stderr.trim(), spawnError ? `spawn error: ${spawnError}` : ''].filter(Boolean).join('\n');
+  return {
+    name: scriptName,
+    output,
+    stderr: notes,
+    exitCode,
+    ...(result.signal ? { signal: result.signal } : {}),
+    ...(spawnError ? { spawnError } : {}),
+  };
+}
+
+export interface RequiredPreScriptFailure {
+  name: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  signal?: string;
+  spawnError?: string;
+}
+
+/** Shared required-preflight decision: the first `pre` script marked
+ *  `required: true` whose result is nonzero aborts the run. Optional scripts
+ *  (required omitted/false) never gate — legacy injection behavior is kept. */
+export function findRequiredPreScriptFailure(
+  scripts: ReadonlyArray<{ phase?: string; required?: boolean }>,
+  results: ReadonlyArray<ScriptResult>,
+): RequiredPreScriptFailure | null {
+  for (let i = 0; i < scripts.length; i += 1) {
+    const script = scripts[i];
+    if (script.phase !== 'pre' || script.required !== true) continue;
+    const result = results[i];
+    if (result && result.exitCode !== 0) {
+      return {
+        name: result.name,
+        exitCode: result.exitCode,
+        stdout: result.output,
+        stderr: result.stderr,
+        ...(result.signal ? { signal: result.signal } : {}),
+        ...(result.spawnError ? { spawnError: result.spawnError } : {}),
+      };
+    }
+  }
+  return null;
+}
+
+export class RequiredPreScriptError extends Error {
+  readonly code = 'pre_script_failed';
+  constructor(message: string) {
+    super(message);
+    this.name = 'RequiredPreScriptError';
+  }
+}
+
+const PRE_SCRIPT_DIAGNOSTIC_LIMIT_BYTES = 4096;
+
+function sanitizeDiagnostic(text: string, limitBytes: number): string {
+  const clean = text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, '');
+  if (Buffer.byteLength(clean, 'utf8') <= limitBytes) return clean;
+  let slice = clean.slice(0, limitBytes);
+  while (Buffer.byteLength(slice, 'utf8') > limitBytes) slice = slice.slice(0, -1);
+  return `${slice}\n... (truncated)`;
+}
+
+export function formatRequiredPreScriptFailure(failure: RequiredPreScriptFailure): string {
+  const context = failure.signal
+    ? ` (signal ${failure.signal})`
+    : failure.spawnError ? ` (${failure.spawnError})` : '';
+  return [
+    `Required pre-script '${failure.name}' failed with exit code ${failure.exitCode}${context}.`,
+    'The run was aborted before the model session started; no model fallback or retry is performed.',
+    `--- stdout (bounded to ${PRE_SCRIPT_DIAGNOSTIC_LIMIT_BYTES} bytes) ---`,
+    sanitizeDiagnostic(failure.stdout, PRE_SCRIPT_DIAGNOSTIC_LIMIT_BYTES),
+    `--- stderr (bounded to ${PRE_SCRIPT_DIAGNOSTIC_LIMIT_BYTES} bytes) ---`,
+    sanitizeDiagnostic(failure.stderr, PRE_SCRIPT_DIAGNOSTIC_LIMIT_BYTES),
+  ].join('\n');
 }
 
 /**
@@ -1062,10 +1170,13 @@ export class SpecialistRunner {
     const runCwd = resolve(options.workingDirectory ?? process.cwd());
 
     const preScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'pre') ?? [];
-    const preResults = preScripts
-      .map(s => runScript(s.run ?? (s as unknown as { path?: string }).path, runCwd))
-      .filter((_, i) => preScripts[i].inject_output);
-    const preScriptOutput = formatScriptOutput(preResults);
+    const preScriptResults = preScripts
+      .map(s => runScript(s.run ?? (s as unknown as { path?: string }).path, runCwd));
+    const requiredPreFailure = findRequiredPreScriptFailure(preScripts, preScriptResults);
+    if (requiredPreFailure) {
+      throw new RequiredPreScriptError(formatRequiredPreScriptFailure(requiredPreFailure));
+    }
+    const preScriptOutput = formatScriptOutput(preScriptResults.filter((_, i) => preScripts[i].inject_output));
     const payloadComponents: PayloadComponentMeasurement[] = [];
 
     const beadReader = beadsClient ?? new BeadsClient();

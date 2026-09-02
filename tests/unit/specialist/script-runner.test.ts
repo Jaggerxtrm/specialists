@@ -1344,3 +1344,87 @@ describe('runScriptSpecialist PiAgentSession observability bridge', () => {
     expect(events.some((event) => event.type === 'tool' && event.phase === 'end' && event.tool === 'bash')).toBe(true);
   });
 });
+
+describe('required pre-script preflight (unitAI-x64ys)', () => {
+  function specWithScripts(scripts: Array<Record<string, unknown>>) {
+    return {
+      ...baseSpec,
+      specialist: {
+        ...baseSpec.specialist,
+        skills: { scripts },
+      },
+    };
+  }
+
+  it('serve: required stderr-only pre-script failure returns pre_script_failed and never spawns pi', async () => {
+    spawnSyncMock
+      .mockReturnValueOnce({ status: 0, stdout: '', stderr: '' }) // commandExists probe
+      .mockReturnValueOnce({ status: 1, stdout: '', stderr: 'registry missing\n' }); // pre script
+    const child = createSpawnMock();
+    const result = await runScriptSpecialist(
+      { specialist: 'test', template: 'go' },
+      {
+        loader: makeLoader(specWithScripts([
+          { run: 'preflight.sh', phase: 'pre', inject_output: true, required: true },
+        ])) as never,
+        projectDir: '.',
+        trust: { allowLocalScripts: true },
+      },
+    );
+    expect(result).toMatchObject({ success: false, error_type: 'pre_script_failed' });
+    expect(result.success === false && result.error).toContain('registry missing');
+    expect(result.success === false && result.error).toContain('exit code 1');
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(piSessionCreateMock).not.toHaveBeenCalled();
+    void child;
+  });
+
+  it('script surface: required pre-script failure aborts before the fake pi session', async () => {
+    spawnSyncMock
+      .mockReturnValueOnce({ status: 0, stdout: '', stderr: '' })
+      .mockReturnValueOnce({ status: 5, stdout: 'partial stdout\n', stderr: 'fatal stderr\n' });
+    createSpawnMock();
+    const result = await runScriptSpecialist(
+      { specialist: 'test', template: 'go' },
+      {
+        loader: makeLoader(specWithScripts([
+          { run: 'preflight.sh', phase: 'pre', inject_output: true, required: true },
+        ])) as never,
+        projectDir: '.',
+        surface: 'script',
+        trust: { allowLocalScripts: true },
+      },
+    );
+    expect(result).toMatchObject({ success: false, error_type: 'pre_script_failed' });
+    expect(result.success === false && result.error).toContain('partial stdout');
+    expect(result.success === false && result.error).toContain('fatal stderr');
+    expect(result.success === false && result.error).toContain('exit code 5');
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('serve: optional nonzero pre-script keeps injecting and continues to pi', async () => {
+    spawnSyncMock
+      .mockReturnValueOnce({ status: 0, stdout: '', stderr: '' })
+      .mockReturnValueOnce({ status: 1, stdout: 'drift data\n', stderr: 'warn noise\n' });
+    const child = createSpawnMock();
+    const resultPromise = runScriptSpecialist(
+      { specialist: 'test', template: 'go' },
+      {
+        loader: makeLoader(specWithScripts([
+          { run: 'preflight.sh', phase: 'pre', inject_output: true },
+        ])) as never,
+        projectDir: '.',
+        trust: { allowLocalScripts: true },
+      },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    child.stdout.emit('data', Buffer.from(`${JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] } })}\n`));
+    child.emit('close', 0);
+
+    await expect(resultPromise).resolves.toMatchObject({ success: true, output: 'ok' });
+    const prompt = child.stdin.write.mock.calls[0][0] as string;
+    expect(prompt).toContain('<pre_flight_context>');
+    expect(prompt).toContain('drift data');
+    expect(prompt).toContain('exit_code="1"');
+  });
+});

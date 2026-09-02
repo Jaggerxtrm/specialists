@@ -20,7 +20,7 @@ import { buildMandatoryRulesInjection } from './mandatory-rules.js';
 import { resolveModelChain } from './model-chain.js';
 import { ensureObservabilityDbFile, resolveObservabilityDbLocation } from './observability-db.js';
 import { createObservabilitySqliteClient, createObservabilitySqliteClientAtPath } from './observability-sqlite.js';
-import { formatScriptOutput, runScript, validateBeforeRun } from './runner.js';
+import { formatScriptOutput, findRequiredPreScriptFailure, formatRequiredPreScriptFailure, runScript, validateBeforeRun } from './runner.js';
 import type { ScriptEntry, Specialist } from './schema.js';
 import type { SupervisorStatus } from './supervisor.js';
 import { formatResolvedToolContract, type ResolvedToolContract } from './resolved-tool-contract.js';
@@ -39,6 +39,7 @@ import {
 export type ScriptSpecialistErrorType =
   | 'specialist_not_found'
   | 'specialist_load_error'
+  | 'pre_script_failed'
   | 'template_variable_missing'
   | 'template_field_misuse'
   | 'auth'
@@ -775,13 +776,29 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
     const executableScripts = trust.allowLocalScripts ? localScripts : [];
     const preScripts = executableScripts.filter((script) => script.phase === 'pre');
     const postScripts = executableScripts.filter((script) => script.phase === 'post');
+    const preScriptResults = preScripts.map((script) => runScript(getLocalScriptCommand(script), baseDir));
+    const requiredPreFailure = findRequiredPreScriptFailure(preScripts, preScriptResults);
+    if (requiredPreFailure) {
+      const modelCandidates = collectModelCandidates(input, spec, options);
+      return {
+        success: false as const,
+        error: formatRequiredPreScriptFailure(requiredPreFailure),
+        error_type: 'pre_script_failed' as const,
+        meta: {
+          specialist: resolvedSpecialist,
+          requested_specialist: input.requested_specialist ?? input.specialist,
+          resolved_specialist: resolvedSpecialist,
+          model: modelCandidates[0],
+          duration_ms: Date.now() - startedAt,
+          trace_id: traceId,
+        },
+      };
+    }
     const runPostScripts = (): void => {
       for (const script of postScripts) runScript(getLocalScriptCommand(script), baseDir);
     };
     const preScriptOutput = formatScriptOutput(
-      preScripts
-        .map((script) => runScript(getLocalScriptCommand(script), baseDir))
-        .filter((_, index) => preScripts[index].inject_output),
+      preScriptResults.filter((_, index) => preScripts[index].inject_output),
     );
 
     let template: string;
