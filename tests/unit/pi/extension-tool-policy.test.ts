@@ -4,7 +4,7 @@
 // with a fake pi, so the fail-closed selection logic and the active-tool
 // advisory are verified against the exact code Pi loads.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { join } from 'node:path';
@@ -25,8 +25,8 @@ interface BeforeAgentStartHandler {
     BeforeAgentStartResult | undefined;
 }
 
-function makeFakePi(allTools: FakeTool[]) {
-  let active: string[] = [];
+function makeFakePi(allTools: FakeTool[], initialActive: string[] = []) {
+  let active = [...initialActive];
   let sessionHandler: (() => void) | undefined;
   let beforeAgentStartHandler: BeforeAgentStartHandler | undefined;
   return {
@@ -182,6 +182,8 @@ describe('extension tool policy artifact', () => {
       factory(fake);
       fake.runSessionStart();
       const result = fake.runBeforeAgentStart({ systemPrompt: 'RULES' });
+      expect(fake.getActive()).toEqual(['read', 'grep', 'find', 'ls', 'ast_grep']);
+      expect(fake.getActive()).not.toContain('denied_probe');
       expect(result?.systemPrompt).toContain('ast_grep');
       expect(result?.systemPrompt).not.toContain('denied_probe');
     } finally {
@@ -190,16 +192,33 @@ describe('extension tool policy artifact', () => {
     }
   });
 
-  it('survives session_start failures fail-closed (empty active set)', async () => {
+  it('clears a pre-existing active set when session_start policy selection fails', async () => {
     const factory = await loadPolicyFactory();
-    const { fake } = makeFakePi([]);
-    // Simulate an API failure inside the handler (getAllTools throws).
+    const { fake } = makeFakePi([], ['unsafe_preexisting_tool']);
+    fake.getAllTools = () => { throw new Error('boom'); };
+
+    factory(fake);
+    expect(() => fake.runSessionStart()).not.toThrow();
+    expect(fake.getActive()).toEqual([]);
+  });
+
+  it('terminates the Pi process when the fail-closed active-set reset fails', async () => {
+    const factory = await loadPolicyFactory();
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit:${code}`);
+    }) as never);
     const brokenPi = {
       on: (event: string, handler: () => void) => { if (event === 'session_start') handler(); },
-      getAllTools: () => { throw new Error('boom'); },
-      setActiveTools: () => { throw new Error('must not be called'); },
+      getAllTools: () => { throw new Error('selection failed'); },
+      setActiveTools: () => { throw new Error('reset failed'); },
     };
-    expect(() => factory(brokenPi)).not.toThrow();
+
+    try {
+      expect(() => factory(brokenPi)).toThrow('process.exit:1');
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    } finally {
+      exitSpy.mockRestore();
+    }
   });
 });
 

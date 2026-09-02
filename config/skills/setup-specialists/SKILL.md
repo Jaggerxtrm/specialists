@@ -430,12 +430,6 @@ These require editing the package-canonical manifest
 (`config/specialists/<name>.specialist.json`); `auto_commit` and the
 mandatory-rules siblings are not settable from any override layer.
 
-A blocked field that sneaks in is **applied with a warning** (forward compat,
-v1) and surfaced by `sp doctor --specialists` as
-`blocked-field overrides present in repo layers`. Fork to a per-repo spec to
-clear the warning. At the **global** layer the loader strips blocked fields
-instead (severity `strip`) — the merge never applies them.
-
 Global-layer mandatory-rules example:
 
 ```bash

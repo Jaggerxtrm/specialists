@@ -244,10 +244,9 @@ It provides:
 - cursor navigation and direct actions (`↵`, `r`, `i`, `b`, `d`, `g`, `R`, `x`, `0`, `tab`, `1-9`);
 - TUI-styled rows shared with `sp ps`.
 
-```bash
+```text
 sp console
-sp console --add-repo ~/dev/my-project
-sp console --remove-repo old-project
+# Press R, then + to add a repository; select one and press d to remove it.
 ```
 
 For shell-only workflows:
@@ -273,16 +272,9 @@ Specialists separates **doing work** from **publishing work**.
 - `executor`, `debugger`, `test-engineer`, and `sync-docs` may create changes.
 - `seconder`, `test-runner`, and `reviewer` produce evidence/verdicts.
 - Reviewer PASS is the normal publish gate for implementation work.
-- `sp merge` and `sp epic merge` are publication tools, not authoring tools.
+- `sp merge` and `sp epic merge` exist but are currently marked broken. Do not use them.
 
-```bash
-# Standalone reviewed chain
-sp merge <chain-root-bead>
-
-# Multi-chain epic
-sp epic status <epic-id>
-sp epic merge <epic-id>
-```
+Follow [the merge and integration procedure](config/skills/using-specialists/references/merge-and-integration.md) for reviewed publication work. `sp epic status <epic-id>` remains available for inspection.
 
 Keep-alive specialists may stop in `waiting` after producing a result. Use `sp result <job-id>` to read the handoff, then `sp stop <job-id>` when no follow-up is needed.
 
@@ -300,7 +292,7 @@ curl -sS http://localhost:8000/v1/generate \
   -d '{"specialist":"hello","variables":{"name":"world"}}'
 ```
 
-Script/service mode is useful for CI, internal services, deterministic JSON generation, and sidecar deployments. Trusted local-script or write-capable execution must be explicitly enabled with the relevant flags; it is not implicit.
+Script/service mode is useful for CI, internal services, deterministic JSON generation, and sidecar deployments. Only `sp script` supports trusted local scripts or write-capable execution through `--allow-local-scripts` and `--allow-write-capable`. `sp serve` supports neither. Skills remain disabled unless `--allow-skills` is set; `--allow-skills-roots` restricts accepted canonical paths when supplied. Rootless `sp serve --allow-skills` can read arbitrary same-user host paths and remains a publication blocker tracked by `unitAI-641h0`.
 
 See [docs/specialists-service.md](docs/specialists-service.md) and [docs/specialists-service-install.md](docs/specialists-service-install.md).
 
@@ -322,6 +314,33 @@ sp serve --port 8000          # exposes /metrics and job feed endpoints
 ```
 
 Telemetry uses bounded labels and avoids high-cardinality IDs in Prometheus labels. Forensic events retain drill-down detail in SQLite/JSON output where IDs are appropriate.
+
+### Project-pack Service Knowledge
+
+`service-knowledge-sync` declares the logical `service-knowledge` skill. On Pi and Claude role launches, the runtime resolves that name from the consumer repository rather than requiring a stale global install:
+
+```text
+.xtrm/skills/<pack>/service-knowledge/
+├── SKILL.md
+├── service-registry.json
+└── services/
+```
+
+Resolution is deterministic and fail-closed. Core first honors an enabled runtime-specific repository view. Otherwise:
+
+- one matching project pack wins;
+- multiple matching packs fail as ambiguous;
+- a discovered malformed, unreadable, symlinked, or escaping candidate fails instead of falling back;
+- zero project-pack matches permit the existing home/global fallback chain;
+- direct/script paths are canonicalized against canonical allowed roots before Pi starts.
+
+The pack directory contains repository-specific knowledge. Shared executable machinery remains separate at `.xtrm/skills/default/service-knowledge/scripts/`; the runtime does not copy scripts into each pack umbrella. Pre-scripts run from the consumer repository, clear registry-selection environment overrides, label repository output as untrusted data, redact host paths, and enforce bounded raw and rendered output.
+
+Core forwards the resolved absolute pack path to Pi. For Claude, Core creates a bounded worktree-local `.claude/skills/<name>` link and verifies link, prefix, shadow, and canonical identity before launch. Codex rejects project-pack skill paths because Core does not materialize Codex-native pack skills.
+
+Direct surfaces remain narrower: `sp script` confines skill paths to its project root, `service-knowledge-sync` itself is rejected there because it requires a worktree, and `sp serve` does not permit local pre-scripts.
+
+> **Release state:** This coordinated behavior was validated at merged Core `ef14bf44` (the reviewed `eede9290` integration), Specialists `f263a228`, and `service-knowledge-sync` 1.10.0. It is coordinated-head validation, not a published 3.21.6 compatibility guarantee.
 
 ---
 
@@ -419,7 +438,7 @@ Use `sp init`, `sp init --global`, `sp setup`, `xt update`, and the release skil
 
 ```bash
 bun run build
-bun test           # bun vitest run (default; only supported runner)
+bun run test       # runs Vitest through Bun (the supported test runner)
 sp help
 sp quickstart
 ```

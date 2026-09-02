@@ -50,4 +50,3 @@ export function getExtensionArgs(argv: readonly string[]): string[] {
 export function countArg(argv: readonly string[], value: string): number {
   return argv.filter(entry => entry === value).length;
 }
-

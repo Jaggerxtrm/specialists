@@ -222,7 +222,7 @@ export type BlockedFieldSeverity = 'strip' | 'warn';
 /**
  * Recorded when an override layer attempts to set a blocked field.
  * - `strip` (global layer): value removed, NOT applied.
- * - `warn` (repo layer, v1): value applied but flagged for the doctor command.
+ * - `warn` (repo layer, v1): value ignored and reported to the doctor command.
  */
 export interface BlockedFieldWarning {
   specialist: string;
