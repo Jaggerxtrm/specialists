@@ -1,13 +1,14 @@
 {
-  "schema_version": "1.0.0",
-  "scope": "Specialists-local; does not certify Pi v0.84.1 compatibility.",
+  "schema_version": "1.1.0",
+  "attestation_status": "candidate_template",
+  "scope": "Specialists-local; does not certify Pi compatibility or provide filesystem or host-read isolation.",
   "package": {
     "name": "@jaggerxtrm/specialists",
-    "version": "3.21.3",
-    "source_commit": "8afc4ecf9fd87e231d2415de16b338a1cb76ade2",
-    "git_head": "8afc4ecf9fd87e231d2415de16b338a1cb76ade2",
-    "tarball": "jaggerxtrm-specialists-3.21.3.tgz",
-    "sha256": "384eed39746e7b47acef93e30df4d68816628e8671cfc0f89afed95f566f7315"
+    "version": "3.21.6",
+    "source_commit": "not-generated",
+    "git_head": "not-generated",
+    "tarball": "jaggerxtrm-specialists-3.21.6.tgz",
+    "sha256": "not-generated"
   },
   "pi_runtime": {
     "version_or_range": "not-run"
@@ -17,14 +18,88 @@
     "mandatory_rules_sha256": "7236ce51baf681c5895e3de469d83c502f06f618bc53ff6f2771ce256ef9c386",
     "resolved_tool_contract_fixture_sha256": "0adb7ca1c3260a6f41eac28a4bb1331518c7e8f062bcd36417fafd616d444644"
   },
+  "host_read_isolation": {
+    "provided": false,
+    "waiver": {
+      "release": "3.21.6",
+      "status": "approved_bounded_waiver",
+      "tracking_issue": "unitAI-641h0",
+      "approved": true,
+      "approved_by": "operator",
+      "approved_at": "2026-09-03T00:56:00Z",
+      "limitation": "Specialists does not provide filesystem or host-read isolation. Model-driven runs and allowed tools, extensions, MCP processes, and child processes can read paths visible to the operating-system identity that runs Specialists.",
+      "affected_surfaces": [
+        "tracked_runs",
+        "sp_script",
+        "sp_serve",
+        "mcp_use_specialist",
+        "pipelines",
+        "pi_extensions",
+        "child_processes"
+      ],
+      "excluded_uses": [
+        "untrusted_callers",
+        "public_unauthenticated_ingress",
+        "cross_tenant_execution",
+        "multi_tenant_execution",
+        "confidential_host_data_visible_to_the_runtime_identity"
+      ],
+      "compensating_controls": [
+        "trusted_single_tenant_callers_only",
+        "private_or_loopback_authenticated_ingress",
+        "dedicated_container_or_os_account",
+        "minimal_readable_mounts",
+        "least_privilege_credentials",
+        "trusted_specialist_definitions",
+        "exact_reviewed_extension_sources",
+        "requested_permission_tiers_fail_closed_when_the_runtime_tool_catalog_is_unavailable_or_invalid"
+      ],
+      "non_controls": [
+        "allow_skills_roots",
+        "worktree_boundaries",
+        "permission_tier_names",
+        "extension_tool_allowlists",
+        "absolute_path_write_guards"
+      ],
+      "prohibited_claims": [
+        "sandboxed",
+        "filesystem_isolated",
+        "read_isolated",
+        "confidential",
+        "safe_for_untrusted_callers",
+        "public_service_ready",
+        "multi_tenant_safe"
+      ],
+      "tool_contract_resolution": "fail_closed",
+      "write_boundary": "absolute_paths_only",
+      "sandbox": "none",
+      "read_isolation": "not_provided",
+      "expires_at": "2026-10-03T00:00:00Z",
+      "expires_on_release": "3.21.7",
+      "expires_on_condition": "first_release_that_provides_enforced_host_read_isolation",
+      "expiry_rule": "whichever_occurs_first",
+      "reopen_conditions": [
+        "unauthorized_host_read",
+        "public_or_cross_tenant_deployment",
+        "requested_tier_launch_without_explicit_tools",
+        "readable_mount_expansion",
+        "misleading_isolation_documentation",
+        "waiver_expiry"
+      ],
+      "publication_authorized": false
+    }
+  },
+  "publication_authorized": false,
   "validation_commands": [
     "bun install --frozen-lockfile",
-    "bun run build",
+    "NODE_ENV=test bun run build",
+    "git diff --exit-code -- dist/",
     "npm pack --dry-run --json",
     "npm pack --json",
     "tar -tzf <tarball> | grep -i serena (must return no matches)",
     "npm install --global --prefix=\"$prefix\" <tarball>",
     "sp --version && sp doctor --check-drift && sp list --compact"
   ],
-  "rollback": "Unpublish only within npm 72-hour policy when permitted; otherwise deprecate compromised version and publish corrected patch. Restore prior known-good tag."
+  "rollback": "No publication is authorized by this template. If an operator later publishes and detects compromise, unpublish only within npm policy when permitted; otherwise deprecate the affected version and publish a corrected patch. Restore the prior known-good tag.",
+  "note": "Candidate template only. Generate and validate the final detached receipt from the exact clean source commit and packed tarball; do not treat this tracked file as publication evidence."
 }

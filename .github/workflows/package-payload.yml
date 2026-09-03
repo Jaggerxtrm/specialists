@@ -7,6 +7,10 @@ on:
   pull_request:
     paths:
       - package.json
+      - README.md
+      - CHANGELOG.md
+      - release-attestation.json
+      - tests/integration/release-attestation.test.ts
       - src/**
       - config/**
       - dist/**
@@ -32,6 +36,10 @@ jobs:
           filters: |
             package_payload:
               - package.json
+              - README.md
+              - CHANGELOG.md
+              - release-attestation.json
+              - tests/integration/release-attestation.test.ts
               - src/**
               - config/**
               - dist/**
@@ -60,9 +68,11 @@ jobs:
           echo 'package-payload: install succeeded'
       - name: Build package payload
         run: |
-          echo 'package-payload: building distributable payload before contract assertion'
-          bun run build
-          echo 'package-payload: build succeeded'
+          echo 'package-payload: verifying reproducible distributable payload'
+          NODE_ENV=test bun run build
+          git diff --exit-code -- dist/
+          test -z "$(git status --porcelain --untracked-files=all -- dist/)"
+          echo 'package-payload: build verification succeeded'
       - name: Generate npm pack manifest
         run: |
           echo 'package-payload: generating npm pack dry-run manifest'
@@ -72,6 +82,8 @@ jobs:
         run: |
           echo 'package-payload: asserting required payload assets'
           if ! scripts/assert-package-payload.sh /tmp/package-payload.json \
+            README.md \
+            CHANGELOG.md \
             dist/index.js \
             dist/lib.js \
             dist/types/lib.d.ts \
@@ -79,16 +91,24 @@ jobs:
             package.json \
             config/specialists/executor.specialist.json \
             config/specialists/reviewer.specialist.json \
+            config/specialists/service-knowledge-sync.specialist.json \
             config/mandatory-rules/executor-delivery.md \
             config/mandatory-rules/index.json \
             config/skills/using-specialists/SKILL.md \
             config/catalog/index.json \
             config/catalog/native.json \
             config/catalog/gitnexus.json \
+            config/pi-extensions/extension-tool-policy/index.mjs \
+            config/pi-extensions/read-line-numbers/index.mjs \
+            config/pi-extensions/read-line-numbers/package.json \
             scripts/generate-release-attestation.mjs \
             dist/asset-contract.json \
             LICENSE; then
             echo 'package-payload: CONTRACT FAILURE — asserted asset missing from successfully-built payload' >&2
+            exit 1
+          fi
+          if jq -e '.[0].files[] | select(.path == "release-attestation.json")' /tmp/package-payload.json >/dev/null; then
+            echo 'package-payload: CONTRACT FAILURE — tracked candidate attestation must remain outside the tarball' >&2
             exit 1
           fi
           echo 'package-payload: contract assertion passed'
@@ -114,12 +134,15 @@ jobs:
       - name: Build, pack, and smoke installed tarball
         run: |
           set -euo pipefail
-          bun run build
-          tarball=$(npm pack --json | jq -r '.[0].filename')
-          cp "$tarball" /tmp/sp-test.tgz
+          NODE_ENV=test bun run build
+          git diff --exit-code -- dist/
+          test -z "$(git status --porcelain --untracked-files=all -- dist/)"
+          tarball_name=$(npm pack --pack-destination /tmp --json | jq -r '.[0].filename')
+          tarball="/tmp/$tarball_name"
+          test "$tarball_name" = "jaggerxtrm-specialists-3.21.6.tgz"
           prefix=/tmp/sp-smoke-prefix
           workdir=$(mktemp -d)
-          npm install -g --prefix="$prefix" /tmp/sp-test.tgz
+          npm install -g --prefix="$prefix" "$tarball"
           export PATH="$prefix/bin:$PATH"
           cd "$workdir"
           sp --version
@@ -127,11 +150,11 @@ jobs:
           sp prune-stale-defaults --dry-run
           sp clean --dry-run
           sp list --compact
-          if tar -tzf /tmp/sp-test.tgz | grep -qi serena; then echo 'retired Serena surface found' >&2; exit 1; fi
+          if tar -tzf "$tarball" | grep -qi serena; then echo 'retired Serena surface found' >&2; exit 1; fi
           cd "$GITHUB_WORKSPACE"
           export PI_VERSION=not-run
-          npm run release:attest -- /tmp/sp-test.tgz /tmp/release-attestation.json
-          EXPECTED_SOURCE_COMMIT="$GITHUB_SHA" npm run release:attest -- --validate /tmp/sp-test.tgz /tmp/release-attestation.json
+          npm run release:attest -- "$tarball" /tmp/release-attestation.json
+          EXPECTED_SOURCE_COMMIT="$GITHUB_SHA" npm run release:attest -- --validate "$tarball" /tmp/release-attestation.json
           test -s /tmp/release-attestation.json
       - name: Persist release attestation
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
