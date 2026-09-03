@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 
 const run = promisify(execFile);
 const script = path.resolve('scripts/generate-release-attestation.mjs');
+const postprocessScript = path.resolve('scripts/postprocess-build.mjs');
 const dirs: string[] = [];
 const waiver = {
   release: '3.21.6',
@@ -104,6 +105,12 @@ async function fixture(opts: { version?: string } = {}) {
 async function loadGenerator() {
   return (await import(pathToFileURL(script).href)) as {
     enforceWaiver: (packageVersion: string, now?: number) => void;
+  };
+}
+
+async function loadPostprocessor() {
+  return (await import(pathToFileURL(postprocessScript).href)) as {
+    postprocessBuild: (projectRootPath?: string) => Promise<void>;
   };
 }
 
@@ -308,9 +315,105 @@ describe('package-payload release contract', () => {
     expect(workflow).toContain('overwrite: false');
   });
 
+  it('ships dist built from an in-place dependency tree (no host walk-up module paths)', async () => {
+    for (const artifact of ['dist/index.js', 'dist/lib.js']) {
+      const bundle = await readFile(artifact, 'utf8');
+      const leaked = bundle.match(/^\/\/ (?:\.\.\/)+\S.*$/gm) ?? [];
+      expect(leaked).toEqual([]);
+    }
+  });
+
+  it('ships tracked declaration files without trailing horizontal whitespace', async () => {
+    const { stdout } = await run('git', ['ls-files', 'dist/types/**/*.d.ts']);
+    const declarationFiles = stdout.trim().split('\n').filter(Boolean);
+
+    expect(declarationFiles.length).toBeGreaterThan(0);
+    for (const declarationFile of declarationFiles) {
+      const declaration = await readFile(declarationFile, 'utf8');
+      const leaked = declaration.split(/\r?\n/)
+        .map((line, index) => (/[^\S\r\n]+$/.test(line) ? `${declarationFile}:${index + 1}` : null))
+        .filter(Boolean);
+      expect(leaked).toEqual([]);
+    }
+  });
+
+  it('ships an executable bun cli and avoids GNU-only post-build rewriting', async () => {
+    const pkg = JSON.parse(await readFile('package.json', 'utf8'));
+    const cli = await readFile('dist/index.js', 'utf8');
+
+    expect(pkg.scripts.build).not.toContain('sed -i');
+    expect(pkg.scripts.build).toContain('node scripts/postprocess-build.mjs');
+    expect(cli.startsWith('#!/usr/bin/env bun\n')).toBe(true);
+    expect(((await stat('dist/index.js')).mode & 0o111)).not.toBe(0);
+  });
+
+  it('fails closed on symlinked declarations without mutating outside files', async () => {
+    const { postprocessBuild } = await loadPostprocessor();
+    const dir = await mkdtemp(path.join(tmpdir(), 'postprocess-build-'));
+    dirs.push(dir);
+    const repo = path.join(dir, 'repo');
+    const distTypes = path.join(repo, 'dist', 'types');
+    const outsideDir = path.join(dir, 'outside');
+    const outsideFile = path.join(outsideDir, 'sentinel.d.ts');
+
+    await mkdir(distTypes, { recursive: true });
+    await mkdir(outsideDir, { recursive: true });
+    await writeFile(path.join(repo, 'dist', 'index.js'), '#!/usr/bin/env node\nconsole.log(1);\n');
+    await writeFile(outsideFile, 'export type Sentinel = string;  \n');
+    await symlink(outsideFile, path.join(distTypes, 'escaped.d.ts'));
+
+    const before = await readFile(outsideFile, 'utf8');
+    await expect(postprocessBuild(repo)).rejects.toThrow(/symlink/);
+    expect(await readFile(outsideFile, 'utf8')).toBe(before);
+  });
+
+  it('fails closed on symlinked dist root without mutating outside files', async () => {
+    const { postprocessBuild } = await loadPostprocessor();
+    const dir = await mkdtemp(path.join(tmpdir(), 'postprocess-build-'));
+    dirs.push(dir);
+    const repo = path.join(dir, 'repo');
+    const outsideDir = path.join(dir, 'outside-dist');
+    const outsideSentinel = path.join(outsideDir, 'sentinel.txt');
+    const outsideIndex = path.join(outsideDir, 'index.js');
+
+    await mkdir(repo, { recursive: true });
+    await mkdir(outsideDir, { recursive: true });
+    await writeFile(outsideSentinel, 'sentinel');
+    await writeFile(outsideIndex, '#!/usr/bin/env node\nconsole.log("outside");\n');
+    await symlink(outsideDir, path.join(repo, 'dist'));
+
+    const beforeSentinel = await readFile(outsideSentinel, 'utf8');
+    const beforeIndex = await readFile(outsideIndex, 'utf8');
+    await expect(postprocessBuild(repo)).rejects.toThrow(/symlink/);
+    expect(await readFile(outsideSentinel, 'utf8')).toBe(beforeSentinel);
+    expect(await readFile(outsideIndex, 'utf8')).toBe(beforeIndex);
+  });
+
+  it('fails closed on symlinked dist/types root without mutating outside files and without partially rewriting the cli', async () => {
+    const { postprocessBuild } = await loadPostprocessor();
+    const dir = await mkdtemp(path.join(tmpdir(), 'postprocess-build-'));
+    dirs.push(dir);
+    const repo = path.join(dir, 'repo');
+    const distPath = path.join(repo, 'dist');
+    const outsideTypes = path.join(dir, 'outside-types');
+    const outsideSentinel = path.join(outsideTypes, 'sentinel.d.ts');
+
+    await mkdir(distPath, { recursive: true });
+    await mkdir(outsideTypes, { recursive: true });
+    await writeFile(path.join(distPath, 'index.js'), '#!/usr/bin/env node\nconsole.log(1);\n');
+    await writeFile(outsideSentinel, 'export type Sentinel = string;  \n');
+    await symlink(outsideTypes, path.join(distPath, 'types'));
+
+    const beforeSentinel = await readFile(outsideSentinel, 'utf8');
+    const beforeIndex = await readFile(path.join(distPath, 'index.js'), 'utf8');
+    await expect(postprocessBuild(repo)).rejects.toThrow(/symlink/);
+    expect(await readFile(outsideSentinel, 'utf8')).toBe(beforeSentinel);
+    expect(await readFile(path.join(distPath, 'index.js'), 'utf8')).toBe(beforeIndex);
+  });
+
   it('runs for release-facing changes and asserts required and forbidden payload assets', async () => {
     const workflow = await readFile('.github/workflows/package-payload.yml', 'utf8');
-    for (const pathTrigger of ['README.md', 'CHANGELOG.md', 'release-attestation.json', 'tests/integration/release-attestation.test.ts']) {
+    for (const pathTrigger of ['README.md', 'CHANGELOG.md', 'release-attestation.json', 'tests/integration/release-attestation.test.ts', 'scripts/postprocess-build.mjs']) {
       expect(workflow).toContain(`- ${pathTrigger}`);
     }
     for (const asset of [

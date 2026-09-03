@@ -16,6 +16,7 @@ on:
       - dist/**
       - scripts/assert-package-payload.sh
       - scripts/generate-release-attestation.mjs
+      - scripts/postprocess-build.mjs
       - .github/workflows/package-payload.yml
 
 jobs:
@@ -45,6 +46,7 @@ jobs:
               - dist/**
               - scripts/assert-package-payload.sh
               - scripts/generate-release-attestation.mjs
+              - scripts/postprocess-build.mjs
               - .github/workflows/package-payload.yml
 
   payload-contract:
