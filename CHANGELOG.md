@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pin service-knowledge extension source ([d3f7814](https://github.com/xtrm-dev/specialists/commit/d3f7814a3cc58fd65ace372e1e1871b215730b87))
 - Fail fast on required pre-scripts ([5c1d8e6](https://github.com/xtrm-dev/specialists/commit/5c1d8e6064f993704eeb4d342204ba7565ea3567))
 - Fail closed on missing tool catalog (#279) ([f683f5f](https://github.com/xtrm-dev/specialists/commit/f683f5f6172bdb7ab4a7b7324b7feabd9b918b31))
+- Make dist rebuild provenance-safe ([4a9ef36](https://github.com/xtrm-dev/specialists/commit/4a9ef366b3fc893c2a28bd3a750b97bf541df07b))
 
 ### Other changes
 - Support dynamic execution extension sources ([5705120](https://github.com/xtrm-dev/specialists/commit/5705120f8b8d03aa072399708ebaef2c98f23377))
@@ -52,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rebuild dist for mandatory-rules selection hardening (unitAI-klo6k) ([4a75a04](https://github.com/xtrm-dev/specialists/commit/4a75a046bd23f41cb7cae335c92c6e57e4e1a920))
 - Mark isolated loopback request for Semgrep ([99e19f9](https://github.com/xtrm-dev/specialists/commit/99e19f91f4b3bfd8ecaaa54e17d9648b1359a88f))
 - Document trusted pre-script shell ([a360b91](https://github.com/xtrm-dev/specialists/commit/a360b91237661597ba2149f93ed01ddc1cd16387))
+- Comprehensive 3.21.6 user-facing README, docs alignment, release notes ([1eb01b4](https://github.com/xtrm-dev/specialists/commit/1eb01b4d396efb821eb4757af22bb7c482c3596c))
 
 ## [3.21.5] - 2026-08-20
 
