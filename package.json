@@ -50,7 +50,7 @@
     "install": "bin/install.js"
   },
   "scripts": {
-    "build": "bun run generate:contract && bun build src/index.ts --target=bun --outfile=dist/index.js && sed -i '1s|#!/usr/bin/env node|#!/usr/bin/env bun|' dist/index.js && chmod +x dist/index.js && bun build src/lib.ts --target=node --format=esm --outfile=dist/lib.js && tsc --emitDeclarationOnly --declaration --outDir dist/types",
+    "build": "bun run generate:contract && bun build src/index.ts --target=bun --outfile=dist/index.js && bun build src/lib.ts --target=node --format=esm --outfile=dist/lib.js && tsc --emitDeclarationOnly --declaration --outDir dist/types && node scripts/postprocess-build.mjs",
     "dev": "bun run src/index.ts",
     "start": "bun dist/index.js",
     "lint": "tsc --noEmit",

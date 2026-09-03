@@ -686,5 +686,5 @@ export declare function mergeTimelineEvents(eventBatches: Array<{
  * 1. Remove 'done' from LOGGED_EVENTS
  * 2. Add run_complete emission instead of agent_end
  * 3. Include status, elapsed_s, model, backend, bead_id, error in run_complete
- */ 
+ */
 //# sourceMappingURL=timeline-events.d.ts.map
