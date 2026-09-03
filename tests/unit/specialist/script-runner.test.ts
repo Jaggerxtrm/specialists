@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_ASSISTANT_TEXT_LIMIT_BYTES,
   DEFAULT_PENDING_LINE_LIMIT_BYTES,
@@ -24,14 +24,26 @@ import {
 import { resolveExecutionExtensionSelection } from '../../../src/pi/session.js';
 import { createObservabilitySqliteClientAtPath } from '../../../src/specialist/observability-sqlite.js';
 
-const { spawnMock, spawnSyncMock, piSessionCreateMock, resolveGlobalNodeModulesDirMock, resolveRuntimeToolContractMock, sqliteClients } = vi.hoisted(() => ({
-  spawnMock: vi.fn(),
-  spawnSyncMock: vi.fn(() => ({ status: 1, stdout: '', stderr: '' })),
-  piSessionCreateMock: vi.fn(),
-  resolveGlobalNodeModulesDirMock: vi.fn(() => undefined),
-  resolveRuntimeToolContractMock: vi.fn(() => undefined),
-  sqliteClients: new Map<string, any>(),
-}));
+const { spawnMock, spawnSyncMock, piSessionCreateMock, resolveGlobalNodeModulesDirMock, resolveRuntimeToolContractMock, RuntimeToolCatalogResolutionErrorMock, sqliteClients } = vi.hoisted(() => {
+  class RuntimeToolCatalogResolutionErrorMock extends Error {
+    readonly code = 'runtime_tool_catalog_unavailable';
+
+    constructor() {
+      super('Runtime tool catalog unavailable or invalid; refusing to launch with Pi default tools. Reinstall or rebuild Specialists and verify config/catalog/index.json.');
+      this.name = 'RuntimeToolCatalogResolutionError';
+    }
+  }
+
+  return {
+    spawnMock: vi.fn(),
+    spawnSyncMock: vi.fn(() => ({ status: 1, stdout: '', stderr: '' })),
+    piSessionCreateMock: vi.fn(),
+    resolveGlobalNodeModulesDirMock: vi.fn(() => undefined),
+    resolveRuntimeToolContractMock: vi.fn(() => undefined),
+    RuntimeToolCatalogResolutionErrorMock,
+    sqliteClients: new Map<string, any>(),
+  };
+});
 
 vi.mock('node:child_process', () => ({
   spawn: spawnMock,
@@ -40,6 +52,7 @@ vi.mock('node:child_process', () => ({
 
 vi.mock('../../../src/pi/session.js', () => ({
   PiAgentSession: { create: piSessionCreateMock },
+  RuntimeToolCatalogResolutionError: RuntimeToolCatalogResolutionErrorMock,
   resolveGlobalNodeModulesDir: resolveGlobalNodeModulesDirMock,
   resolveRuntimeToolContract: resolveRuntimeToolContractMock,
   resolveExecutionExtensionSelection: vi.fn((extensions?: Record<string, boolean | null | undefined>) => {
@@ -119,6 +132,10 @@ const baseSpec = {
   },
 } as const;
 
+beforeEach(() => {
+  resolveRuntimeToolContractMock.mockReturnValue(createResolvedToolContract());
+});
+
 afterEach(() => {
   spawnMock.mockReset();
   spawnSyncMock.mockClear();
@@ -126,7 +143,6 @@ afterEach(() => {
   resolveGlobalNodeModulesDirMock.mockReset();
   resolveGlobalNodeModulesDirMock.mockReturnValue(undefined);
   resolveRuntimeToolContractMock.mockReset();
-  resolveRuntimeToolContractMock.mockReturnValue(undefined);
   sqliteClients.clear();
   delete process.env.SPECIALISTS_SCRIPT_PROMPT_LIMIT_BYTES;
   delete process.env.SPECIALISTS_SCRIPT_STDOUT_LIMIT_BYTES;
@@ -446,30 +462,25 @@ describe('runScriptSpecialist resolved tool contract', () => {
     expect(extensionPaths).not.toContain(rediscoveredGitnexusPath);
   });
 
-  it('does not load gitnexus extension when resolved tool contract is missing on direct cli path', async () => {
-    const npmGlobalDir = mkdtempSync(join(tmpdir(), 'pi-global-'));
-    const rediscoveredGitnexusPath = join(npmGlobalDir, 'pi-gitnexus');
-    writeFileSync(rediscoveredGitnexusPath, '');
-    resolveGlobalNodeModulesDirMock.mockReturnValue(npmGlobalDir);
-    resolveRuntimeToolContractMock.mockReturnValue(undefined);
-    const child = createSpawnMock();
+  it.each(['script', 'serve'] as const)('fails closed before any Pi path on the %s surface when the runtime tool catalog is unavailable', async (surface) => {
+    resolveRuntimeToolContractMock.mockImplementation(() => {
+      throw new RuntimeToolCatalogResolutionErrorMock();
+    });
 
-    const resultPromise = runScriptSpecialist(
+    const result = await runScriptSpecialist(
       { specialist: 'changelog-drafter', template: 'draft $name', variables: { name: 'release notes' } },
-      { loader: makeLoader(baseSpec as never) as never, projectDir: '.' },
+      { loader: makeLoader(baseSpec as never) as never, projectDir: '.', surface },
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    child.stdout.emit('data', Buffer.from(`${JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] } })}
-`));
-    child.emit('close', 0);
-
-    await resultPromise;
-
-    const spawnArgs: string[] = spawnMock.mock.calls[0][1];
-    expect(spawnArgs).not.toContain('--tools');
-    const extensionPaths = spawnArgs.filter((value, index, args) => args[index - 1] === '-e');
-    expect(extensionPaths).not.toContain(rediscoveredGitnexusPath);
+    expect(result).toMatchObject({
+      success: false,
+      error_type: 'runtime_tool_catalog_unavailable',
+      error: expect.stringContaining('refusing to launch with Pi default tools'),
+    });
+    expect(result.error).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/u);
+    expect(Buffer.byteLength(result.error, 'utf8')).toBeLessThanOrEqual(512);
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(piSessionCreateMock).not.toHaveBeenCalled();
   });
 
   it('raw cli spawn applies the extension tool-policy gate for exposed sources (unitAI-34pyf)', async () => {

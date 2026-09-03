@@ -13,7 +13,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { PiAgentSession, applyExtensionToolPolicyGate, resolveExecutionExtensionSelection, resolveRuntimeToolContract } from '../pi/session.js';
+import { PiAgentSession, RuntimeToolCatalogResolutionError, applyExtensionToolPolicyGate, resolveExecutionExtensionSelection, resolveRuntimeToolContract } from '../pi/session.js';
 import { getReadLineNumbersExtensionPath } from '../pi/read-line-numbers-extension.js';
 import { SpecialistLoader } from './loader.js';
 import { buildMandatoryRulesInjection } from './mandatory-rules.js';
@@ -40,6 +40,7 @@ export type ScriptSpecialistErrorType =
   | 'specialist_not_found'
   | 'specialist_load_error'
   | 'pre_script_failed'
+  | 'runtime_tool_catalog_unavailable'
   | 'template_variable_missing'
   | 'template_field_misuse'
   | 'auth'
@@ -768,7 +769,11 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
       specialistPermissions,
       excludeExtensions: extensionSelection.excludeExtensions,
       extensionSources: extensionSelection.extensionSources,
+      cwd: baseDir,
     });
+    if (!resolvedToolContract) {
+      throw new RuntimeToolCatalogResolutionError('canonical_catalog_unavailable');
+    }
     const resolvedToolContractBlock = resolvedToolContract ? formatResolvedToolContract(resolvedToolContract) : '';
 
     const localScripts = getLocalScripts(spec);
@@ -1058,7 +1063,7 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const resolvedSpecialist = resolveScriptSpecialistName(input.specialist);
-    return { success: false, error: message, error_type: mapErrorType(message), meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, duration_ms: Date.now() - startedAt, trace_id: traceId } };
+    return { success: false, error: message, error_type: error instanceof RuntimeToolCatalogResolutionError ? 'runtime_tool_catalog_unavailable' : mapErrorType(message), meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, duration_ms: Date.now() - startedAt, trace_id: traceId } };
   }
 }
 

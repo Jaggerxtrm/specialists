@@ -41,6 +41,10 @@ Other extensions (`session-flow`, `xt-end` reminder, UI/UX helpers) are similarl
 
 ## Selective re-enable policy
 
+When a specialist requests a permission tier, Specialists first resolves the runtime tool catalog and passes an explicit tool contract to Pi. A missing, unreadable, malformed, or empty catalog aborts tracked, script, serve, MCP, and pipeline execution before Pi starts. Specialists never omits `--tools` and falls through to Pi defaults for a requested tier. Reinstall or rebuild Specialists if `config/catalog/index.json` is unavailable.
+
+This launch-policy check is not filesystem isolation. Allowed native tools, extensions, MCP children, and child processes can still read paths available to the operating-system account. Use a dedicated account or container with minimal mounts for host-read isolation.
+
 After disabling all extensions, `src/pi/session.ts` re-enables a small allowlist using `-e <path>`:
 
 | Extension | Loaded in specialist Pi? | Condition | Reason |
