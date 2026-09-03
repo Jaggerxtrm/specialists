@@ -1,7 +1,7 @@
 {
   "name": "@jaggerxtrm/specialists",
   "version": "3.21.6",
-  "description": "OmniSpecialist — 7-tool MCP orchestration layer powered by the Specialist System. Discover and execute .specialist.yaml files across project/user/system scopes via pi.",
+  "description": "Specialists — Pi-based orchestration runtime exposing the single use_specialist MCP tool plus CLI workflows for .specialist.json definitions.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/xtrm-dev/specialists.git"

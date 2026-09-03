@@ -292,7 +292,7 @@ curl -sS http://localhost:8000/v1/generate \
   -d '{"specialist":"hello","variables":{"name":"world"}}'
 ```
 
-Script/service mode is useful for CI, internal services, deterministic JSON generation, and sidecar deployments. Only `sp script` supports trusted local scripts or write-capable execution through `--allow-local-scripts` and `--allow-write-capable`. `sp serve` supports neither. Skills remain disabled unless `--allow-skills` is set; `--allow-skills-roots` restricts accepted canonical paths when supplied. Rootless `sp serve --allow-skills` can read arbitrary same-user host paths and remains a publication blocker tracked by `unitAI-641h0`.
+Script/service mode is useful for CI, internal services, deterministic JSON generation, and sidecar deployments. Only `sp script` supports trusted local scripts or write-capable execution through `--allow-local-scripts` and `--allow-write-capable`. `sp serve` supports neither. Skills remain disabled unless `--allow-skills` is set; `--allow-skills-roots` restricts accepted canonical skill sources when supplied, but it is not a filesystem read boundary. Specialists 3.21.6 does not provide host-read isolation: allowed tools, extensions, MCP processes, and child processes can read paths visible to the runtime identity. Its bounded waiver permits only trusted single-tenant callers with private authenticated ingress, a dedicated container or OS account, minimal mounts, least-privilege credentials, trusted definitions, and reviewed extension sources. Untrusted, public, cross-tenant, and multi-tenant deployments are excluded. The waiver does not authorize publication.
 
 See [docs/specialists-service.md](docs/specialists-service.md) and [docs/specialists-service-install.md](docs/specialists-service-install.md).
 
@@ -340,7 +340,7 @@ Core forwards the resolved absolute pack path to Pi. For Claude, Core creates a 
 
 Direct surfaces remain narrower: `sp script` confines skill paths to its project root, `service-knowledge-sync` itself is rejected there because it requires a worktree, and `sp serve` does not permit local pre-scripts.
 
-> **Release state:** This coordinated behavior was validated at merged Core `ef14bf44` (the reviewed `eede9290` integration), Specialists `f263a228`, and `service-knowledge-sync` 1.10.0. It is coordinated-head validation, not a published 3.21.6 compatibility guarantee.
+> **Release state:** This coordinated behavior was validated at merged Core `ef14bf44030ee6cd02d4dd21f0856f067baf54f3`, Specialists `f683f5f6172bdb7ab4a7b7324b7feabd9b918b31`, and `service-knowledge-sync` 1.10.0. These are coordinated-head evidence references, not a published 3.21.6 compatibility guarantee.
 
 ---
 
@@ -351,7 +351,7 @@ Direct surfaces remain narrower: `sp script` confines skill paths to its project
 | Exploration/debugging | `explorer`, `debugger`, `overthinker` | map systems, find root causes, reason deeply |
 | Implementation/review | `executor`, `reviewer`, `seconder` | write changes, verify scope, check quality |
 | QA | `test-engineer`, `test-runner`, `obligations-scanner` | create tests, run exact commands, track TODO/FIXME obligations |
-| Research | `researcher`, `github-researcher`, `transcriber` | gather current docs, code examples, papers, video transcripts |
+| Research | `researcher`, `transcriber` | gather current docs, papers, and video transcripts |
 | Documentation/release | `sync-docs`, `service-knowledge-sync`, `changelog-keeper`, `changelog-drafter` | keep docs and release notes current |
 | Operations | `xt-merge`, `memory-processor`, `node-coordinator` | merge queues, curate memory, coordinate node workers |
 | Domain specialists | `quant-researcher`, `quant-methodologist` | market-data and quantitative-method evidence/methodology |

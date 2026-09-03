@@ -83,7 +83,7 @@ This guide is the user-facing reference for authoring `.specialist.json` files. 
 | `output_type` | enum | `"custom"` | semantic archetype: `"codegen"`, `"analysis"`, `"review"`, `"synthesis"`, `"orchestration"`, `"workflow"`, `"research"`, `"custom"` |
 | `permission_required` | `"READ_ONLY" \| "LOW" \| "MEDIUM" \| "HIGH"` | `"READ_ONLY"` | tool-access tier |
 | `thinking_level` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"` | unset | forwarded to thinking-capable models |
-| `requires_worktree` | boolean | `true` | set `false` for workflow/script-class specialists that should not be sandboxed in a worktree |
+| `requires_worktree` | boolean | `true` | set `false` for workflow/script-class specialists that should not run in an isolated git worktree; a worktree is not a security sandbox |
 | `auto_commit` | `"never" \| "checkpoint_on_waiting" \| "checkpoint_on_terminal"` | `"never"` | when to auto-commit specialist edits to the worktree |
 | `extensions.serena` | boolean | — | DEPRECATED, ignored (Serena retired, unitAI-e67up.8); legacy specs keep validating |
 | `extensions.gitnexus` | boolean | `true` | `false` disables GitNexus extension injection for this specialist |
@@ -616,7 +616,7 @@ The service rejects any spec that doesn't match these at request time with `erro
 |---|---|---|
 | `execution.interactive` | `false` | HTTP request cannot host a multi-turn keep-alive session |
 | `execution.requires_worktree` | `false` | The service is stateless; no git branching |
-| `execution.permission_required` | `"READ_ONLY"` | One-shot pi spawns with `--no-tools` |
+| `execution.permission_required` | `"READ_ONLY"` | Service requests resolve the READ_ONLY catalog and must pass an explicit allowlist before Pi starts |
 | `execution.max_retries` | `0` (recommended) | Script-class ignores `max_retries` entirely — value has no effect. Caller (HTTP client / cron) owns retries. Set `0` so the spec's intent matches behavior. |
 | `skills.scripts` | omitted or `[]` | Local shell hooks are a host-side capability not available in service mode |
 
@@ -630,15 +630,15 @@ These run unchanged:
 
 ### Trust flags (script-class security)
 
-By default, `compatGuard` rejects specs that would access host resources:
+By default, `compatGuard` rejects opt-in fields that add host-provided prompt inputs or shell hooks:
 
 | Field | Default | Rejection reason |
 |-------|---------|------------------|
 | `skills.paths` | rejected | would inject host files into prompt |
 | `prompt.skill_inherit` | rejected | same trust concern |
-| `skills.scripts` | always rejected | local shell hooks unavailable in service/script mode |
+| `skills.scripts` | always rejected by `sp serve` | local shell hooks are unavailable in service mode |
 
-To permit these fields, launch `sp serve` with trust flags:
+To permit skill inputs, launch `sp serve` with trust flags:
 
 ```bash
 sp serve --allow-skills --allow-skills-roots /safe/path:/another/safe/path
@@ -653,7 +653,9 @@ sp serve --allow-skills --allow-skills-roots /safe/path:/another/safe/path
 
 When `--allow-skills` is active, each skill path is resolved and hashed after all trusted pre-scripts, immediately before Pi launch. The `status_json.skill_sources` field contains `{path, sha256, source, attestation: "observation_time_only"}` entries. Pi reopens the mutable path when it loads the skill, so this hash is observation-time audit evidence, not proof of the bytes Pi consumed. The exported audit computation represents unreadable files with `sha256: "unreadable"`; the direct/script runtime rejects any such final observation before Pi starts.
 
-> **Default-reject is intentional:** Single-tenant deployments must opt-in. Multi-tenant authn is a non-goal for v1.
+Without enabled extension sources, script and service execution resolves the requested permission-tier catalog and passes an explicit tool allowlist. With enabled extension sources, it uses `--no-builtin-tools` and the bundled extension policy to activate only granted native and extension tools. Missing, malformed, unreadable, or empty runtime catalog contracts abort before Pi or model startup. Required pre-script failures return `pre_script_failed` without model fallback or retry. Trusted direct `sp script` callers can separately opt into local scripts or write-capable tiers; `sp serve` remains READ_ONLY and rejects local scripts.
+
+> **No host-read isolation:** These controls do not create a filesystem read boundary. Specialists 3.21.6 permits only trusted single-tenant use under its bounded waiver; untrusted, public, cross-tenant, and multi-tenant deployment is excluded.
 
 ### Output validation
 
