@@ -648,14 +648,14 @@ sp serve --allow-skills --allow-skills-roots /safe/path:/another/safe/path
 | Flag | Effect |
 |------|--------|
 | `--allow-skills` | Permits `skills.paths` and `prompt.skill_inherit` |
-| `--allow-skills-roots <p1>:<p2>:...` | Restricts permitted skill paths to entries under listed roots (requires `--allow-skills`) |
+| `--allow-skills-roots <p1>:<p2>:...` | Restricts permitted skill paths to entries under listed roots (requires `--allow-skills`); **not** a filesystem read boundary |
 | `--allow-local-scripts` | Unsupported; `skills.scripts` are always rejected in service/script mode |
 
 When `--allow-skills` is active, each skill path is resolved and hashed after all trusted pre-scripts, immediately before Pi launch. The `status_json.skill_sources` field contains `{path, sha256, source, attestation: "observation_time_only"}` entries. Pi reopens the mutable path when it loads the skill, so this hash is observation-time audit evidence, not proof of the bytes Pi consumed. The exported audit computation represents unreadable files with `sha256: "unreadable"`; the direct/script runtime rejects any such final observation before Pi starts.
 
-Without enabled extension sources, script and service execution resolves the requested permission-tier catalog and passes an explicit tool allowlist. With enabled extension sources, it uses `--no-builtin-tools` and the bundled extension policy to activate only granted native and extension tools. Missing, malformed, unreadable, or empty runtime catalog contracts abort before Pi or model startup. Required pre-script failures return `pre_script_failed` without model fallback or retry. Trusted direct `sp script` callers can separately opt into local scripts or write-capable tiers; `sp serve` remains READ_ONLY and rejects local scripts.
+Without enabled extension sources, script and service execution resolves the requested permission-tier catalog and passes an explicit tool allowlist. With enabled extension sources, it uses `--no-builtin-tools` and the bundled extension policy to activate only granted native and extension tools. Missing, malformed, unreadable, or empty runtime catalog contracts abort before Pi or model startup (fail-closed). Required pre-script failures return `pre_script_failed` without model fallback or retry, and both raw and rendered preflight output are bounded before inclusion. Trusted direct `sp script` callers can separately opt into local scripts or write-capable tiers; `sp serve` remains READ_ONLY and rejects local scripts. Service-knowledge skill sources use a pinned exact npm spec (e.g. `npm:@jaggerxtrm/pi-service-knowledge@1.10.0`); floating or range specs are rejected.
 
-> **No host-read isolation:** These controls do not create a filesystem read boundary. Specialists 3.21.6 permits only trusted single-tenant use under its bounded waiver; untrusted, public, cross-tenant, and multi-tenant deployment is excluded.
+> **No host-read isolation:** These controls do not create a filesystem read boundary. Specialists 3.21.6 permits only trusted single-tenant use under its bounded waiver; untrusted, public, cross-tenant, and multi-tenant deployment is excluded. The waiver does not authorize publication and expires at 3.21.7.
 
 ### Output validation
 

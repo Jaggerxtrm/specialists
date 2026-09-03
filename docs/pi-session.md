@@ -45,16 +45,16 @@ When a specialist requests a permission tier, Specialists first resolves the run
 
 This launch-policy check is not filesystem isolation. Allowed native tools, extensions, MCP children, and child processes can still read paths available to the operating-system account. Use a dedicated account or container with minimal mounts for host-read isolation.
 
-After disabling all extensions, `src/pi/session.ts` re-enables a small allowlist using `-e <path>`:
+After disabling all extensions, `src/pi/session.ts` re-enables a small allowlist using `-e <path>` and forwards dynamic `execution.extensions` sources:
 
 | Extension | Loaded in specialist Pi? | Condition | Reason |
 |-----------|--------------------------|-----------|--------|
 | `beads` | ❌ Never | — | Blocks edits — subprocess session ID has no claim |
 | `session-flow` | ❌ Never | — | Stop gate and xt-end reminder are irrelevant in subprocess |
 | `quality-gates` | ✅ If installed | `permission_required` ≠ `READ_ONLY` | Lint/typecheck enforcement on specialist edits |
-| `service-skills` | ✅ If installed | Always (if installed) | Territory-aware routing is useful in any session |
 | `caveman` | ✅ If installed | Always (if installed) | Terse output for agent-to-agent communication |
 | `pi-gitnexus` (npm) | ✅ If installed, unless opted out | Not in `excludeExtensions` | Code intelligence tools |
+| Dynamic `execution.extensions` source | ✅ When `true` | Trusted source string enabled | Forwarded as `-e <source>` in insertion order; remote `npm:`/`git:`/`http(s):` sources omit `--offline` |
 | All other extensions | ❌ Never | — | UI/UX only; not relevant headlessly |
 
 ## How it maps from specialist YAML
@@ -85,7 +85,7 @@ Specialists can tune extension injection via `execution.extensions` in their con
 }
 ```
 
-`gitnexus: false` excludes default GitNexus from `-e` args. Any other trusted source-string key with value `true` is forwarded as `-e <source>` in insertion order. Remote `npm:`, `git:`, and `http(s):` sources also omit `--offline`; local paths keep it.
+`gitnexus: false` excludes default GitNexus from `-e` args. Any other trusted source-string key with value `true` is forwarded as `-e <source>` in insertion order. Remote `npm:`, `git:`, and `http(s):` sources omit `--offline` for the entire run; local-only runs retain it. Fail-closed duplicate detection rejects two distinct `npm:` keys for the same package before Pi spawns.
 
 > **Deprecated:** `execution.extensions.serena` was retired with the K4 Serena
 > retirement (unitAI-e67up.8). Legacy configs that still carry the key keep
@@ -106,39 +106,33 @@ const args = [
   '--no-extensions',
   ...providerArgs,
   '--no-session',
-  '--offline',
+  ...(this.options.offline === false ? [] : ['--offline']),
   '--no-context-files',
   '--no-prompt-templates',
   '--no-themes',
 ];
 
+// Tool catalog fail-closed: missing/unreadable/malformed/empty aborts before Pi starts
+const resolvedToolContract = resolveRuntimeToolContract({ level, extensionSources, ... });
+if (level !== undefined && !resolvedToolContract?.toolsFlag.trim()) throw new RuntimeToolCatalogResolutionError('empty_tool_contract');
+if (resolvedToolContract?.toolsFlag && exposedExtensionSources.length === 0) args.push('--tools', resolvedToolContract.toolsFlag);
+
 // Selectively re-enable extensions
 const piExtDir = join(homedir(), '.pi', 'agent', 'extensions');
-const excludedExtensions = new Set(this.options.excludeExtensions ?? []);
-
-// Quality-gates (edit-capable only)
-const permLevel = (this.options.permissionLevel ?? '').toUpperCase();
-if (permLevel !== 'READ_ONLY') {
+if ((permissionLevel ?? '').toUpperCase() !== 'READ_ONLY') {
   const qgPath = join(piExtDir, 'quality-gates');
   if (existsSync(qgPath)) args.push('-e', qgPath);
 }
-
-// Service-skills (always)
-const ssPath = join(piExtDir, 'service-skills');
-if (existsSync(ssPath)) args.push('-e', ssPath);
-
-// Caveman (always)
 const cavemanPath = join(piExtDir, 'caveman');
 if (existsSync(cavemanPath)) args.push('-e', cavemanPath);
 
-// npm package extensions (with opt-out)
-const npmGlobalDir = resolveGlobalNodeModulesDir();
-if (npmGlobalDir) {
-  if (!excludedExtensions.has('pi-gitnexus')) {
-    const gitnexusPath = join(npmGlobalDir, 'pi-gitnexus');
-    if (existsSync(gitnexusPath)) args.push('-e', gitnexusPath);
-  }
-}
+// npm package (gitnexus) with opt-out + dynamic sources forwarded as repeated -e args
+const gitnexusContract = resolvedToolContract?.extensions.gitnexus;
+if (gitnexusContract?.status === 'available' && existsSync(gitnexusContract.packagePath)) args.push('-e', gitnexusContract.packagePath);
+for (const source of this.options.extensionSources ?? []) args.push('-e', source);
+
+// Extension tool-policy gate appended LAST when sources enabled: --no-builtin-tools + policy -e
+applyExtensionToolPolicyGate(args, resolvedToolContract, policyEnv); // hard-fails if policy artifact missing
 ```
 
 ### Retired: Serena integration
