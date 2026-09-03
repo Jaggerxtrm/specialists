@@ -4,16 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
 
-# **WARNING**
-`docs/` might be stale at the current moment. The project is in active and quick development toward v4.0 and stable version, please refer to:
-  - sp --help;
-  - using-specialists skill;
-  - using-xtrm skill;
-  - all other skills INCLUDING those in the `xtrm-dev/core` repo;
-  - cloning the repo and understanding it with your agents is strongly recommended vs only installing the npm package;
-  - CHANGELOG.md, release notes, and prs themselves
-
-Installing https://www.github.com/xtrm-dev/core (xtrm-tools on npm) is a strong requirement
+Deep material lives in `docs/` — start with `docs/installation.md`, `docs/bootstrap.md`, `docs/workflow.md`, and `docs/cli-reference.md`; `sp --help` is authoritative for flags.
 
 **Specialists is an agent-mind runtime for getting real work done.**
 
@@ -292,7 +283,22 @@ curl -sS http://localhost:8000/v1/generate \
   -d '{"specialist":"hello","variables":{"name":"world"}}'
 ```
 
-Script/service mode is useful for CI, internal services, deterministic JSON generation, and sidecar deployments. Only `sp script` supports trusted local scripts or write-capable execution through `--allow-local-scripts` and `--allow-write-capable`. `sp serve` supports neither. Skills remain disabled unless `--allow-skills` is set; `--allow-skills-roots` restricts accepted canonical skill sources when supplied, but it is not a filesystem read boundary. Specialists 3.21.6 does not provide host-read isolation: allowed tools, extensions, MCP processes, and child processes can read paths visible to the runtime identity. Its bounded waiver permits only trusted single-tenant callers with private authenticated ingress, a dedicated container or OS account, minimal mounts, least-privilege credentials, trusted definitions, and reviewed extension sources. Untrusted, public, cross-tenant, and multi-tenant deployments are excluded. The waiver does not authorize publication.
+`sp script` flags:
+
+```bash
+sp script <name> [--vars k=v ...] [--template <text> | --template-field <name>] \
+  [--model <override>] [--thinking <level>] [--json] \
+  [--allow-local-scripts] [--allow-write-capable] [--single-instance <lockpath>]
+```
+
+`sp serve` flags (HTTP sidecar for the same runtime path):
+
+```bash
+sp serve [--port <n>] [--concurrency <n>] [--project-dir <path>] \
+  [--allow-skills] [--allow-skills-roots <p1>:<p2>]
+```
+
+Script/service mode is useful for CI, internal services, deterministic JSON generation, and sidecar deployments. Only `sp script` supports trusted local scripts or write-capable execution through `--allow-local-scripts` and `--allow-write-capable`. `sp serve` supports neither — it remains `READ_ONLY`. Skills remain disabled unless `--allow-skills` is set; `--allow-skills-roots` restricts accepted canonical skill sources when supplied, but it is **not** a filesystem read boundary. Specialists 3.21.6 does not provide host-read isolation: allowed tools, extensions, MCP processes, and child processes can read paths visible to the runtime identity. Its bounded waiver permits only trusted single-tenant callers with private authenticated ingress, a dedicated container or OS account, minimal mounts, least-privilege credentials, trusted definitions, and reviewed extension sources. Untrusted, public, cross-tenant, and multi-tenant deployments are excluded. The waiver does not authorize publication and expires at 3.21.7.
 
 See [docs/specialists-service.md](docs/specialists-service.md) and [docs/specialists-service-install.md](docs/specialists-service-install.md).
 
@@ -340,7 +346,117 @@ Core forwards the resolved absolute pack path to Pi. For Claude, Core creates a 
 
 Direct surfaces remain narrower: `sp script` confines skill paths to its project root, `service-knowledge-sync` itself is rejected there because it requires a worktree, and `sp serve` does not permit local pre-scripts.
 
+The extension source for this skill is pinned to an exact reviewed npm spec (e.g. `npm:@jaggerxtrm/pi-service-knowledge@1.10.0`); floating or range specs are rejected.
+
 > **Release state:** This coordinated behavior was validated at merged Core `ef14bf44030ee6cd02d4dd21f0856f067baf54f3`, Specialists `f683f5f6172bdb7ab4a7b7324b7feabd9b918b31`, and `service-knowledge-sync` 1.10.0. These are coordinated-head evidence references, not a published 3.21.6 compatibility guarantee.
+
+---
+
+## Mandatory rules
+
+Every package-class specialist receives mandatory rules at spawn time (bare mode skips injection). These enforce behaviors regardless of the task.
+
+```bash
+sp list-rules
+sp list-rules --rule <rule-id>
+sp list-rules --specialist <name>
+sp list-rules --json
+```
+
+The loader unions indexes from `.specialists/user/mandatory-rules/`, `config/mandatory-rules/`, `.specialists/default/mandatory-rules/`, and `.specialists/mandatory-rules/`; if none exists, it uses the package-canonical index. Rule bodies use first-existing precedence in the same order.
+
+Per-specialist additions can be declared in the specialist JSON via `mandatory_rules.template_sets` and `mandatory_rules.inline_rules`.
+
+### Global `mandatory_rules.template_sets` selection
+
+You can override which specialist-specific rule sets apply via `mandatory_rules.template_sets` in `~/.config/specialists/user.json` (global) or `.specialists/user/<name>.specialist.json` (repo-local):
+
+```json
+{
+  "executor": {
+    "mandatory_rules": {
+      "template_sets": ["my-global-rules"]
+    }
+  }
+}
+```
+
+- `null` — inherits package defaults
+- `[]` — clears only your specialist-specific sets (required/default index sets always load)
+- non-empty array — replaces your specialist-specific sets entirely
+
+Blocked fields `mandatory_rules.inline_rules` and `mandatory_rules.disable_default_globals` cannot be set at global/repo layers; they are package-canonical only. Other blocked fields include `capabilities`, `execution.auto_commit`, `prompt.output_schema`, and `skills.scripts`. See [docs/overrides-guide.md](docs/overrides-guide.md) and [config/mandatory-rules/README.md](config/mandatory-rules/README.md).
+
+Template-set ids are validated as kebab-case and path-contained before overlay.
+
+---
+
+## Extension sources
+
+Specialists spawns Pi with `--no-extensions`, then selectively re-enables extensions via repeated `-e <source>` pairs derived from `execution.extensions`.
+
+| Key | Value | Behavior |
+|-----|-------|----------|
+| `gitnexus` | `false` | Skips GitNexus MCP injection |
+| `serena` | any | Deprecated and ignored (Serena retired) |
+| any other key | `true` | Trusted source string forwarded to Pi as `-e <source>` in insertion order |
+| any key | `false` or `null` | Skips that source |
+
+Remote sources (`npm:`, `git:`, `http:`, `https:`) cause the run to omit `--offline`; local paths retain it. The per-run offline decision is global: if any enabled source is remote, `--offline` is omitted for the entire Pi invocation. Fail-closed duplicate detection rejects two distinct `npm:` keys for the same package (e.g. a pinned canonical `npm:@scope/pkg@1.0.0` plus a floating `npm:@scope/pkg`) before Pi spawns; fix the overlay by aligning to the exact pinned spec. Configured sources are not equivalent to active tools — only runtime-confirmed allowed tools are advertised.
+
+See [docs/pi-session.md](docs/pi-session.md) and [docs/overrides-guide.md](docs/overrides-guide.md).
+
+---
+
+## Active-tool policy and tool catalog
+
+Specialists operates a **fail-closed active-tool policy**:
+
+- Configured sources are not active tools. Only runtime-confirmed allowed tools are advertised to the specialist.
+- Denied built-ins remain denied regardless of configuration.
+- The extension tool-policy gate validates at `session_start` and hard-fails the launch if the bundled policy extension is missing while extension sources are enabled.
+
+Tool catalog resolution is also fail-closed. A missing, unreadable, malformed, or empty catalog aborts tracked, script, serve, MCP, and pipeline execution before Pi starts. Specialists never omits `--tools` for a requested tier. Reinstall or rebuild the package if `config/catalog/index.json` is unavailable.
+
+---
+
+## First-class tools: Python and ast-grep
+
+Specialists treats **Python** and **ast-grep** as first-class tools alongside shell, Git, and GitNexus.
+
+| Tool | When to use |
+|------|-------------|
+| **Python** | Multi-step processing, parsing, aggregation, or structured transforms where a small script replaces many shell round-trips. The Pi `python` tool persists state across calls (variables, imports, functions survive). |
+| **ast-grep** | Syntax-aware structural search when `grep` would false-positive on strings. Use `pattern` / `kind` queries for code-shape matching. |
+
+```bash
+# ast-grep: find call patterns without string noise
+ast_grep run --pattern 'console.log($A)' --language ts
+```
+
+Guidance in prompts is advisory. Actual availability depends on Pi agent toolset declaration, extension loading status, and platform support.
+
+---
+
+## Supported models and presets
+
+Package presets ship with the following mappings (see `config/presets.json`):
+
+| Preset | Model | Thinking | Stall timeout |
+|--------|-------|----------|---------------|
+| `cheap` | `nano-gpt/moonshotai/kimi-k2.5` | `off` | 60s |
+| `medium` | `anthropic/claude-sonnet-4-6` | `low` | 120s |
+| `power` | `openai-codex/gpt-5.4` | `high` | 300s |
+
+Set via `sp edit --global`:
+
+```bash
+sp edit --global --set executor.execution.model @preset/medium
+sp edit --global --set "executor.execution.fallback_models" '["@preset/cheap"]'
+sp edit --list-presets
+```
+
+Package specs ship `execution.model = null` intentionally; your machine config provides the real model. `thinking_level: off` on Kimi-class models can produce empty assistant text (model quirk). Resolution depth cap is 5 levels; cycles surface a structured error at dispatch.
 
 ---
 
@@ -372,8 +488,10 @@ Run `sp list --compact` for the exact installed catalog and versions.
 | Background jobs / feed / result | [docs/background-jobs.md](docs/background-jobs.md) |
 | Specialist JSON authoring | [docs/authoring.md](docs/authoring.md) |
 | Built-in specialist catalog | [docs/specialists-catalog.md](docs/specialists-catalog.md) |
-| MCP server/tool surface | [docs/mcp-servers.md](docs/mcp-servers.md), [docs/mcp-tools.md](docs/mcp-tools.md) |
+| Mandatory rules authoring | [config/mandatory-rules/README.md](config/mandatory-rules/README.md) |
+| Overrides guide (global config) | [docs/overrides-guide.md](docs/overrides-guide.md) |
 | Pi subprocess isolation | [docs/pi-session.md](docs/pi-session.md), [docs/pi-rpc-boundary.md](docs/pi-rpc-boundary.md) |
+| MCP server/tool surface | [docs/mcp-servers.md](docs/mcp-servers.md), [docs/mcp-tools.md](docs/mcp-tools.md) |
 | Script/service sidecar | [docs/specialists-service.md](docs/specialists-service.md), [docs/specialists-service-install.md](docs/specialists-service-install.md) |
 | Worktrees and publication | [docs/worktrees.md](docs/worktrees.md), [docs/worktree.md](docs/worktree.md) |
 | Architecture | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
@@ -395,6 +513,7 @@ config/
 .specialists/
 ├── user/              repo-local specialists and overrides
 ├── default/           optional pins / compatibility snapshots; prune stale files
+├── mandatory-rules/   repo-local mandatory rule set additions/overrides
 ├── db/                runtime SQLite state (gitignored)
 ├── jobs/              legacy runtime mirror (gitignored)
 └── ready/             legacy ready markers (gitignored)
@@ -420,6 +539,29 @@ src/                   CLI, server, loader, runner, supervisor, MCP tool
 
 ---
 
+## Troubleshooting
+
+```bash
+sp view <name> --section execution    # inspect resolved execution config
+sp view <name> --section mandatory_rules
+sp doctor --specialists               # global user.json validation
+```
+
+```bash
+sp list-rules --json | jq -r '.sets[].id' | sort -u
+sp validate ./config/specialists/<name>.specialist.json --target=script
+```
+
+Common issues:
+
+- **No model configured**: Run `sp init --global` and `sp edit --global`
+- **Extension not loading**: Check `sp view <name> --section execution` for `extensions` keys; remote sources disable `--offline`
+- **Mandatory rules not applying**: Verify set id is kebab-case; check `sp list-rules --rule <id>`
+- **Fork bomb / too many jobs**: Use `sp clean --reap-orphans` or `sp stop <job-id>`
+- **Stalled waiting jobs**: Default no auto-close; opt-in via `stall_detection.waiting_auto_close_ms`
+
+---
+
 ## Deprecated / compatibility surfaces
 
 These commands or paths may still exist for migration, but they are not the preferred onboarding path:
@@ -429,6 +571,7 @@ These commands or paths may still exist for migration, but they are not the pref
 - `sp init --sync-defaults` for routine setup
 - `.specialists/default/` as an always-synced mirror
 - `sp release prepare` / `sp release publish` aliases (release flow is skill-driven)
+- `execution.extensions.serena` (retired; ignored if present)
 
 Use `sp init`, `sp init --global`, `sp setup`, `xt update`, and the release skill flow instead.
 

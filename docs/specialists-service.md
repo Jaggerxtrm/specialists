@@ -174,6 +174,7 @@ Flags:
 - `--allow-skills-roots <p1>:<p2>`
   - prefix allowlist for `skills.paths` and `prompt.skill_inherit`
   - only active when `--allow-skills` on
+  - **not** a filesystem read boundary — see host-read waiver below
 - `--allow-local-scripts` is not supported. `skills.scripts` are always rejected in service/script mode until a separate sandboxed script-execution design exists.
 
 Audit behavior:
@@ -183,6 +184,8 @@ Audit behavior:
 - Pi reopens the mutable path, so the hash is observation-time audit evidence, not proof of bytes consumed
 - an unreadable final observation fails closed before Pi starts; no host path is included in the failure
 - compat guard still blocks interactive, worktree, and all `skills.scripts` cases
+
+> **Host-read waiver (3.21.6):** These controls do not create a filesystem read boundary. Allowed tools, extensions, MCP processes, and child processes can still read paths visible to the runtime identity. 3.21.6 permits only trusted single-tenant callers with private authenticated ingress, a dedicated container or OS account, minimal mounts, least-privilege credentials, trusted definitions, and reviewed extension sources. Untrusted, public, cross-tenant, and multi-tenant deployments are excluded. The waiver does not authorize publication and expires at 3.21.7.
 
 ### Hot reload
 
