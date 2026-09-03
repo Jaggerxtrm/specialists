@@ -1148,6 +1148,7 @@ export class SpecialistRunner {
       specialistPermissions,
       excludeExtensions,
       extensionSources: extensionSelection.extensionSources,
+      cwd: options.workingDirectory,
     });
     const resolvedToolContractBlock = resolvedToolContract ? formatResolvedToolContract(resolvedToolContract) : '';
     const promptVariables = {

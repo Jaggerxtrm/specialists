@@ -41,7 +41,7 @@ import { createHash } from 'node:crypto';
 import { getReadLineNumbersExtensionPath } from './read-line-numbers-extension.js';
 import { getExtensionToolPolicyExtensionPath, NATIVE_TOOLS_ENV_KEY } from './extension-tool-policy-extension.js';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, resolve, sep, join, dirname } from 'node:path';
 import { mapSpecialistBackend, getProviderArgs } from './backendMap.js';
@@ -167,7 +167,25 @@ export interface PiSessionOptions {
   testCommandStallTimeoutMs?: number;
 }
 
-let cachedToolCatalogIndex: ToolCatalogIndex | undefined;
+export const RUNTIME_TOOL_CATALOG_ERROR_MESSAGE =
+  'Runtime tool catalog unavailable or invalid; refusing to launch with Pi default tools. Reinstall or rebuild Specialists and verify config/catalog/index.json.';
+
+export type RuntimeToolCatalogErrorReason =
+  | 'invalid_permission_tier'
+  | 'project_catalog_invalid'
+  | 'canonical_catalog_unavailable'
+  | 'canonical_catalog_invalid'
+  | 'tool_contract_invalid'
+  | 'empty_tool_contract';
+
+export class RuntimeToolCatalogResolutionError extends Error {
+  readonly code = 'runtime_tool_catalog_unavailable';
+
+  constructor(readonly reason: RuntimeToolCatalogErrorReason) {
+    super(RUNTIME_TOOL_CATALOG_ERROR_MESSAGE);
+    this.name = 'RuntimeToolCatalogResolutionError';
+  }
+}
 
 function toRuntimeToolCatalogs(catalogIndex: ToolCatalogIndex): readonly ToolCatalog[] {
   return catalogIndex.catalogs.map((catalog) => ({
@@ -182,23 +200,40 @@ function toRuntimeToolCatalogs(catalogIndex: ToolCatalogIndex): readonly ToolCat
   }));
 }
 
-function loadSharedToolCatalogIndex(): ToolCatalogIndex | undefined {
-  if (cachedToolCatalogIndex) return cachedToolCatalogIndex;
-
-  const overridePath = resolve(process.cwd(), '.specialists', 'catalog', 'index.json');
+function loadSharedToolCatalogIndex(cwd: string): ToolCatalogIndex {
+  const overridePath = resolve(cwd, '.specialists', 'catalog', 'index.json');
+  let overrideExists = false;
   try {
-    cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(overridePath, 'utf8'));
-    return cachedToolCatalogIndex;
-  } catch {
-    try {
-      const canonicalDir = resolveCanonicalAssetDir('catalog');
-      if (!canonicalDir) return undefined;
-      const canonicalPath = resolve(canonicalDir, 'index.json');
-      cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(canonicalPath, 'utf8'));
-      return cachedToolCatalogIndex;
-    } catch {
-      return undefined;
+    lstatSync(overridePath);
+    overrideExists = true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw new RuntimeToolCatalogResolutionError('project_catalog_invalid');
     }
+  }
+
+  if (overrideExists) {
+    try {
+      return loadToolCatalogIndex(readFileSync(overridePath, 'utf8'));
+    } catch {
+      throw new RuntimeToolCatalogResolutionError('project_catalog_invalid');
+    }
+  }
+
+  let canonicalDir: string | null;
+  try {
+    canonicalDir = resolveCanonicalAssetDir('catalog');
+  } catch {
+    throw new RuntimeToolCatalogResolutionError('canonical_catalog_unavailable');
+  }
+  if (!canonicalDir) {
+    throw new RuntimeToolCatalogResolutionError('canonical_catalog_unavailable');
+  }
+  const canonicalPath = resolve(canonicalDir, 'index.json');
+  try {
+    return loadToolCatalogIndex(readFileSync(canonicalPath, 'utf8'));
+  } catch {
+    throw new RuntimeToolCatalogResolutionError('canonical_catalog_invalid');
   }
 }
 
@@ -272,12 +307,15 @@ export function resolveRuntimeToolContract(options: {
   specialistPermissions?: ManifestPolicy['permissions'];
   excludeExtensions?: readonly string[];
   extensionSources?: readonly string[];
+  cwd?: string;
 }): ResolvedToolContract | undefined {
-  const catalogIndex = loadSharedToolCatalogIndex();
-  if (!catalogIndex) return undefined;
+  if (options.level === undefined) return undefined;
 
-  const tier = options.level?.toUpperCase();
-  if (tier !== 'READ_ONLY' && tier !== 'LOW' && tier !== 'MEDIUM' && tier !== 'HIGH') return undefined;
+  const tier = options.level.trim().toUpperCase();
+  if (tier !== 'READ_ONLY' && tier !== 'LOW' && tier !== 'MEDIUM' && tier !== 'HIGH') {
+    throw new RuntimeToolCatalogResolutionError('invalid_permission_tier');
+  }
+  const catalogIndex = loadSharedToolCatalogIndex(resolve(options.cwd ?? process.cwd()));
 
   const specialistOverride: ManifestPolicyTier | undefined = options.specialistPermissions?.[tier];
   const gitnexusRuntime = resolveGitnexusRuntime({
@@ -287,26 +325,35 @@ export function resolveRuntimeToolContract(options: {
 
   const runtimeCatalogs = toRuntimeToolCatalogs(catalogIndex);
 
-  return buildResolvedToolContract({
-    tier,
-    catalogs: runtimeCatalogs,
-    catalogDefaultOverrides: catalogIndex.default_overrides,
-    manifestPolicy: options.specialistPermissions ? { permissions: options.specialistPermissions } : undefined,
-    specialistOverride,
-    specialistExclusions: (options.excludeExtensions ?? []).includes(gitnexusRuntime.packageName)
-      ? { disabledExtensions: ['gitnexus'] }
-      : undefined,
-    extensionSources: options.extensionSources,
-    extensionState: {
-      gitnexus: gitnexusRuntime.extensionState,
-    },
-    extensionPackages: {
-      gitnexus: {
-        packageName: gitnexusRuntime.packageName,
-        packagePath: gitnexusRuntime.packagePath,
+  let contract: ResolvedToolContract;
+  try {
+    contract = buildResolvedToolContract({
+      tier,
+      catalogs: runtimeCatalogs,
+      catalogDefaultOverrides: catalogIndex.default_overrides,
+      manifestPolicy: options.specialistPermissions ? { permissions: options.specialistPermissions } : undefined,
+      specialistOverride,
+      specialistExclusions: (options.excludeExtensions ?? []).includes(gitnexusRuntime.packageName)
+        ? { disabledExtensions: ['gitnexus'] }
+        : undefined,
+      extensionSources: options.extensionSources,
+      extensionState: {
+        gitnexus: gitnexusRuntime.extensionState,
       },
-    },
-  });
+      extensionPackages: {
+        gitnexus: {
+          packageName: gitnexusRuntime.packageName,
+          packagePath: gitnexusRuntime.packagePath,
+        },
+      },
+    });
+  } catch {
+    throw new RuntimeToolCatalogResolutionError('tool_contract_invalid');
+  }
+  if (!contract.toolsFlag.trim()) {
+    throw new RuntimeToolCatalogResolutionError('empty_tool_contract');
+  }
+  return contract;
 }
 
 export function resolvePermissionTools(options: {
@@ -315,6 +362,7 @@ export function resolvePermissionTools(options: {
   specialistPermissions?: ManifestPolicy['permissions'];
   excludeExtensions?: readonly string[];
   extensionSources?: readonly string[];
+  cwd?: string;
 }): string | undefined {
   return resolveRuntimeToolContract(options)?.toolsFlag || undefined;
 }
@@ -802,7 +850,11 @@ export class PiAgentSession {
       specialistPermissions: this.options.specialistPermissions,
       excludeExtensions: this.options.excludeExtensions,
       extensionSources: this.options.extensionSources,
+      cwd: this.options.cwd,
     });
+    if (this.options.permissionLevel !== undefined && !resolvedToolContract?.toolsFlag.trim()) {
+      throw new RuntimeToolCatalogResolutionError('empty_tool_contract');
+    }
     if (resolvedToolContract?.toolsFlag && (resolvedToolContract.exposedExtensionSources?.length ?? 0) === 0) {
       args.push('--tools', resolvedToolContract.toolsFlag);
     }

@@ -1487,7 +1487,7 @@ Each specialist's `--tools` argument is computed at session start by `resolvePer
 ### Inputs
 
 1. The specialist's tier from `execution.permission_required` (`READ_ONLY`/`LOW`/`MEDIUM`/`HIGH`)
-2. The catalog index at `.specialists/catalog/index.json` (with `native.json` / `gitnexus.json` siblings)
+2. The project catalog override at `.specialists/catalog/index.json`, when present; otherwise the package-canonical `config/catalog/index.json` (with `native.json` / `gitnexus.json` siblings). A discovered invalid project override fails closed instead of falling back.
 3. Live extension health probe of `pi-gitnexus` in the global npm modules directory
 4. Optional `permissions[<TIER>]` override block on the specialist JSON
 

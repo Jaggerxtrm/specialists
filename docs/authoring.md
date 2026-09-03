@@ -90,7 +90,7 @@ This guide is the user-facing reference for authoring `.specialist.json` files. 
 
 ### Permission tiers
 
-The tier coarse-grains the native pi tools your specialist gets. The full resolved tool list also includes GitNexus tools per the catalog at `.specialists/catalog/index.json` — see [manifest.md](manifest.md) for the complete picture.
+The tier coarse-grains the native pi tools your specialist gets. The full resolved tool list also includes GitNexus tools. Specialists uses the project override at `.specialists/catalog/index.json` when present; otherwise it uses the package-canonical `config/catalog/index.json`. A discovered malformed or unreadable project override fails closed instead of falling back. See [manifest.md](manifest.md) for the complete picture.
 
 | Level | Native tools added (cumulative) |
 |---|---|

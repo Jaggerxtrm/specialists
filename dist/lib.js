@@ -6952,7 +6952,7 @@ import {
   constants,
   existsSync as existsSync9,
   fstatSync,
-  lstatSync,
+  lstatSync as lstatSync2,
   openSync,
   readFileSync as readFileSync6,
   realpathSync
@@ -7020,7 +7020,7 @@ var NATIVE_TOOLS_ENV_KEY = "PI_SPECIALIST_ALLOWED_NATIVE_TOOLS";
 
 // src/pi/session.ts
 import { spawn } from "node:child_process";
-import { existsSync as existsSync4, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync as existsSync4, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, resolve as resolve3, sep, join as join3, dirname as dirname3 } from "node:path";
 
@@ -11154,7 +11154,17 @@ var TEST_COMMAND_PATTERNS = [
   /(?:^|\s)(?:node\s+)?jest(?:\s|$)/i,
   /(?:^|\s)pytest(?:\s|$)/i
 ];
-var cachedToolCatalogIndex;
+var RUNTIME_TOOL_CATALOG_ERROR_MESSAGE = "Runtime tool catalog unavailable or invalid; refusing to launch with Pi default tools. Reinstall or rebuild Specialists and verify config/catalog/index.json.";
+
+class RuntimeToolCatalogResolutionError extends Error {
+  reason;
+  code = "runtime_tool_catalog_unavailable";
+  constructor(reason) {
+    super(RUNTIME_TOOL_CATALOG_ERROR_MESSAGE);
+    this.reason = reason;
+    this.name = "RuntimeToolCatalogResolutionError";
+  }
+}
 function toRuntimeToolCatalogs(catalogIndex) {
   return catalogIndex.catalogs.map((catalog) => ({
     catalog: catalog.catalog,
@@ -11167,24 +11177,38 @@ function toRuntimeToolCatalogs(catalogIndex) {
     }
   }));
 }
-function loadSharedToolCatalogIndex() {
-  if (cachedToolCatalogIndex)
-    return cachedToolCatalogIndex;
-  const overridePath = resolve3(process.cwd(), ".specialists", "catalog", "index.json");
+function loadSharedToolCatalogIndex(cwd) {
+  const overridePath = resolve3(cwd, ".specialists", "catalog", "index.json");
+  let overrideExists = false;
   try {
-    cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(overridePath, "utf8"));
-    return cachedToolCatalogIndex;
-  } catch {
-    try {
-      const canonicalDir = resolveCanonicalAssetDir("catalog");
-      if (!canonicalDir)
-        return;
-      const canonicalPath = resolve3(canonicalDir, "index.json");
-      cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(canonicalPath, "utf8"));
-      return cachedToolCatalogIndex;
-    } catch {
-      return;
+    lstatSync(overridePath);
+    overrideExists = true;
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      throw new RuntimeToolCatalogResolutionError("project_catalog_invalid");
     }
+  }
+  if (overrideExists) {
+    try {
+      return loadToolCatalogIndex(readFileSync(overridePath, "utf8"));
+    } catch {
+      throw new RuntimeToolCatalogResolutionError("project_catalog_invalid");
+    }
+  }
+  let canonicalDir;
+  try {
+    canonicalDir = resolveCanonicalAssetDir("catalog");
+  } catch {
+    throw new RuntimeToolCatalogResolutionError("canonical_catalog_unavailable");
+  }
+  if (!canonicalDir) {
+    throw new RuntimeToolCatalogResolutionError("canonical_catalog_unavailable");
+  }
+  const canonicalPath = resolve3(canonicalDir, "index.json");
+  try {
+    return loadToolCatalogIndex(readFileSync(canonicalPath, "utf8"));
+  } catch {
+    throw new RuntimeToolCatalogResolutionError("canonical_catalog_invalid");
   }
 }
 function readPackageVersion(packageJsonPath) {
@@ -11241,36 +11265,46 @@ function resolveGitnexusRuntime(options) {
   };
 }
 function resolveRuntimeToolContract(options) {
-  const catalogIndex = loadSharedToolCatalogIndex();
-  if (!catalogIndex)
+  if (options.level === undefined)
     return;
-  const tier = options.level?.toUpperCase();
-  if (tier !== "READ_ONLY" && tier !== "LOW" && tier !== "MEDIUM" && tier !== "HIGH")
-    return;
+  const tier = options.level.trim().toUpperCase();
+  if (tier !== "READ_ONLY" && tier !== "LOW" && tier !== "MEDIUM" && tier !== "HIGH") {
+    throw new RuntimeToolCatalogResolutionError("invalid_permission_tier");
+  }
+  const catalogIndex = loadSharedToolCatalogIndex(resolve3(options.cwd ?? process.cwd()));
   const specialistOverride = options.specialistPermissions?.[tier];
   const gitnexusRuntime = resolveGitnexusRuntime({
     catalogIndex,
     excludeExtensions: options.excludeExtensions
   });
   const runtimeCatalogs = toRuntimeToolCatalogs(catalogIndex);
-  return buildResolvedToolContract({
-    tier,
-    catalogs: runtimeCatalogs,
-    catalogDefaultOverrides: catalogIndex.default_overrides,
-    manifestPolicy: options.specialistPermissions ? { permissions: options.specialistPermissions } : undefined,
-    specialistOverride,
-    specialistExclusions: (options.excludeExtensions ?? []).includes(gitnexusRuntime.packageName) ? { disabledExtensions: ["gitnexus"] } : undefined,
-    extensionSources: options.extensionSources,
-    extensionState: {
-      gitnexus: gitnexusRuntime.extensionState
-    },
-    extensionPackages: {
-      gitnexus: {
-        packageName: gitnexusRuntime.packageName,
-        packagePath: gitnexusRuntime.packagePath
+  let contract;
+  try {
+    contract = buildResolvedToolContract({
+      tier,
+      catalogs: runtimeCatalogs,
+      catalogDefaultOverrides: catalogIndex.default_overrides,
+      manifestPolicy: options.specialistPermissions ? { permissions: options.specialistPermissions } : undefined,
+      specialistOverride,
+      specialistExclusions: (options.excludeExtensions ?? []).includes(gitnexusRuntime.packageName) ? { disabledExtensions: ["gitnexus"] } : undefined,
+      extensionSources: options.extensionSources,
+      extensionState: {
+        gitnexus: gitnexusRuntime.extensionState
+      },
+      extensionPackages: {
+        gitnexus: {
+          packageName: gitnexusRuntime.packageName,
+          packagePath: gitnexusRuntime.packagePath
+        }
       }
-    }
-  });
+    });
+  } catch {
+    throw new RuntimeToolCatalogResolutionError("tool_contract_invalid");
+  }
+  if (!contract.toolsFlag.trim()) {
+    throw new RuntimeToolCatalogResolutionError("empty_tool_contract");
+  }
+  return contract;
 }
 function applyExtensionToolPolicyGate(args, contract, env) {
   if (!contract || (contract.exposedExtensionSources?.length ?? 0) === 0)
@@ -11662,8 +11696,12 @@ class PiAgentSession {
       specialistName: this.options.specialistName,
       specialistPermissions: this.options.specialistPermissions,
       excludeExtensions: this.options.excludeExtensions,
-      extensionSources: this.options.extensionSources
+      extensionSources: this.options.extensionSources,
+      cwd: this.options.cwd
     });
+    if (this.options.permissionLevel !== undefined && !resolvedToolContract?.toolsFlag.trim()) {
+      throw new RuntimeToolCatalogResolutionError("empty_tool_contract");
+    }
     if (resolvedToolContract?.toolsFlag && (resolvedToolContract.exposedExtensionSources?.length ?? 0) === 0) {
       args.push("--tools", resolvedToolContract.toolsFlag);
     }
@@ -16377,9 +16415,9 @@ function isPathWithinRoot(candidate, root) {
 function canonicalizeSkillRoot(root, baseDir) {
   try {
     const normalized = normalizePath(root, baseDir);
-    lstatSync(normalized);
+    lstatSync2(normalized);
     const canonical = realpathSync(normalized);
-    const stat = lstatSync(canonical);
+    const stat = lstatSync2(canonical);
     if (!stat.isDirectory())
       throw new Error("not a directory");
     accessSync(canonical, constants.R_OK | constants.X_OK);
@@ -16391,15 +16429,15 @@ function canonicalizeSkillRoot(root, baseDir) {
 function canonicalizeSkillPath(field, path, baseDir) {
   try {
     const normalized = normalizePath(path, baseDir);
-    lstatSync(normalized);
+    lstatSync2(normalized);
     const canonical = realpathSync(normalized);
-    const stat = lstatSync(canonical);
+    const stat = lstatSync2(canonical);
     if (!stat.isFile() && !stat.isDirectory())
       throw new Error("not a file or directory");
     accessSync(canonical, stat.isDirectory() ? constants.R_OK | constants.X_OK : constants.R_OK);
     if (stat.isDirectory()) {
       const skillFile = join6(canonical, "SKILL.md");
-      const skillStat = lstatSync(skillFile);
+      const skillStat = lstatSync2(skillFile);
       if (skillStat.isSymbolicLink() || !skillStat.isFile())
         throw new Error("invalid SKILL.md");
       accessSync(skillFile, constants.R_OK);
@@ -16475,13 +16513,13 @@ function requireNoFollowFlag() {
 function readSkillSourceBytes(path, noFollowFlag) {
   if (realpathSync(path) !== path)
     throw new Error("skill source canonical path changed");
-  const declaredStat = lstatSync(path);
+  const declaredStat = lstatSync2(path);
   if (declaredStat.isSymbolicLink())
     throw new Error("symlinked skill source");
   const sourcePath = declaredStat.isDirectory() ? join6(path, "SKILL.md") : path;
   if (realpathSync(sourcePath) !== sourcePath)
     throw new Error("skill file canonical path changed");
-  const sourceStat = lstatSync(sourcePath);
+  const sourceStat = lstatSync2(sourcePath);
   if (sourceStat.isSymbolicLink() || !sourceStat.isFile())
     throw new Error("skill source is not a regular file");
   accessSync(sourcePath, constants.R_OK);
@@ -16868,8 +16906,12 @@ async function runScriptSpecialist(input, options) {
       specialistName,
       specialistPermissions,
       excludeExtensions: extensionSelection.excludeExtensions,
-      extensionSources: extensionSelection.extensionSources
+      extensionSources: extensionSelection.extensionSources,
+      cwd: baseDir
     });
+    if (!resolvedToolContract) {
+      throw new RuntimeToolCatalogResolutionError("canonical_catalog_unavailable");
+    }
     const resolvedToolContractBlock = resolvedToolContract ? formatResolvedToolContract(resolvedToolContract) : "";
     const localScripts = getLocalScripts(spec);
     validateBeforeRun(buildValidationSpec(spec, localScripts), permissionLevel, resolvedToolContract);
@@ -17157,7 +17199,7 @@ ${mandatoryRulesBlock}`;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const resolvedSpecialist = resolveScriptSpecialistName(input.specialist);
-    return { success: false, error: message, error_type: mapErrorType(message), meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, duration_ms: Date.now() - startedAt, trace_id: traceId } };
+    return { success: false, error: message, error_type: error instanceof RuntimeToolCatalogResolutionError ? "runtime_tool_catalog_unavailable" : mapErrorType(message), meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, duration_ms: Date.now() - startedAt, trace_id: traceId } };
   }
 }
 function collectModelCandidates(input, spec, options) {
@@ -18000,7 +18042,7 @@ function formatReferenceLocation(specialist, fieldPath) {
 }
 
 // src/specialist/project-pack-skill-resolver.ts
-import { accessSync as accessSync2, constants as constants2, readdirSync, lstatSync as lstatSync2, realpathSync as realpathSync2 } from "node:fs";
+import { accessSync as accessSync2, constants as constants2, readdirSync, lstatSync as lstatSync3, realpathSync as realpathSync2 } from "node:fs";
 import { homedir as homedir5 } from "node:os";
 import { join as join9, relative as relative2, isAbsolute as isAbsolute3 } from "node:path";
 var RESERVED_SKILL_ROOTS = [
@@ -18078,7 +18120,7 @@ function probeCandidate(skillName, canonicalConsumer, canonicalSkillsRoot, candi
   const candidateRel = relative2(canonicalConsumer, candidate);
   let dirStat;
   try {
-    dirStat = lstatSync2(candidate);
+    dirStat = lstatSync3(candidate);
   } catch (error) {
     if (error?.code === "ENOENT")
       return null;
@@ -18094,7 +18136,7 @@ function probeCandidate(skillName, canonicalConsumer, canonicalSkillsRoot, candi
   const skillFileRel = relative2(canonicalConsumer, skillFile);
   let mdStat;
   try {
-    mdStat = lstatSync2(skillFile);
+    mdStat = lstatSync3(skillFile);
   } catch (error) {
     if (error?.code === "ENOENT") {
       throw new ProjectPackSkillSecurityError(skillName, skillFileRel, "is missing SKILL.md (ENOENT); a discovered skill directory must contain a regular SKILL.md file");

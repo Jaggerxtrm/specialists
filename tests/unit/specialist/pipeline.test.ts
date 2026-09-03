@@ -1,5 +1,6 @@
 // tests/unit/specialist/pipeline.test.ts
 import { describe, it, expect, vi } from 'vitest';
+import { RuntimeToolCatalogResolutionError } from '../../../src/pi/session.js';
 import { runPipeline } from '../../../src/specialist/pipeline.js';
 
 function makeRunner(outputs: string[]) {
@@ -42,6 +43,25 @@ describe('runPipeline', () => {
     );
     expect(result.final_output).toBe('FINAL');
     expect(result.steps).toHaveLength(3);
+  });
+
+  it('stops after the first step when the runtime tool catalog cannot resolve', async () => {
+    const runner = {
+      run: vi.fn().mockRejectedValue(new RuntimeToolCatalogResolutionError('canonical_catalog_unavailable')),
+    } as any;
+
+    const result = await runPipeline(
+      [{ name: 'a', prompt: 'x' }, { name: 'b', prompt: 'y' }],
+      runner,
+    );
+
+    expect(runner.run).toHaveBeenCalledTimes(1);
+    expect(result.steps).toEqual([expect.objectContaining({
+      specialist: 'a',
+      status: 'rejected',
+      error: expect.stringContaining('refusing to launch with Pi default tools'),
+    })]);
+    expect(result.final_output).toBeNull();
   });
 
   it('stops pipeline on failure and marks step as rejected', async () => {

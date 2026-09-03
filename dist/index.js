@@ -23466,7 +23466,7 @@ var init_tool_catalog = __esm(() => {
 // src/pi/session.ts
 import { createHash as createHash3 } from "crypto";
 import { spawn } from "child_process";
-import { existsSync as existsSync10, mkdirSync as mkdirSync4, readFileSync as readFileSync6, writeFileSync as writeFileSync3 } from "fs";
+import { existsSync as existsSync10, lstatSync as lstatSync2, mkdirSync as mkdirSync4, readFileSync as readFileSync6, writeFileSync as writeFileSync3 } from "fs";
 import { homedir as homedir3, tmpdir } from "os";
 import { isAbsolute as isAbsolute2, resolve as resolve5, sep as sep2, join as join10, dirname as dirname7 } from "path";
 function toRuntimeToolCatalogs(catalogIndex) {
@@ -23481,24 +23481,38 @@ function toRuntimeToolCatalogs(catalogIndex) {
     }
   }));
 }
-function loadSharedToolCatalogIndex() {
-  if (cachedToolCatalogIndex)
-    return cachedToolCatalogIndex;
-  const overridePath = resolve5(process.cwd(), ".specialists", "catalog", "index.json");
+function loadSharedToolCatalogIndex(cwd) {
+  const overridePath = resolve5(cwd, ".specialists", "catalog", "index.json");
+  let overrideExists = false;
   try {
-    cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync6(overridePath, "utf8"));
-    return cachedToolCatalogIndex;
-  } catch {
-    try {
-      const canonicalDir = resolveCanonicalAssetDir("catalog");
-      if (!canonicalDir)
-        return;
-      const canonicalPath = resolve5(canonicalDir, "index.json");
-      cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync6(canonicalPath, "utf8"));
-      return cachedToolCatalogIndex;
-    } catch {
-      return;
+    lstatSync2(overridePath);
+    overrideExists = true;
+  } catch (error2) {
+    if (error2.code !== "ENOENT") {
+      throw new RuntimeToolCatalogResolutionError("project_catalog_invalid");
     }
+  }
+  if (overrideExists) {
+    try {
+      return loadToolCatalogIndex(readFileSync6(overridePath, "utf8"));
+    } catch {
+      throw new RuntimeToolCatalogResolutionError("project_catalog_invalid");
+    }
+  }
+  let canonicalDir;
+  try {
+    canonicalDir = resolveCanonicalAssetDir("catalog");
+  } catch {
+    throw new RuntimeToolCatalogResolutionError("canonical_catalog_unavailable");
+  }
+  if (!canonicalDir) {
+    throw new RuntimeToolCatalogResolutionError("canonical_catalog_unavailable");
+  }
+  const canonicalPath = resolve5(canonicalDir, "index.json");
+  try {
+    return loadToolCatalogIndex(readFileSync6(canonicalPath, "utf8"));
+  } catch {
+    throw new RuntimeToolCatalogResolutionError("canonical_catalog_invalid");
   }
 }
 function readPackageVersion(packageJsonPath) {
@@ -23555,36 +23569,46 @@ function resolveGitnexusRuntime(options) {
   };
 }
 function resolveRuntimeToolContract(options) {
-  const catalogIndex = loadSharedToolCatalogIndex();
-  if (!catalogIndex)
+  if (options.level === undefined)
     return;
-  const tier = options.level?.toUpperCase();
-  if (tier !== "READ_ONLY" && tier !== "LOW" && tier !== "MEDIUM" && tier !== "HIGH")
-    return;
+  const tier = options.level.trim().toUpperCase();
+  if (tier !== "READ_ONLY" && tier !== "LOW" && tier !== "MEDIUM" && tier !== "HIGH") {
+    throw new RuntimeToolCatalogResolutionError("invalid_permission_tier");
+  }
+  const catalogIndex = loadSharedToolCatalogIndex(resolve5(options.cwd ?? process.cwd()));
   const specialistOverride = options.specialistPermissions?.[tier];
   const gitnexusRuntime = resolveGitnexusRuntime({
     catalogIndex,
     excludeExtensions: options.excludeExtensions
   });
   const runtimeCatalogs = toRuntimeToolCatalogs(catalogIndex);
-  return buildResolvedToolContract({
-    tier,
-    catalogs: runtimeCatalogs,
-    catalogDefaultOverrides: catalogIndex.default_overrides,
-    manifestPolicy: options.specialistPermissions ? { permissions: options.specialistPermissions } : undefined,
-    specialistOverride,
-    specialistExclusions: (options.excludeExtensions ?? []).includes(gitnexusRuntime.packageName) ? { disabledExtensions: ["gitnexus"] } : undefined,
-    extensionSources: options.extensionSources,
-    extensionState: {
-      gitnexus: gitnexusRuntime.extensionState
-    },
-    extensionPackages: {
-      gitnexus: {
-        packageName: gitnexusRuntime.packageName,
-        packagePath: gitnexusRuntime.packagePath
+  let contract;
+  try {
+    contract = buildResolvedToolContract({
+      tier,
+      catalogs: runtimeCatalogs,
+      catalogDefaultOverrides: catalogIndex.default_overrides,
+      manifestPolicy: options.specialistPermissions ? { permissions: options.specialistPermissions } : undefined,
+      specialistOverride,
+      specialistExclusions: (options.excludeExtensions ?? []).includes(gitnexusRuntime.packageName) ? { disabledExtensions: ["gitnexus"] } : undefined,
+      extensionSources: options.extensionSources,
+      extensionState: {
+        gitnexus: gitnexusRuntime.extensionState
+      },
+      extensionPackages: {
+        gitnexus: {
+          packageName: gitnexusRuntime.packageName,
+          packagePath: gitnexusRuntime.packagePath
+        }
       }
-    }
-  });
+    });
+  } catch {
+    throw new RuntimeToolCatalogResolutionError("tool_contract_invalid");
+  }
+  if (!contract.toolsFlag.trim()) {
+    throw new RuntimeToolCatalogResolutionError("empty_tool_contract");
+  }
+  return contract;
 }
 function applyExtensionToolPolicyGate(args, contract, env) {
   if (!contract || (contract.exposedExtensionSources?.length ?? 0) === 0)
@@ -23974,8 +23998,12 @@ class PiAgentSession {
       specialistName: this.options.specialistName,
       specialistPermissions: this.options.specialistPermissions,
       excludeExtensions: this.options.excludeExtensions,
-      extensionSources: this.options.extensionSources
+      extensionSources: this.options.extensionSources,
+      cwd: this.options.cwd
     });
+    if (this.options.permissionLevel !== undefined && !resolvedToolContract?.toolsFlag.trim()) {
+      throw new RuntimeToolCatalogResolutionError("empty_tool_contract");
+    }
     if (resolvedToolContract?.toolsFlag && (resolvedToolContract.exposedExtensionSources?.length ?? 0) === 0) {
       args.push("--tools", resolvedToolContract.toolsFlag);
     }
@@ -24549,7 +24577,7 @@ ${stderrTail}` : ""}`;
     await this.waitForDone(timeout);
   }
 }
-var SessionKilledError, StallTimeoutError, TEST_COMMAND_STALL_TIMEOUT_MS = 300000, GITNEXUS_IMPACT_STALL_TIMEOUT_MS = 300000, TEST_COMMAND_PATTERNS, cachedToolCatalogIndex, WRITE_BOUNDARY_TOOL_NAMES, WORKTREE_BOUNDARY_ENV_KEY = "SPECIALISTS_WORKTREE_BOUNDARY";
+var SessionKilledError, StallTimeoutError, TEST_COMMAND_STALL_TIMEOUT_MS = 300000, GITNEXUS_IMPACT_STALL_TIMEOUT_MS = 300000, TEST_COMMAND_PATTERNS, RUNTIME_TOOL_CATALOG_ERROR_MESSAGE = "Runtime tool catalog unavailable or invalid; refusing to launch with Pi default tools. Reinstall or rebuild Specialists and verify config/catalog/index.json.", RuntimeToolCatalogResolutionError, WRITE_BOUNDARY_TOOL_NAMES, WORKTREE_BOUNDARY_ENV_KEY = "SPECIALISTS_WORKTREE_BOUNDARY";
 var init_session = __esm(() => {
   init_read_line_numbers_extension();
   init_extension_tool_policy_extension();
@@ -24577,6 +24605,15 @@ var init_session = __esm(() => {
     /(?:^|\s)(?:node\s+)?jest(?:\s|$)/i,
     /(?:^|\s)pytest(?:\s|$)/i
   ];
+  RuntimeToolCatalogResolutionError = class RuntimeToolCatalogResolutionError extends Error {
+    reason;
+    code = "runtime_tool_catalog_unavailable";
+    constructor(reason) {
+      super(RUNTIME_TOOL_CATALOG_ERROR_MESSAGE);
+      this.reason = reason;
+      this.name = "RuntimeToolCatalogResolutionError";
+    }
+  };
   WRITE_BOUNDARY_TOOL_NAMES = new Set(["edit", "write", "multiEdit", "notebookEdit"]);
 });
 
@@ -25348,7 +25385,8 @@ ${buildBeadBoundaryInstruction(runCwd, options.worktreeBoundary)}`.trim();
       specialistName: options.specialistName ?? metadata.name,
       specialistPermissions,
       excludeExtensions,
-      extensionSources: extensionSelection.extensionSources
+      extensionSources: extensionSelection.extensionSources,
+      cwd: options.workingDirectory
     });
     const resolvedToolContractBlock = resolvedToolContract ? formatResolvedToolContract(resolvedToolContract) : "";
     const promptVariables = {
@@ -31423,7 +31461,7 @@ __export(exports_init, {
   runGlobal: () => runGlobal,
   run: () => run11
 });
-import { copyFileSync, cpSync, existsSync as existsSync17, lstatSync as lstatSync2, mkdirSync as mkdirSync8, readdirSync as readdirSync5, readFileSync as readFileSync14, readlinkSync, renameSync as renameSync3, rmSync as rmSync3, symlinkSync, unlinkSync, writeFileSync as writeFileSync7 } from "fs";
+import { copyFileSync, cpSync, existsSync as existsSync17, lstatSync as lstatSync3, mkdirSync as mkdirSync8, readdirSync as readdirSync5, readFileSync as readFileSync14, readlinkSync, renameSync as renameSync3, rmSync as rmSync3, symlinkSync, unlinkSync, writeFileSync as writeFileSync7 } from "fs";
 import { spawnSync as spawnSync12 } from "child_process";
 import { basename as basename5, dirname as dirname11, join as join18, relative as relative2, resolve as resolve8 } from "path";
 function ok(msg) {
@@ -31664,7 +31702,7 @@ function installProjectHooks(cwd) {
     const claudeHookPath = join18(claudeHooksDir, file);
     const relativeTarget = `../../.xtrm/hooks/specialists/${file}`;
     if (existsSync17(claudeHookPath)) {
-      const stats = lstatSync2(claudeHookPath);
+      const stats = lstatSync3(claudeHookPath);
       if (!stats.isSymbolicLink()) {
         unlinkSync(claudeHookPath);
         symlinkSync(relativeTarget, claudeHookPath);
@@ -31739,7 +31777,7 @@ function ensureRootSymlink(rootPath, expectedTargetPath) {
     ok(`created ${basename5(dirname11(rootPath))}/${basename5(rootPath)} \u2192 ${relTarget}`);
     return;
   }
-  const stats = lstatSync2(rootPath);
+  const stats = lstatSync3(rootPath);
   if (!stats.isSymbolicLink()) {
     throw new Error(`${rootPath} must be a symlink to ${expectedTargetPath}. Aborting.`);
   }
@@ -31765,7 +31803,7 @@ function ensureRootSymlink(rootPath, expectedTargetPath) {
 function ensureActiveSkillSymlink(defaultSkillPath, activeLinkPath) {
   let stats;
   try {
-    stats = lstatSync2(activeLinkPath);
+    stats = lstatSync3(activeLinkPath);
   } catch (error2) {
     const fileError = error2;
     if (fileError.code === "ENOENT") {
@@ -31815,7 +31853,7 @@ function installProjectSkills(cwd, syncSkills) {
       const retiredDefaultPath = join18(defaultRoot, entry.name);
       const retiredActivePath = join18(activeRoot, entry.name);
       try {
-        if (lstatSync2(retiredActivePath).isSymbolicLink() && resolve8(dirname11(retiredActivePath), readlinkSync(retiredActivePath)) === resolve8(retiredDefaultPath)) {
+        if (lstatSync3(retiredActivePath).isSymbolicLink() && resolve8(dirname11(retiredActivePath), readlinkSync(retiredActivePath)) === resolve8(retiredDefaultPath)) {
           unlinkSync(retiredActivePath);
         }
       } catch {}
@@ -32023,7 +32061,7 @@ function validateInitPostconditions(cwd) {
       warnings.push(`.claude/hooks/${hookFile} is missing`);
       continue;
     }
-    const stats = lstatSync2(claudeHookPath);
+    const stats = lstatSync3(claudeHookPath);
     if (!stats.isSymbolicLink()) {
       warnings.push(`.claude/hooks/${hookFile} is not a symlink`);
       continue;
@@ -32076,7 +32114,7 @@ function validateInitPostconditions(cwd) {
       warnings.push(`${relative2(cwd, symlink.linkPath)} is missing`);
       continue;
     }
-    const stats = lstatSync2(symlink.linkPath);
+    const stats = lstatSync3(symlink.linkPath);
     if (!stats.isSymbolicLink()) {
       warnings.push(`${relative2(cwd, symlink.linkPath)} is not a symlink`);
       continue;
@@ -33255,7 +33293,7 @@ import {
   constants as constants2,
   existsSync as existsSync19,
   fstatSync,
-  lstatSync as lstatSync3,
+  lstatSync as lstatSync4,
   openSync as openSync2,
   readFileSync as readFileSync16,
   realpathSync as realpathSync2
@@ -33274,9 +33312,9 @@ function isPathWithinRoot(candidate, root) {
 function canonicalizeSkillRoot(root, baseDir) {
   try {
     const normalized = normalizePath(root, baseDir);
-    lstatSync3(normalized);
+    lstatSync4(normalized);
     const canonical = realpathSync2(normalized);
-    const stat2 = lstatSync3(canonical);
+    const stat2 = lstatSync4(canonical);
     if (!stat2.isDirectory())
       throw new Error("not a directory");
     accessSync2(canonical, constants2.R_OK | constants2.X_OK);
@@ -33288,15 +33326,15 @@ function canonicalizeSkillRoot(root, baseDir) {
 function canonicalizeSkillPath(field, path, baseDir) {
   try {
     const normalized = normalizePath(path, baseDir);
-    lstatSync3(normalized);
+    lstatSync4(normalized);
     const canonical = realpathSync2(normalized);
-    const stat2 = lstatSync3(canonical);
+    const stat2 = lstatSync4(canonical);
     if (!stat2.isFile() && !stat2.isDirectory())
       throw new Error("not a file or directory");
     accessSync2(canonical, stat2.isDirectory() ? constants2.R_OK | constants2.X_OK : constants2.R_OK);
     if (stat2.isDirectory()) {
       const skillFile = join20(canonical, "SKILL.md");
-      const skillStat = lstatSync3(skillFile);
+      const skillStat = lstatSync4(skillFile);
       if (skillStat.isSymbolicLink() || !skillStat.isFile())
         throw new Error("invalid SKILL.md");
       accessSync2(skillFile, constants2.R_OK);
@@ -33372,13 +33410,13 @@ function requireNoFollowFlag() {
 function readSkillSourceBytes(path, noFollowFlag) {
   if (realpathSync2(path) !== path)
     throw new Error("skill source canonical path changed");
-  const declaredStat = lstatSync3(path);
+  const declaredStat = lstatSync4(path);
   if (declaredStat.isSymbolicLink())
     throw new Error("symlinked skill source");
   const sourcePath = declaredStat.isDirectory() ? join20(path, "SKILL.md") : path;
   if (realpathSync2(sourcePath) !== sourcePath)
     throw new Error("skill file canonical path changed");
-  const sourceStat = lstatSync3(sourcePath);
+  const sourceStat = lstatSync4(sourcePath);
   if (sourceStat.isSymbolicLink() || !sourceStat.isFile())
     throw new Error("skill source is not a regular file");
   accessSync2(sourcePath, constants2.R_OK);
@@ -33759,8 +33797,12 @@ async function runScriptSpecialist(input2, options) {
       specialistName,
       specialistPermissions,
       excludeExtensions: extensionSelection.excludeExtensions,
-      extensionSources: extensionSelection.extensionSources
+      extensionSources: extensionSelection.extensionSources,
+      cwd: baseDir
     });
+    if (!resolvedToolContract) {
+      throw new RuntimeToolCatalogResolutionError("canonical_catalog_unavailable");
+    }
     const resolvedToolContractBlock = resolvedToolContract ? formatResolvedToolContract(resolvedToolContract) : "";
     const localScripts = getLocalScripts(spec);
     validateBeforeRun(buildValidationSpec(spec, localScripts), permissionLevel, resolvedToolContract);
@@ -34048,7 +34090,7 @@ ${mandatoryRulesBlock}`;
   } catch (error2) {
     const message = error2 instanceof Error ? error2.message : String(error2);
     const resolvedSpecialist = resolveScriptSpecialistName(input2.specialist);
-    return { success: false, error: message, error_type: mapErrorType(message), meta: { specialist: resolvedSpecialist, requested_specialist: input2.requested_specialist ?? input2.specialist, resolved_specialist: resolvedSpecialist, duration_ms: Date.now() - startedAt, trace_id: traceId } };
+    return { success: false, error: message, error_type: error2 instanceof RuntimeToolCatalogResolutionError ? "runtime_tool_catalog_unavailable" : mapErrorType(message), meta: { specialist: resolvedSpecialist, requested_specialist: input2.requested_specialist ?? input2.specialist, resolved_specialist: resolvedSpecialist, duration_ms: Date.now() - startedAt, trace_id: traceId } };
   }
 }
 function collectModelCandidates(input2, spec, options) {

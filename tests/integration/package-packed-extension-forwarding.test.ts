@@ -64,7 +64,7 @@ describePacked('packed extension forwarding smoke', () => {
       }),
     );
 
-    const build = spawnSync('bun', ['run', 'build'], { cwd: repoRoot, encoding: 'utf-8' });
+    const build = spawnSync('bun', ['run', 'build'], { cwd: repoRoot, encoding: 'utf-8', env: { ...process.env, NODE_ENV: 'test' } });
     expect(build.status).toBe(0);
 
     const pack = spawnSync('npm', ['pack', '--json'], { cwd: repoRoot, encoding: 'utf-8' });
@@ -101,5 +101,27 @@ describePacked('packed extension forwarding smoke', () => {
     expect(extensionArgs).not.toContain('https://example.test/disabled');
     expect(extensionArgs).not.toContain('serena');
     expect(extensionArgs.some((value) => value.includes(join('config', 'pi-extensions', 'read-line-numbers')))).toBe(true);
+
+    const installedRoot = join(prefix, 'lib', 'node_modules', '@jaggerxtrm', 'specialists');
+    rmSync(join(installedRoot, 'config', 'catalog'), { recursive: true, force: true });
+    const blocked = spawnSync('bun', [installedEntry, 'script', 'packed', '--vars', 'name=world', '--user-dir', userDir, '--json'], {
+      cwd: workdir,
+      encoding: 'utf-8',
+      env: {
+        ...process.env,
+        PATH: `${join(sandbox, 'bin')}:${join(prefix, 'bin')}:${process.env.PATH ?? ''}`,
+        HOME: sandbox,
+        PI_ARGV_LOG: argvLog,
+      },
+    });
+
+    expect(blocked.status).toBe(1);
+    expect(JSON.parse(blocked.stdout)).toMatchObject({
+      success: false,
+      error_type: 'runtime_tool_catalog_unavailable',
+      error: expect.stringContaining('refusing to launch with Pi default tools'),
+    });
+    expect(blocked.stdout).not.toContain(installedRoot);
+    expect(readLoggedPiArgv(argvLog)).toHaveLength(1);
   });
 });

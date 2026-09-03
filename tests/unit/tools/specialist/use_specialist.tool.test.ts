@@ -1,5 +1,6 @@
 // ISSUE: xtrm-wiy5n.4.11 — quarantined from the default test baseline.
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { RuntimeToolCatalogResolutionError } from '../../../../src/pi/session.js';
 import { BeadsClient } from '../../../../src/specialist/beads.js';
 import { createUseSpecialistTool } from '../../../../src/tools/specialist/use_specialist.tool.js';
 
@@ -34,6 +35,17 @@ describe('use_specialist tool', () => {
       autonomyLevel: undefined,
       inputBeadId: 'unitAI-55d',
     }, undefined);
+  });
+
+  it('propagates runtime tool-catalog failure without a second runner attempt', async () => {
+    const runner = {
+      run: vi.fn().mockRejectedValue(new RuntimeToolCatalogResolutionError('canonical_catalog_unavailable')),
+    } as any;
+    const tool = createUseSpecialistTool(runner);
+
+    await expect(tool.execute({ name: 'code-review', prompt: 'review this' }))
+      .rejects.toMatchObject({ name: 'RuntimeToolCatalogResolutionError', code: 'runtime_tool_catalog_unavailable' });
+    expect(runner.run).toHaveBeenCalledTimes(1);
   });
 
   it('throws when bead_id cannot be resolved', async () => {

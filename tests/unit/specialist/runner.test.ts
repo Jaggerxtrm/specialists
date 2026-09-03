@@ -500,6 +500,29 @@ describe('SpecialistRunner', () => {
     }
   });
 
+  it('fails closed before session creation or fallback when the project tool catalog is malformed', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'runner-invalid-tool-catalog-'));
+    const sessionFactory = vi.fn().mockResolvedValue(mockSession);
+    try {
+      mkdirSync(join(cwd, '.specialists', 'catalog'), { recursive: true });
+      writeFileSync(join(cwd, '.specialists', 'catalog', 'index.json'), '{ invalid json');
+      const runner = new SpecialistRunner({
+        loader: makeLoader({ fallback_models: ['qwen'] }),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory,
+      });
+
+      await expect(runner.run({ name: 'test-spec', prompt: 'do thing', workingDirectory: cwd, maxRetries: 3 }))
+        .rejects.toMatchObject({ name: 'RuntimeToolCatalogResolutionError', code: 'runtime_tool_catalog_unavailable' });
+      expect(sessionFactory).not.toHaveBeenCalled();
+      expect(mockSession.start).not.toHaveBeenCalled();
+      expect(mockSession.prompt).not.toHaveBeenCalled();
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('injects resolved tool contract into prompt variables before launch', async () => {
     const sessionFactory = vi.fn().mockResolvedValue(mockSession);
     const runner = new SpecialistRunner({

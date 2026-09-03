@@ -139,12 +139,20 @@ export interface PiSessionOptions {
     /** Extended stall timeout used while known test commands run via bash tool */
     testCommandStallTimeoutMs?: number;
 }
+export declare const RUNTIME_TOOL_CATALOG_ERROR_MESSAGE = "Runtime tool catalog unavailable or invalid; refusing to launch with Pi default tools. Reinstall or rebuild Specialists and verify config/catalog/index.json.";
+export type RuntimeToolCatalogErrorReason = 'invalid_permission_tier' | 'project_catalog_invalid' | 'canonical_catalog_unavailable' | 'canonical_catalog_invalid' | 'tool_contract_invalid' | 'empty_tool_contract';
+export declare class RuntimeToolCatalogResolutionError extends Error {
+    readonly reason: RuntimeToolCatalogErrorReason;
+    readonly code = "runtime_tool_catalog_unavailable";
+    constructor(reason: RuntimeToolCatalogErrorReason);
+}
 export declare function resolveRuntimeToolContract(options: {
     level?: string;
     specialistName?: string;
     specialistPermissions?: ManifestPolicy['permissions'];
     excludeExtensions?: readonly string[];
     extensionSources?: readonly string[];
+    cwd?: string;
 }): ResolvedToolContract | undefined;
 export declare function resolvePermissionTools(options: {
     level?: string;
@@ -152,6 +160,7 @@ export declare function resolvePermissionTools(options: {
     specialistPermissions?: ManifestPolicy['permissions'];
     excludeExtensions?: readonly string[];
     extensionSources?: readonly string[];
+    cwd?: string;
 }): string | undefined;
 /**
  * Applies the extension tool-policy gate to a spawn arg list (unitAI-34pyf).
