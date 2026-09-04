@@ -105,7 +105,7 @@ When you stop: file an issue bead with concrete evidence (PIDs, job IDs, exact e
 
 ## Session start (auto-specific)
 
-In addition to the canonical skill's session-start patterns (`bd prime`, `bv --robot-triage`):
+Targeted lookup replaces any bulk dump — in addition to the canonical skill's session-start lookup (`bd ready` / `bd search`, `bv --robot-triage` only when graph-aware ranking is needed):
 
 ```bash
 specialists list --full     # confirm current roles + models (registry may have drifted)
