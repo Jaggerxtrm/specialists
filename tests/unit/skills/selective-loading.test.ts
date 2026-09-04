@@ -5,74 +5,62 @@ import { join, resolve } from 'node:path';
 const SKILL_DIR = resolve(__dirname, '../../../config/skills/using-specialists');
 const router = readFileSync(join(SKILL_DIR, 'SKILL.md'), 'utf8');
 const read = (r: string) => readFileSync(join(SKILL_DIR, r), 'utf8');
-const headings = (body: string) => body.split('\n').filter((l) => l.startsWith('## ')).map((l) => l.slice(3).trim());
+const topHeading = (body: string) => body.split('\n').find((line) => line.startsWith('# '))?.slice(2).trim();
 
-const FILES = [
-  'SKILL.md',
-  'references/bead-contracts.md',
-  'references/chain-recipes.md',
-  'references/dispatch-preconditions.md',
-  'references/monitoring.md',
-  'references/merge-and-integration.md',
-  'references/registry-and-locations.md',
+const ROUTED_PHASES = [
+  { phase: 'running a specialist role/gate sequence', owner: 'references/chain-recipes.md', heading: 'Specialist role and gate recipes' },
+  { phase: 'dependent dispatch', owner: 'references/dispatch-preconditions.md', heading: 'Dispatch preconditions' },
+  { phase: 'waiting on a job', owner: 'references/monitoring.md', heading: 'Monitoring Specialist jobs' },
+  { phase: 'integration/publication', owner: 'references/merge-and-integration.md', heading: 'Integration and publication' },
+  { phase: 'registry/location discovery', owner: 'references/registry-and-locations.md', heading: 'Registry and locations' },
 ];
 
-// Progressive disclosure works if, for each phase, the AUTHORITATIVE section lives in
-// exactly one file and the router points there. Cross-references between files (rule 14
-// naming the Git State Precondition, the merge doc pointing back at it) are deliberate —
-// they are pointers, not copies. Ownership is what must be unique, not every mention.
-const PHASES = [
-  { phase: 'writing a bead', owner: 'references/bead-contracts.md', section: 'Writing Bead Contracts Well' },
-  { phase: 'running a chain', owner: 'references/chain-recipes.md', section: 'Canonical Single-Chain Flow' },
-  { phase: 'dependent dispatch', owner: 'references/dispatch-preconditions.md', section: 'Git State Precondition (before any chain dispatch)' },
-  { phase: 'waiting on a job', owner: 'references/monitoring.md', section: 'Monitoring And Steering' },
-  { phase: 'merging', owner: 'references/merge-and-integration.md', section: 'Merge And Publication (manual git is canonical)' },
-  { phase: 'finding a specialist', owner: 'references/registry-and-locations.md', section: 'Specialist File Locations' },
-];
-
-describe('selective loading: one owner per phase, and the router points at it', () => {
-  for (const { phase, owner, section } of PHASES) {
-    it(`"${phase}": ${owner} owns "${section}"`, () => {
-      expect(headings(read(owner))).toContain(section);
-    });
-
-    it(`"${phase}": no other file owns that section`, () => {
-      const otherOwners = FILES.filter((f) => f !== owner).filter((f) => headings(read(f)).includes(section));
-      expect(otherOwners).toEqual([]);
+describe('selective loading: one routed owner per Specialists execution phase', () => {
+  for (const { phase, owner, heading } of ROUTED_PHASES) {
+    it(`"${phase}": ${owner} owns "${heading}"`, () => {
+      expect(topHeading(read(owner))).toBe(heading);
     });
 
     it(`"${phase}": the router routes to ${owner}`, () => {
       expect(router).toContain(owner);
     });
   }
+
+  it('keeps generic bead-contract doctrine outside Specialists while retaining its precondition reference', () => {
+    const contract = read('references/bead-contracts.md');
+    expect(topHeading(contract)).toBe('Specialist contract precondition');
+    expect(contract).toContain('The generic work-contract doctrine belongs to XTRM `/using-xtrm` and `/planning`.');
+    expect(router).toContain('The detailed contract-writing doctrine belongs to `/planning`; Specialists consumes it.');
+  });
 });
 
-describe('selective loading: the router alone answers always-needed questions', () => {
-  // These gate every task. An agent that loaded only the router must still obey them
-  // without opening a single reference.
+describe('selective loading: the router alone carries stable cross-phase invariants', () => {
   const ALWAYS_NEEDED = [
-    'sp merge',                 // rule 9 — the forbidden merge path
-    'contract:draft',           // rule 15 — the promotion gate
-    'specialists list --full',  // the mandatory registry refresh
-    'session-close-report',     // the session-end handoff
-    'SCRUTINY',                 // applied on every substantive bead
+    'specialists list --full',
+    'sp help',
+    'bd show <id>',
+    'A specialist result is a claim, not live truth.',
+    'Do not busy-poll.',
+    'generic native chain runtime is not yet a released contract',
   ];
 
   for (const marker of ALWAYS_NEEDED) {
-    it(`router answers "${marker}" with no reference loaded`, () => {
+    it(`router carries "${marker}" without loading a reference`, () => {
       expect(router).toContain(marker);
     });
   }
 });
 
 describe('selective loading: the router does not drift back into a monolith', () => {
-  it('stays within the line budget', () => {
-    expect(router.split('\n').length).toBeLessThanOrEqual(350);
+  it('stays within the v4 line budget', () => {
+    expect(router.split('\n').length).toBeLessThan(220);
   });
 
-  it('owns only always-needed policy — no phase-specific recipe sections', () => {
-    const routerSections = headings(router);
-    const phaseOwned = PHASES.map((p) => p.section);
-    expect(routerSections.filter((s) => phaseOwned.includes(s))).toEqual([]);
+  it('routes advanced surfaces instead of recreating retired active skills', () => {
+    expect(router).toContain('Advanced surfaces are references, not separate skills');
+    expect(router).toContain('references/kpi.md');
+    expect(router).toContain('references/nodes.md');
+    expect(router).toContain('references/script-class.md');
+    expect(router).toContain('references/specialist-definitions.md');
   });
 });
