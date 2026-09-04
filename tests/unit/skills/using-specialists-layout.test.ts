@@ -14,7 +14,7 @@ const RETIRED_ROOTS = [
   'using-script-specialists',
   'using-specialists-auto',
 ];
-const REQUIRED_REFERENCES = [
+const RETAINED_REFERENCES = [
   'bead-contracts.md',
   'chain-recipes.md',
   'dispatch-preconditions.md',
@@ -26,6 +26,7 @@ const REQUIRED_REFERENCES = [
   'script-class.md',
   'specialist-definitions.md',
 ];
+const ROUTED_REFERENCES = RETAINED_REFERENCES.filter((name) => name !== 'bead-contracts.md');
 const REQUIRED_DEFINITION_HELPERS = [
   'audit-spec-uniformity.mjs',
   'resolve-specialists-root.mjs',
@@ -50,15 +51,18 @@ describe('v4 consolidated runtime doctrine', () => {
     expect(body).toContain('The installed CLI and\nregistry are authoritative');
   });
 
-  it('links every required advanced reference from the root', () => {
+  it('retains every Specialists reference and routes every Specialists-owned advanced surface', () => {
     const body = readFileSync(ROOT, 'utf8');
-    for (const name of REQUIRED_REFERENCES) {
+    for (const name of RETAINED_REFERENCES) {
       const relative = `references/${name}`;
-      expect(body, `root missing ${relative}`).toContain(relative);
       const target = join(SKILL_DIR, relative);
       expect(existsSync(target), `missing ${relative}`).toBe(true);
       expect(statSync(target).size, `empty ${relative}`).toBeGreaterThan(0);
     }
+    for (const name of ROUTED_REFERENCES) {
+      expect(body, `root missing references/${name}`).toContain(`references/${name}`);
+    }
+    expect(body).toContain('The detailed contract-writing doctrine belongs to `/planning`; Specialists consumes it.');
   });
 
   it('retains deterministic specialist-definition helpers under the consolidated root', () => {
@@ -107,7 +111,7 @@ describe('install parity: every shipped resource is in the asset contract', () =
     const installed = join(dest, 'using-specialists');
     cpSync(SKILL_DIR, installed, { recursive: true });
 
-    for (const name of REQUIRED_REFERENCES) {
+    for (const name of RETAINED_REFERENCES) {
       expect(existsSync(join(installed, 'references', name)), `missing installed reference ${name}`).toBe(true);
     }
     for (const name of REQUIRED_DEFINITION_HELPERS) {
