@@ -9,6 +9,15 @@ const supervisorState = {
   constructorOpts: [] as Array<Record<string, unknown>>,
 };
 
+// Hermetic liveness: isProcessAlive must not consult the host /proc for the mocked
+// PID — on CI runners a real PID 1234 can exist with a start time that differs from
+// the mocked started_at_ms, flipping the reap branch off (unitAI-t1d79).
+const livenessState = vi.hoisted(() => ({ dead: new Set<number>() }));
+
+vi.mock('../../../src/specialist/process-liveness.js', () => ({
+  isProcessAlive: (pid: number) => !livenessState.dead.has(pid),
+}));
+
 const beadsState = {
   closeCalls: [] as Array<{ beadId: string; reason: string }>,
   closeBeadIfInProgress: vi.fn((beadId: string, reason: string) => {
@@ -72,6 +81,7 @@ describe('stop CLI', () => {
     beadsState.closeBeadIfInProgress.mockClear();
     supervisorState.finalizeCalls = [];
     supervisorState.constructorOpts = [];
+    livenessState.dead.clear();
   });
 
   afterEach(() => {
@@ -133,15 +143,9 @@ describe('stop CLI', () => {
       stderrWrites.push(String(chunk));
       return true;
     });
-    // Model a dead PID: signal=0 (liveness probe) throws ESRCH, everything else no-ops.
-    vi.spyOn(process, 'kill').mockImplementation((_pid: number, signal?: string | number) => {
-      if (signal === 0) {
-        const err = new Error('kill ESRCH') as NodeJS.ErrnoException;
-        err.code = 'ESRCH';
-        throw err;
-      }
-      return true as never;
-    });
+    // Model a genuinely dead PID through the mocked liveness seam.
+    livenessState.dead.add(1234);
+    vi.spyOn(process, 'kill').mockImplementation(() => true as never);
 
     const { run } = await import('../../../src/cli/stop.js');
     await run();
@@ -158,9 +162,11 @@ describe('stop CLI', () => {
       return true;
     });
     const killCalls: Array<{ pid: number; signal: string | number | undefined }> = [];
-    // Model an alive PID: signal=0 succeeds; SIGTERM to -pid (process group) succeeds; record all.
+    // Model an alive PID that dies on SIGTERM/SIGKILL so waitForProcessExit returns
+    // immediately instead of spinning out its timeout.
     vi.spyOn(process, 'kill').mockImplementation((pid: number, signal?: string | number) => {
       killCalls.push({ pid, signal });
+      if (signal === 'SIGTERM' || signal === 'SIGKILL') livenessState.dead.add(Math.abs(pid));
       return true as never;
     });
 
