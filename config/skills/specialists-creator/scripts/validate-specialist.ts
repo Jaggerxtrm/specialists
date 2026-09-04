@@ -1,41 +1,40 @@
-import { readFileSync } from "node:fs";
-import { parseSpecialist } from "../../../../src/specialist/schema.ts";
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { resolveSpecialistsRoot } from './resolve-specialists-root.mjs';
 
-function printUsage(): void {
-  console.error("Usage: bun skills/specialist-author/scripts/validate-specialist.ts <path-to.specialist.yaml>");
-}
-
-const file = process.argv[2];
-
-if (!file) {
-  printUsage();
+function usage(): never {
+  console.error('Usage: bun validate-specialist.ts <path-to.specialist.json>');
   process.exit(64);
 }
 
-let yaml: string;
+const file = process.argv[2];
+if (!file) usage();
+
+let raw: string;
 try {
-  yaml = readFileSync(file, "utf8");
+  raw = readFileSync(file, 'utf8');
 } catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
   console.error(`File not found or unreadable: ${file}`);
-  console.error(message);
+  console.error(error instanceof Error ? error.message : String(error));
   process.exit(66);
 }
 
 try {
-  await parseSpecialist(yaml);
+  const root = resolveSpecialistsRoot();
+  const schemaUrl = pathToFileURL(path.join(root, 'src', 'specialist', 'schema.ts')).href;
+  const { parseSpecialist } = await import(schemaUrl);
+  await parseSpecialist(raw);
   console.log(`OK ${file}`);
 } catch (error) {
   console.error(`Invalid ${file}`);
-  if (error && typeof error === "object" && "issues" in error && Array.isArray(error.issues)) {
+  if (error && typeof error === 'object' && 'issues' in error && Array.isArray(error.issues)) {
     for (const issue of error.issues) {
-      const path = Array.isArray(issue.path) && issue.path.length > 0 ? issue.path.join(".") : "<root>";
-      console.error(`- ${path}: ${issue.message}`);
+      const issuePath = Array.isArray(issue.path) && issue.path.length ? issue.path.join('.') : '<root>';
+      console.error(`- ${issuePath}: ${issue.message}`);
     }
-  } else if (error instanceof Error) {
-    console.error(error.message);
   } else {
-    console.error(String(error));
+    console.error(error instanceof Error ? error.message : String(error));
   }
   process.exit(1);
 }
