@@ -100,7 +100,7 @@ Source: latest xt report + `xt --help`; keep commands here, not full CLI surface
 - `xt doctor` — diagnose xtrm drift in current project; see `/update-xt`.
 - `xt init` — bootstrap xtrm in project; see xtrm-tools docs.
 - `xt release prepare/publish` — legacy release path; canonical flow is `/releasing`.
-- `bd prime` — refresh beads workflow context; see `CLAUDE.md`.
+- Targeted Beads lookup (`bd ready`, `bd show <id>`, `bd search "<terms>"`) — inspect work; `bd prime` is opt-in diagnostic only; see `CLAUDE.md`.
 - `memory-processor` — memory synthesis specialist; see `/documenting`.
 - `xt-merge` — defer merge-queue internals to `/xt-merge`.
 
