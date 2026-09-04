@@ -4,11 +4,11 @@ description: >
   Use Specialists as a governed XTRM execution backend for tracked implementation,
   debugging, review, testing, security, documentation, research, and other role-shaped
   work. Use when work already has a durable XTRM contract and benefits from a distinct
-  specialist role, supervised job lifecycle, review/fix loop, or retained evidence.
-  Read live `specialists list --full` and `sp help` before relying on remembered roles
-  or flags. This skill describes released Specialists behavior, not planned ChainRun
-  architecture.
-version: 4.0
+  specialist role, supervised job lifecycle, review/fix loop, retained evidence, or an
+  advanced Specialists surface such as node/script execution, KPI analysis, or specialist
+  definition authoring. Read live `specialists list --full` and `sp help` before relying
+  on remembered roles or flags.
+version: 4.1
 ---
 
 # Using Specialists
@@ -33,7 +33,7 @@ Use subcommand help before exact invocation when a flag matters. The installed C
 registry are authoritative. Static examples in this skill are shapes, not a promise that
 an old flag still exists.
 
-The current released product supports supervised specialist jobs and related node/script
+The current released product supports supervised specialist jobs plus advanced node/script
 surfaces. The programme is moving toward the XTRM
 `ChainSource -> ChainDefinition -> ResolvedChain -> ChainRun` architecture, but that
 generic native chain runtime is not yet a released contract. Do not pretend it is.
@@ -65,8 +65,6 @@ requires a child agent.
 
 ## Basic job lifecycle
 
-The stable conceptual lifecycle is:
-
 ```text
 contract ready
   -> select live specialist
@@ -78,13 +76,18 @@ contract ready
   -> publish or hand back through the owning XTRM workflow
 ```
 
-For exact commands and monitoring envelopes, read these references only when needed:
+For exact commands and specialized surfaces, load only the relevant reference:
 
 - `references/chain-recipes.md` — role selection and production-diff review shapes.
 - `references/monitoring.md` — waiting, feed/result semantics, keep-alive and failure handling.
 - `references/merge-and-integration.md` — current integration/publish behavior.
 - `references/registry-and-locations.md` — live registry and source locations.
 - `references/dispatch-preconditions.md` — git/worktree prerequisites for dependent work.
+- `references/kpi.md` — runtime cost, token/payload, waiting/stall and role/model analysis.
+- `references/nodes.md` — NodeSupervisor coordination when `sp node` is intentionally selected.
+- `references/script-class.md` — bounded read-only `sp script` / `sp serve` execution.
+- `references/specialist-definitions.md` — author/validate Specialist definitions; deterministic
+  helpers are under `scripts/specialist-definitions/`.
 
 ## Evidence rules
 
@@ -105,13 +108,9 @@ For a production diff, preserve the project-required review and validation gates
 current role registry and XTRM chain doctrine decide the exact set; do not reconstruct a
 frozen pipeline from memory.
 
-At minimum, make sure the work has:
-
-1. implementation/debug evidence;
-2. appropriate tests or explicit test evidence;
-3. review by an independent role when required;
-4. security review when the changed surface warrants it;
-5. no unresolved findings hidden by the final summary.
+At minimum, make sure the work has implementation/debug evidence, appropriate tests or
+explicit test evidence, independent review when required, security review when warranted,
+and no unresolved findings hidden by the final summary.
 
 ## Dependent waves
 
@@ -136,16 +135,13 @@ failing context window.
 General inter-agent messaging and wake/reply semantics belong to `/multiplexing`, not
 this skill.
 
-## Advanced Specialists surfaces
+## Advanced surfaces are references, not separate skills
 
-`sp script` / `sp serve` and `sp node` are specialized execution modes. They are not the
-default tracked-work path and should not expand the core skill body. If they are enabled
-in the current XTRM skill profile, load their dedicated optional skills or current CLI
-help.
-
-Use script-class execution for bounded request/response, read-only transforms. Use node
-coordination when the NodeSupervisor runtime is intentionally selected. Do not infer
-that either surface is appropriate merely because it exists.
+KPI analysis, NodeSupervisor, script-class execution and Specialist definition authoring
+are specialized parts of one Specialists execution backend. They remain discoverable
+through this root and retain deterministic helper assets, but they do not need four more
+active skill triggers. This keeps the default/optional catalog small without deleting the
+capabilities.
 
 ## What this skill deliberately does not own
 
