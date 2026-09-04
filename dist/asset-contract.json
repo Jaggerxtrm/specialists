@@ -15,251 +15,135 @@
       "sha256": "41bc76dea803dfddc4879aa4aaa5fe6f236dda42df2a9c67022950b87ba422fc"
     },
     {
-      "path": "config/skills/specialists-creator/scripts/audit-spec-uniformity.mjs",
-      "sha256": "7ef232521ff123377c4a9637c2f5712bfb4c9f1454a310966c58cb2cc8dc4216"
-    },
-    {
-      "path": "config/skills/specialists-creator/scripts/scaffold-specialist.ts",
-      "sha256": "c1bfa3693d644072e6d387d2519e131624d99c5b85521ae638680d7485267403"
-    },
-    {
-      "path": "config/skills/specialists-creator/scripts/validate-specialist.ts",
-      "sha256": "3a5f5a3a77c50e98ecf9188634ff2882f8143b19d0f28a53aff5c42e1bd09dfa"
-    },
-    {
-      "path": "config/skills/specialists-creator/SKILL.md",
-      "sha256": "678b108909664123f815c4c899fb38c76c01841b2fe69362475c75260b1262ce"
-    },
-    {
       "path": "config/skills/update-specialists/SKILL.md",
-      "sha256": "dfaf2e3d4fd38989ccfbbb52054dbc66f80bbc82084b387b05cd0b6a5aa51e87"
-    },
-    {
-      "path": "config/skills/using-kpi/SKILL.md",
-      "sha256": "42a8ba4c992b1d2991e7a65222e076f5f7f63b93fdff8e570f3d7296aacb5a79"
-    },
-    {
-      "path": "config/skills/using-nodes/SKILL.md",
-      "sha256": "a421597c787514e5442bfe4bdcd0ecf0ded1413a33a432eca40778c314195509"
-    },
-    {
-      "path": "config/skills/using-script-specialists/SKILL.md",
-      "sha256": "e87511d685eb7bc95c374641056194931a9da79434b624fdfb2805bd9dbac7b6"
-    },
-    {
-      "path": "config/skills/using-specialists-auto/SKILL.md",
-      "sha256": "7b63cb642f414a86b278f47dc9cc539a19c80d06f63093e2ab8e3ddadf6fb9b7"
+      "sha256": "f403cee492f7f076bfaaa262917879923663e374a1f410581d147281f6267989"
     },
     {
       "path": "config/skills/using-specialists/references/bead-contracts.md",
-      "sha256": "b2c3f08758e5a998d52b37c8b5239db81f496a5ea63d93b680a5f49dd0446db4"
+      "sha256": "f41060f0819dcd7c22cdbbdfea7de11ca4dfb96fc2436287cdb8a8673238eba9"
     },
     {
       "path": "config/skills/using-specialists/references/chain-recipes.md",
-      "sha256": "c92e6447f8ec443db30a28b369d59bdec1f8438115803b9f4661437e97f88f75"
-    },
-    {
-      "path": "config/skills/using-specialists/references/content-migration-map.json",
-      "sha256": "095dc0573b575521ca25cdc4f75d9d12239aad01ec924494819aa8e5ae2910eb"
+      "sha256": "dc7c41da09dce6138e068ad3863fb9cace3a1052f18d0cb0c0994c3d1239bbcd"
     },
     {
       "path": "config/skills/using-specialists/references/dispatch-preconditions.md",
-      "sha256": "66c7f52379fe546e79fe3eac0c0d52c47df1fc8d1491f805531f48cf83a89dd8"
+      "sha256": "2cf11fb4752e87143150c4e072436b237ef0d60037ee2fe808f8ed0614c552e4"
+    },
+    {
+      "path": "config/skills/using-specialists/references/kpi.md",
+      "sha256": "d4cd41041b60c28a575177b8b4316852f452dfaba91e21c3cbe4c11cb7a50d8c"
     },
     {
       "path": "config/skills/using-specialists/references/merge-and-integration.md",
-      "sha256": "7884a445b5ee7031fd0cf2b548a6f6bf4df8daa2ab1db5ec28f32c47cbc4d6dd"
+      "sha256": "391cee796f139a4084d7bbf36aacf68cb1b6f2dfb9d2bc32eb2daba67995dc90"
     },
     {
       "path": "config/skills/using-specialists/references/monitoring.md",
-      "sha256": "f87cc7345895cf2c7623f221faf235ad2f3a660878b1eb6e9fab53ec09878067"
+      "sha256": "7f3386e644e2253cd651425ed82c2bd906bb36ddcb7cd0114ee9494654c84992"
+    },
+    {
+      "path": "config/skills/using-specialists/references/nodes.md",
+      "sha256": "73f67df1a51e5b08621594ec8773e9dd1172f04a81e6e7d49691721e835f3293"
     },
     {
       "path": "config/skills/using-specialists/references/registry-and-locations.md",
-      "sha256": "d02cb1c2e68f59e14f57d8fda7e80e109fe5666bbd33cae4c0ab8f9b10814460"
+      "sha256": "d628457671c8755b72aefb6027ceb2b7c2ff45e2035957c46389f6037ef8f4e6"
+    },
+    {
+      "path": "config/skills/using-specialists/references/script-class.md",
+      "sha256": "626dc9fbe213e721131a8d57f31d51fec99f8d93ae709fafdf9e15ea61169f6c"
+    },
+    {
+      "path": "config/skills/using-specialists/references/specialist-definitions.md",
+      "sha256": "e8181c10b425bf97e246cecc0478a6b6d7e3e69786b873da198771fc477a6df0"
+    },
+    {
+      "path": "config/skills/using-specialists/scripts/specialist-definitions/audit-spec-uniformity.mjs",
+      "sha256": "ff9d2dd3dd32dfd294dc2ad8522c8af66125a7e3f4355f3690df407a8c77a5bf"
+    },
+    {
+      "path": "config/skills/using-specialists/scripts/specialist-definitions/resolve-specialists-root.mjs",
+      "sha256": "d0f969cc5b9804e6d352af428ccec39e5cc209bda89e2fc5b61fb6e082ad53cf"
+    },
+    {
+      "path": "config/skills/using-specialists/scripts/specialist-definitions/scaffold-specialist.ts",
+      "sha256": "73af1a843c2ffb8beab827560db83ff6edfd179e0f0fc5b486e582afff8936e7"
+    },
+    {
+      "path": "config/skills/using-specialists/scripts/specialist-definitions/validate-specialist.ts",
+      "sha256": "5301e6f20bd0498ff8fe1e6c9db625dd9dd5c570bf325fbda76ddf2161ed7a69"
     },
     {
       "path": "config/skills/using-specialists/SKILL.md",
-      "sha256": "a4aa58cfdb61bcee6cb027998213e99ccbb578a437cde34008b244ffdabbc41e"
+      "sha256": "96253400d17e42e23afca5ee69183ec06e571472562c99cd5beb8662a0f6dc45"
     }
   ],
   "shipped_specialists": [
-    {
-      "path": "config/specialists/bare.specialist.json"
-    },
-    {
-      "path": "config/specialists/chain-coordinator.specialist.json"
-    },
-    {
-      "path": "config/specialists/changelog-drafter.specialist.json"
-    },
-    {
-      "path": "config/specialists/changelog-keeper.specialist.json"
-    },
-    {
-      "path": "config/specialists/debugger.specialist.json"
-    },
-    {
-      "path": "config/specialists/executor.specialist.json"
-    },
-    {
-      "path": "config/specialists/explorer.specialist.json"
-    },
-    {
-      "path": "config/specialists/memory-processor.specialist.json"
-    },
-    {
-      "path": "config/specialists/node-coordinator.specialist.json"
-    },
-    {
-      "path": "config/specialists/obligations-scanner.specialist.json"
-    },
-    {
-      "path": "config/specialists/overthinker.specialist.json"
-    },
-    {
-      "path": "config/specialists/planner.specialist.json"
-    },
-    {
-      "path": "config/specialists/quant-methodologist.specialist.json"
-    },
-    {
-      "path": "config/specialists/quant-researcher.specialist.json"
-    },
-    {
-      "path": "config/specialists/researcher.specialist.json"
-    },
-    {
-      "path": "config/specialists/reviewer.specialist.json"
-    },
-    {
-      "path": "config/specialists/seconder.specialist.json"
-    },
-    {
-      "path": "config/specialists/security-auditor.specialist.json"
-    },
-    {
-      "path": "config/specialists/service-knowledge-sync.specialist.json"
-    },
-    {
-      "path": "config/specialists/specialists-creator.specialist.json"
-    },
-    {
-      "path": "config/specialists/sync-docs.specialist.json"
-    },
-    {
-      "path": "config/specialists/test-engineer.specialist.json"
-    },
-    {
-      "path": "config/specialists/test-runner.specialist.json"
-    },
-    {
-      "path": "config/specialists/transcriber.specialist.json"
-    },
-    {
-      "path": "config/specialists/xt-merge.specialist.json"
-    }
+    { "path": "config/specialists/bare.specialist.json" },
+    { "path": "config/specialists/chain-coordinator.specialist.json" },
+    { "path": "config/specialists/changelog-drafter.specialist.json" },
+    { "path": "config/specialists/changelog-keeper.specialist.json" },
+    { "path": "config/specialists/debugger.specialist.json" },
+    { "path": "config/specialists/executor.specialist.json" },
+    { "path": "config/specialists/explorer.specialist.json" },
+    { "path": "config/specialists/memory-processor.specialist.json" },
+    { "path": "config/specialists/node-coordinator.specialist.json" },
+    { "path": "config/specialists/obligations-scanner.specialist.json" },
+    { "path": "config/specialists/overthinker.specialist.json" },
+    { "path": "config/specialists/planner.specialist.json" },
+    { "path": "config/specialists/quant-methodologist.specialist.json" },
+    { "path": "config/specialists/quant-researcher.specialist.json" },
+    { "path": "config/specialists/researcher.specialist.json" },
+    { "path": "config/specialists/reviewer.specialist.json" },
+    { "path": "config/specialists/seconder.specialist.json" },
+    { "path": "config/specialists/security-auditor.specialist.json" },
+    { "path": "config/specialists/service-knowledge-sync.specialist.json" },
+    { "path": "config/specialists/specialists-creator.specialist.json" },
+    { "path": "config/specialists/sync-docs.specialist.json" },
+    { "path": "config/specialists/test-engineer.specialist.json" },
+    { "path": "config/specialists/test-runner.specialist.json" },
+    { "path": "config/specialists/transcriber.specialist.json" },
+    { "path": "config/specialists/xt-merge.specialist.json" }
   ],
   "shipped_mandatory_rules": [
-    {
-      "path": "config/mandatory-rules/bead-id-verbatim.md"
-    },
-    {
-      "path": "config/mandatory-rules/changelog-conventions.md"
-    },
-    {
-      "path": "config/mandatory-rules/changelog-keeper-scope.md"
-    },
-    {
-      "path": "config/mandatory-rules/code-quality-defaults.md"
-    },
-    {
-      "path": "config/mandatory-rules/core-session-boundary.md"
-    },
-    {
-      "path": "config/mandatory-rules/diagnose-loop.md"
-    },
-    {
-      "path": "config/mandatory-rules/exact-citation-contract.md"
-    },
-    {
-      "path": "config/mandatory-rules/executor-delivery.md"
-    },
-    {
-      "path": "config/mandatory-rules/explorer-readonly.md"
-    },
-    {
-      "path": "config/mandatory-rules/git-workflow-safe.md"
-    },
-    {
-      "path": "config/mandatory-rules/gitnexus-required.md"
-    },
-    {
-      "path": "config/mandatory-rules/index.json"
-    },
-    {
-      "path": "config/mandatory-rules/json-only-final-output.md"
-    },
-    {
-      "path": "config/mandatory-rules/overthinker-4phase.md"
-    },
-    {
-      "path": "config/mandatory-rules/per-turn-handoff-schema.md"
-    },
-    {
-      "path": "config/mandatory-rules/README.md"
-    },
-    {
-      "path": "config/mandatory-rules/research-tool-routing.md"
-    },
-    {
-      "path": "config/mandatory-rules/researcher-source-discipline.md"
-    },
-    {
-      "path": "config/mandatory-rules/reviewer-verdict-format.md"
-    },
-    {
-      "path": "config/mandatory-rules/security-review-defaults.md"
-    },
-    {
-      "path": "config/mandatory-rules/service-knowledge-diff-scan-mandatory.md"
-    },
-    {
-      "path": "config/mandatory-rules/service-knowledge-gitnexus-triage.md"
-    },
-    {
-      "path": "config/mandatory-rules/sync-docs-scope-discipline.md"
-    },
-    {
-      "path": "config/mandatory-rules/test-runner-execution-scope.md"
-    }
+    { "path": "config/mandatory-rules/bead-id-verbatim.md" },
+    { "path": "config/mandatory-rules/changelog-conventions.md" },
+    { "path": "config/mandatory-rules/changelog-keeper-scope.md" },
+    { "path": "config/mandatory-rules/code-quality-defaults.md" },
+    { "path": "config/mandatory-rules/core-session-boundary.md" },
+    { "path": "config/mandatory-rules/diagnose-loop.md" },
+    { "path": "config/mandatory-rules/exact-citation-contract.md" },
+    { "path": "config/mandatory-rules/executor-delivery.md" },
+    { "path": "config/mandatory-rules/explorer-readonly.md" },
+    { "path": "config/mandatory-rules/git-workflow-safe.md" },
+    { "path": "config/mandatory-rules/gitnexus-required.md" },
+    { "path": "config/mandatory-rules/index.json" },
+    { "path": "config/mandatory-rules/json-only-final-output.md" },
+    { "path": "config/mandatory-rules/overthinker-4phase.md" },
+    { "path": "config/mandatory-rules/per-turn-handoff-schema.md" },
+    { "path": "config/mandatory-rules/README.md" },
+    { "path": "config/mandatory-rules/research-tool-routing.md" },
+    { "path": "config/mandatory-rules/researcher-source-discipline.md" },
+    { "path": "config/mandatory-rules/reviewer-verdict-format.md" },
+    { "path": "config/mandatory-rules/security-review-defaults.md" },
+    { "path": "config/mandatory-rules/service-knowledge-diff-scan-mandatory.md" },
+    { "path": "config/mandatory-rules/service-knowledge-gitnexus-triage.md" },
+    { "path": "config/mandatory-rules/sync-docs-scope-discipline.md" },
+    { "path": "config/mandatory-rules/test-runner-execution-scope.md" }
   ],
   "shipped_catalogs": [
-    {
-      "path": "config/catalog/gitnexus.json"
-    },
-    {
-      "path": "config/catalog/index.json"
-    },
-    {
-      "path": "config/catalog/native.json"
-    }
+    { "path": "config/catalog/gitnexus.json" },
+    { "path": "config/catalog/index.json" },
+    { "path": "config/catalog/native.json" }
   ],
   "shipped_nodes": [
-    {
-      "path": "config/nodes/research-multi.node.json"
-    },
-    {
-      "path": "config/nodes/research.node.json"
-    }
+    { "path": "config/nodes/research-multi.node.json" },
+    { "path": "config/nodes/research.node.json" }
   ],
   "shipped_hooks": [
-    {
-      "path": "config/hooks/specialists-memory-cache-sync.mjs"
-    },
-    {
-      "path": "config/hooks/specialists-session-start.mjs"
-    }
+    { "path": "config/hooks/specialists-memory-cache-sync.mjs" },
+    { "path": "config/hooks/specialists-session-start.mjs" }
   ],
   "notes": [
     "Cross-repo expectation: xtrm-tools validates this manifest against shipped assets on fresh install.",
