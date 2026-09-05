@@ -16,6 +16,10 @@ Package-canonical definitions and rules live in the Specialists package/source; 
 repo overlays may alter effective fields. The resolved config is therefore more useful
 than opening one package JSON file when diagnosing a running environment.
 
+For tracked-work discovery, use targeted Beads lookup such as `bd ready`, `bd show <id>`,
+or `bd search "<terms>"`. `bd prime` is an opt-in full-context diagnostic, not a mandatory
+session-start step.
+
 Core/XTRM may vendor selected Specialist-owned **skills** for distribution. That vendored
 snapshot is not the Specialist runtime definition source. Its pinned upstream commit and
 destination are recorded by Core's Specialists source/ownership manifests.
