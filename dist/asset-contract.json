@@ -80,70 +80,182 @@
     }
   ],
   "shipped_specialists": [
-    { "path": "config/specialists/bare.specialist.json" },
-    { "path": "config/specialists/chain-coordinator.specialist.json" },
-    { "path": "config/specialists/changelog-drafter.specialist.json" },
-    { "path": "config/specialists/changelog-keeper.specialist.json" },
-    { "path": "config/specialists/debugger.specialist.json" },
-    { "path": "config/specialists/executor.specialist.json" },
-    { "path": "config/specialists/explorer.specialist.json" },
-    { "path": "config/specialists/memory-processor.specialist.json" },
-    { "path": "config/specialists/node-coordinator.specialist.json" },
-    { "path": "config/specialists/obligations-scanner.specialist.json" },
-    { "path": "config/specialists/overthinker.specialist.json" },
-    { "path": "config/specialists/planner.specialist.json" },
-    { "path": "config/specialists/quant-methodologist.specialist.json" },
-    { "path": "config/specialists/quant-researcher.specialist.json" },
-    { "path": "config/specialists/researcher.specialist.json" },
-    { "path": "config/specialists/reviewer.specialist.json" },
-    { "path": "config/specialists/seconder.specialist.json" },
-    { "path": "config/specialists/security-auditor.specialist.json" },
-    { "path": "config/specialists/service-knowledge-sync.specialist.json" },
-    { "path": "config/specialists/specialists-creator.specialist.json" },
-    { "path": "config/specialists/sync-docs.specialist.json" },
-    { "path": "config/specialists/test-engineer.specialist.json" },
-    { "path": "config/specialists/test-runner.specialist.json" },
-    { "path": "config/specialists/transcriber.specialist.json" },
-    { "path": "config/specialists/xt-merge.specialist.json" }
+    {
+      "path": "config/specialists/bare.specialist.json"
+    },
+    {
+      "path": "config/specialists/chain-coordinator.specialist.json"
+    },
+    {
+      "path": "config/specialists/changelog-drafter.specialist.json"
+    },
+    {
+      "path": "config/specialists/changelog-keeper.specialist.json"
+    },
+    {
+      "path": "config/specialists/debugger.specialist.json"
+    },
+    {
+      "path": "config/specialists/executor.specialist.json"
+    },
+    {
+      "path": "config/specialists/explorer.specialist.json"
+    },
+    {
+      "path": "config/specialists/memory-processor.specialist.json"
+    },
+    {
+      "path": "config/specialists/node-coordinator.specialist.json"
+    },
+    {
+      "path": "config/specialists/obligations-scanner.specialist.json"
+    },
+    {
+      "path": "config/specialists/overthinker.specialist.json"
+    },
+    {
+      "path": "config/specialists/planner.specialist.json"
+    },
+    {
+      "path": "config/specialists/quant-methodologist.specialist.json"
+    },
+    {
+      "path": "config/specialists/quant-researcher.specialist.json"
+    },
+    {
+      "path": "config/specialists/researcher.specialist.json"
+    },
+    {
+      "path": "config/specialists/reviewer.specialist.json"
+    },
+    {
+      "path": "config/specialists/seconder.specialist.json"
+    },
+    {
+      "path": "config/specialists/security-auditor.specialist.json"
+    },
+    {
+      "path": "config/specialists/service-knowledge-sync.specialist.json"
+    },
+    {
+      "path": "config/specialists/specialists-creator.specialist.json"
+    },
+    {
+      "path": "config/specialists/sync-docs.specialist.json"
+    },
+    {
+      "path": "config/specialists/test-engineer.specialist.json"
+    },
+    {
+      "path": "config/specialists/test-runner.specialist.json"
+    },
+    {
+      "path": "config/specialists/transcriber.specialist.json"
+    },
+    {
+      "path": "config/specialists/xt-merge.specialist.json"
+    }
   ],
   "shipped_mandatory_rules": [
-    { "path": "config/mandatory-rules/bead-id-verbatim.md" },
-    { "path": "config/mandatory-rules/changelog-conventions.md" },
-    { "path": "config/mandatory-rules/changelog-keeper-scope.md" },
-    { "path": "config/mandatory-rules/code-quality-defaults.md" },
-    { "path": "config/mandatory-rules/core-session-boundary.md" },
-    { "path": "config/mandatory-rules/diagnose-loop.md" },
-    { "path": "config/mandatory-rules/exact-citation-contract.md" },
-    { "path": "config/mandatory-rules/executor-delivery.md" },
-    { "path": "config/mandatory-rules/explorer-readonly.md" },
-    { "path": "config/mandatory-rules/git-workflow-safe.md" },
-    { "path": "config/mandatory-rules/gitnexus-required.md" },
-    { "path": "config/mandatory-rules/index.json" },
-    { "path": "config/mandatory-rules/json-only-final-output.md" },
-    { "path": "config/mandatory-rules/overthinker-4phase.md" },
-    { "path": "config/mandatory-rules/per-turn-handoff-schema.md" },
-    { "path": "config/mandatory-rules/README.md" },
-    { "path": "config/mandatory-rules/research-tool-routing.md" },
-    { "path": "config/mandatory-rules/researcher-source-discipline.md" },
-    { "path": "config/mandatory-rules/reviewer-verdict-format.md" },
-    { "path": "config/mandatory-rules/security-review-defaults.md" },
-    { "path": "config/mandatory-rules/service-knowledge-diff-scan-mandatory.md" },
-    { "path": "config/mandatory-rules/service-knowledge-gitnexus-triage.md" },
-    { "path": "config/mandatory-rules/sync-docs-scope-discipline.md" },
-    { "path": "config/mandatory-rules/test-runner-execution-scope.md" }
+    {
+      "path": "config/mandatory-rules/bead-id-verbatim.md"
+    },
+    {
+      "path": "config/mandatory-rules/changelog-conventions.md"
+    },
+    {
+      "path": "config/mandatory-rules/changelog-keeper-scope.md"
+    },
+    {
+      "path": "config/mandatory-rules/code-quality-defaults.md"
+    },
+    {
+      "path": "config/mandatory-rules/core-session-boundary.md"
+    },
+    {
+      "path": "config/mandatory-rules/diagnose-loop.md"
+    },
+    {
+      "path": "config/mandatory-rules/exact-citation-contract.md"
+    },
+    {
+      "path": "config/mandatory-rules/executor-delivery.md"
+    },
+    {
+      "path": "config/mandatory-rules/explorer-readonly.md"
+    },
+    {
+      "path": "config/mandatory-rules/git-workflow-safe.md"
+    },
+    {
+      "path": "config/mandatory-rules/gitnexus-required.md"
+    },
+    {
+      "path": "config/mandatory-rules/index.json"
+    },
+    {
+      "path": "config/mandatory-rules/json-only-final-output.md"
+    },
+    {
+      "path": "config/mandatory-rules/overthinker-4phase.md"
+    },
+    {
+      "path": "config/mandatory-rules/per-turn-handoff-schema.md"
+    },
+    {
+      "path": "config/mandatory-rules/README.md"
+    },
+    {
+      "path": "config/mandatory-rules/research-tool-routing.md"
+    },
+    {
+      "path": "config/mandatory-rules/researcher-source-discipline.md"
+    },
+    {
+      "path": "config/mandatory-rules/reviewer-verdict-format.md"
+    },
+    {
+      "path": "config/mandatory-rules/security-review-defaults.md"
+    },
+    {
+      "path": "config/mandatory-rules/service-knowledge-diff-scan-mandatory.md"
+    },
+    {
+      "path": "config/mandatory-rules/service-knowledge-gitnexus-triage.md"
+    },
+    {
+      "path": "config/mandatory-rules/sync-docs-scope-discipline.md"
+    },
+    {
+      "path": "config/mandatory-rules/test-runner-execution-scope.md"
+    }
   ],
   "shipped_catalogs": [
-    { "path": "config/catalog/gitnexus.json" },
-    { "path": "config/catalog/index.json" },
-    { "path": "config/catalog/native.json" }
+    {
+      "path": "config/catalog/gitnexus.json"
+    },
+    {
+      "path": "config/catalog/index.json"
+    },
+    {
+      "path": "config/catalog/native.json"
+    }
   ],
   "shipped_nodes": [
-    { "path": "config/nodes/research-multi.node.json" },
-    { "path": "config/nodes/research.node.json" }
+    {
+      "path": "config/nodes/research-multi.node.json"
+    },
+    {
+      "path": "config/nodes/research.node.json"
+    }
   ],
   "shipped_hooks": [
-    { "path": "config/hooks/specialists-memory-cache-sync.mjs" },
-    { "path": "config/hooks/specialists-session-start.mjs" }
+    {
+      "path": "config/hooks/specialists-memory-cache-sync.mjs"
+    },
+    {
+      "path": "config/hooks/specialists-session-start.mjs"
+    }
   ],
   "notes": [
     "Cross-repo expectation: xtrm-tools validates this manifest against shipped assets on fresh install.",
