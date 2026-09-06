@@ -1,7 +1,7 @@
 import * as z from 'zod';
 
 const TierSchema = z.enum(['READ_ONLY', 'LOW', 'MEDIUM', 'HIGH']);
-const LayerSchema = z.enum(['native', 'gitnexus']);
+const LayerSchema = z.enum(['native', 'gitnexus', 'python-kernel', 'service-knowledge']);
 
 const ToolTierMapSchema = z.record(TierSchema, z.array(z.string()));
 
@@ -33,7 +33,7 @@ export type ToolCatalogIndex = z.infer<typeof ToolCatalogIndexSchema>;
  * (2) exception: runtime health degradation or catalog incompatibility restores native fallbacks
  * (3) hard-deny in specialist override does not override runtime health downgrade
  */
-export const SPECIALIST_TOOL_PRECEDENCE = ['native', 'gitnexus'] as const;
+export const SPECIALIST_TOOL_PRECEDENCE = ['native', 'gitnexus', 'python-kernel', 'service-knowledge'] as const;
 
 export function validateToolCatalogIndex(value: unknown): ToolCatalogIndex {
   return ToolCatalogIndexSchema.parse(value);

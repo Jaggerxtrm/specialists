@@ -1,47 +1,150 @@
 {
-  "precedence_order": ["native", "gitnexus"],
-  "default_overrides": {
-    "READ_ONLY": {
-      "denied_natives_when_extension": ["grep", "find", "ls"],
-      "denied_natives_mode": "hard"
-    },
-    "LOW": {
-      "denied_natives_when_extension": ["grep", "find", "ls"],
-      "denied_natives_mode": "hard"
-    },
-    "MEDIUM": {
-      "denied_natives_when_extension": ["grep", "find", "ls"],
-      "denied_natives_mode": "hard"
-    },
-    "HIGH": {
-      "denied_natives_when_extension": ["grep", "find", "ls"],
-      "denied_natives_mode": "hard"
-    }
+ "precedence_order": [
+  "native",
+  "gitnexus",
+  "python-kernel",
+  "service-knowledge"
+ ],
+ "default_overrides": {
+  "READ_ONLY": {
+   "denied_natives_when_extension": [
+    "grep",
+    "find",
+    "ls"
+   ],
+   "denied_natives_mode": "hard"
   },
-  "catalogs": [
-    {
-      "catalog": "native",
-      "package": "specialists",
-      "version": "3.11.0",
-      "precedence": 0,
-      "source_tiers": {
-        "READ_ONLY": ["read", "grep", "find", "ls"],
-        "LOW": ["read", "grep", "find", "ls", "bash"],
-        "MEDIUM": ["read", "grep", "find", "ls", "bash", "edit"],
-        "HIGH": ["read", "grep", "find", "ls", "bash", "edit", "write"]
-      }
-    },
-    {
-      "catalog": "gitnexus",
-      "package": "pi-gitnexus",
-      "version": "0.6.1",
-      "precedence": 1,
-      "source_tiers": {
-        "READ_ONLY": ["gitnexus_list_repos", "gitnexus_query", "gitnexus_context", "gitnexus_impact", "gitnexus_detect_changes"],
-        "LOW": ["gitnexus_list_repos", "gitnexus_query", "gitnexus_context", "gitnexus_impact", "gitnexus_detect_changes"],
-        "MEDIUM": ["gitnexus_list_repos", "gitnexus_query", "gitnexus_context", "gitnexus_impact", "gitnexus_detect_changes", "gitnexus_rename", "gitnexus_cypher"],
-        "HIGH": ["gitnexus_list_repos", "gitnexus_query", "gitnexus_context", "gitnexus_impact", "gitnexus_detect_changes", "gitnexus_rename", "gitnexus_cypher"]
-      }
-    }
-  ]
+  "LOW": {
+   "denied_natives_when_extension": [
+    "grep",
+    "find",
+    "ls"
+   ],
+   "denied_natives_mode": "hard"
+  },
+  "MEDIUM": {
+   "denied_natives_when_extension": [
+    "grep",
+    "find",
+    "ls"
+   ],
+   "denied_natives_mode": "hard"
+  },
+  "HIGH": {
+   "denied_natives_when_extension": [
+    "grep",
+    "find",
+    "ls"
+   ],
+   "denied_natives_mode": "hard"
+  }
+ },
+ "catalogs": [
+  {
+   "catalog": "native",
+   "package": "specialists",
+   "version": "3.11.0",
+   "precedence": 0,
+   "source_tiers": {
+    "READ_ONLY": [
+     "read",
+     "grep",
+     "find",
+     "ls"
+    ],
+    "LOW": [
+     "read",
+     "grep",
+     "find",
+     "ls",
+     "bash"
+    ],
+    "MEDIUM": [
+     "read",
+     "grep",
+     "find",
+     "ls",
+     "bash",
+     "edit"
+    ],
+    "HIGH": [
+     "read",
+     "grep",
+     "find",
+     "ls",
+     "bash",
+     "edit",
+     "write"
+    ]
+   }
+  },
+  {
+   "catalog": "gitnexus",
+   "package": "pi-gitnexus",
+   "version": "0.6.1",
+   "precedence": 1,
+   "source_tiers": {
+    "READ_ONLY": [
+     "gitnexus_list_repos",
+     "gitnexus_query",
+     "gitnexus_context",
+     "gitnexus_impact",
+     "gitnexus_detect_changes"
+    ],
+    "LOW": [
+     "gitnexus_list_repos",
+     "gitnexus_query",
+     "gitnexus_context",
+     "gitnexus_impact",
+     "gitnexus_detect_changes"
+    ],
+    "MEDIUM": [
+     "gitnexus_list_repos",
+     "gitnexus_query",
+     "gitnexus_context",
+     "gitnexus_impact",
+     "gitnexus_detect_changes",
+     "gitnexus_rename",
+     "gitnexus_cypher"
+    ],
+    "HIGH": [
+     "gitnexus_list_repos",
+     "gitnexus_query",
+     "gitnexus_context",
+     "gitnexus_impact",
+     "gitnexus_detect_changes",
+     "gitnexus_rename",
+     "gitnexus_cypher"
+    ]
+   }
+  },
+  {
+   "catalog": "python-kernel",
+   "package": "@jaggerxtrm/pi-extensions",
+   "version": "0.11.7",
+   "precedence": 2,
+   "source_tiers": {
+    "READ_ONLY": [],
+    "LOW": [],
+    "MEDIUM": [
+     "python"
+    ],
+    "HIGH": [
+     "python"
+    ]
+   }
+  },
+  {
+   "catalog": "service-knowledge",
+   "package": "@jaggerxtrm/pi-service-knowledge",
+   "version": "1.0.0",
+   "precedence": 3,
+   "source_tiers": {
+    "READ_ONLY": [],
+    "LOW": [],
+    "MEDIUM": [],
+    "HIGH": []
+   }
+  }
+ ]
 }

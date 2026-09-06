@@ -27,8 +27,8 @@ describe('tool catalog foundation', () => {
   it('encodes precedence order', async () => {
     const index = await readCatalog('config/catalog/index.json');
     expect(index.precedence_order).toEqual(SPECIALIST_TOOL_PRECEDENCE);
-    // Serena catalog retired (unitAI-e67up.8): only native + gitnexus layers ship.
-    expect(index.catalogs.map(c => c.catalog)).toEqual(['native', 'gitnexus']);
+    // Serena catalog retired (unitAI-e67up.8): native + gitnexus + python-kernel layers ship.
+    expect(index.catalogs.map(c => c.catalog)).toEqual(['native', 'gitnexus', 'python-kernel', 'service-knowledge']);
   });
 
   it('documents conflict resolution semantics', async () => {

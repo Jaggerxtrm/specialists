@@ -74,11 +74,11 @@ const SERENA_TOOL_NAMES = [
 ];
 
 describe('Serena retirement — catalog negative contract', () => {
-  it('shipped catalog index declares only native and gitnexus layers', () => {
+  it('shipped catalog index declares native, gitnexus, and python-kernel layers (no serena)', () => {
     const index = loadToolCatalogIndex(readFileSync(join(ROOT, 'config', 'catalog', 'index.json'), 'utf8'));
-    expect(index.precedence_order).toEqual(['native', 'gitnexus']);
-    expect(index.catalogs.map((catalog) => catalog.catalog)).toEqual(['native', 'gitnexus']);
-    expect(SPECIALIST_TOOL_PRECEDENCE).toEqual(['native', 'gitnexus']);
+    expect(index.precedence_order).toEqual(['native', 'gitnexus', 'python-kernel', 'service-knowledge']);
+    expect(index.catalogs.map((catalog) => catalog.catalog)).toEqual(['native', 'gitnexus', 'python-kernel', 'service-knowledge']);
+    expect(SPECIALIST_TOOL_PRECEDENCE).toEqual(['native', 'gitnexus', 'python-kernel', 'service-knowledge']);
   });
 
   it('no serena catalog file ships in config/catalog', () => {

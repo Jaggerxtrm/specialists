@@ -239,6 +239,12 @@
     },
     {
       "path": "config/catalog/native.json"
+    },
+    {
+      "path": "config/catalog/python-kernel.json"
+    },
+    {
+      "path": "config/catalog/service-knowledge.json"
     }
   ],
   "shipped_nodes": [
