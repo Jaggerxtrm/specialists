@@ -192,6 +192,7 @@ export class NativeActivationHost {
       });
     }
     const resolvedModel = modelCheck.resolvedModel ?? requestedModel;
+    if (!modelCheck.model) return reject('model_unresolved', { requestedModel });
 
     const workspace: WorkspaceIdentity = request.workspaceHint ?? {
       repositoryRoot: this.cwd,
@@ -232,7 +233,9 @@ export class NativeActivationHost {
 
     const { session } = await sdk.createAgentSession({
       cwd: workspace.worktreePath,
-      model: resolvedModel,
+      // The pi SDK takes a Model object here. Passing the provider-qualified string
+      // instead is accepted silently and then fails mid-turn with an unresolved provider.
+      model: modelCheck.model,
       ...(execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {}),
       // Fail-closed: only the resolved contract's tools, never pi's defaults. `noTools`
       // must be "builtin" rather than `tools: []`, which would also empty customTools.
@@ -326,7 +329,34 @@ export class NativeActivationHost {
       await session.prompt(initialPrompt);
       await session.waitForIdle();
 
-      const output = lastAssistantText(session.messages);
+      // A settled session is NOT a successful one. pi records a failed turn as an
+      // assistant message with stopReason 'error' (or 'aborted') and an errorMessage —
+      // provider 429s, auth failures and aborts all land here — while `waitForIdle`
+      // returns normally. Reporting that as `completed` with empty output is exactly the
+      // silent-success failure the result contract exists to prevent.
+      const last = lastAssistantMessage(session.messages);
+      if (last && (last.stopReason === 'error' || last.stopReason === 'aborted')) {
+        const detail = last.errorMessage ?? `turn ended with stopReason "${last.stopReason}"`;
+        snapshot.state = 'failed';
+        emit('activation_failed', { error: detail, stop_reason: last.stopReason });
+        return {
+          activationId: snapshot.activationId,
+          participantId: snapshot.participantId,
+          attemptId: snapshot.attemptId,
+          beadId: snapshot.beadId,
+          status: 'failed',
+          output: undefined,
+          validation: { valid: false, errors: [detail] },
+          piSessionId: session.sessionId,
+          configuredModel: snapshot.configuredModel,
+          resolvedModel: snapshot.resolvedModel,
+          modelOverride: snapshot.modelOverride,
+          fallbackUsed: false,
+          completedAt: this.now(),
+        };
+      }
+
+      const output = textOf(last);
 
       emit('output_validation_started');
       // Phase 1 carries no output schema; schema/expected-key enforcement arrives with the
@@ -415,23 +445,33 @@ export class NativeActivationHost {
   }
 }
 
-/** Extract the last assistant text from a Pi message list, defensively. */
-function lastAssistantText(messages: unknown[]): string {
+/** Structural view of a pi assistant message. */
+interface AssistantMessageLike {
+  role?: string;
+  content?: unknown;
+  stopReason?: string;
+  errorMessage?: string;
+}
+
+/** The last assistant message in a Pi message list, or undefined. */
+function lastAssistantMessage(messages: unknown[]): AssistantMessageLike | undefined {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const message = messages[i] as { role?: string; content?: unknown } | undefined;
-    if (!message || message.role !== 'assistant') continue;
-    const { content } = message;
-    if (typeof content === 'string') return content;
-    if (Array.isArray(content)) {
-      const text = content
-        .filter((part): part is { type: string; text: string } =>
-          typeof part === 'object' && part !== null &&
-          (part as { type?: string }).type === 'text' &&
-          typeof (part as { text?: string }).text === 'string')
-        .map(part => part.text)
-        .join('');
-      if (text) return text;
-    }
+    const message = messages[i] as AssistantMessageLike | undefined;
+    if (message?.role === 'assistant') return message;
   }
-  return '';
+  return undefined;
+}
+
+/** Concatenated text content of an assistant message, defensively. */
+function textOf(message: AssistantMessageLike | undefined): string {
+  const content = message?.content;
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((part): part is { type: string; text: string } =>
+      typeof part === 'object' && part !== null &&
+      (part as { type?: string }).type === 'text' &&
+      typeof (part as { text?: string }).text === 'string')
+    .map(part => part.text)
+    .join('');
 }
