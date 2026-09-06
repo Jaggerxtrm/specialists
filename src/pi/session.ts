@@ -942,9 +942,6 @@ export class PiAgentSession {
       const qgPath = join(piExtDir, 'quality-gates');
       if (existsSync(qgPath)) args.push('-e', qgPath);
     }
-    const ssPath = join(piExtDir, 'service-skills');
-    if (existsSync(ssPath)) args.push('-e', ssPath);
-
     // python-kernel: persistent python3 tool (skillbridge/audit/QoL). Resolved
     // from the @jaggerxtrm/pi-extensions package (global node_modules) like the
     // gitnexus package — not from ~/.pi/agent/extensions (those loose copies
