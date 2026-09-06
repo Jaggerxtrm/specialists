@@ -114,7 +114,11 @@ export class NativeActivationHost {
   async start(request: ActivationRequest): Promise<ActivationHandle> {
     const activationId = `act:${randomUUID().slice(0, 12)}`;
     const attemptId = `att:${activationId.slice(4)}:1`;
-    const participantId = `specialist:${request.specialist}`;
+    // `::` is the house separator for every participant kind in deriveParticipantId
+    // (`orch::`, `node::`, `<container>::emitter::`), and it is what the identity
+    // migration writes. A single colon here would produce a participant_id that no
+    // lineage query joins against.
+    const participantId = `specialist::${request.specialist}`;
 
     const emit = (name: string, payload?: Record<string, unknown>) =>
       this.forensics.emit({
