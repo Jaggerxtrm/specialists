@@ -1,7 +1,6 @@
 {
   "required_template_sets": [
-    "core-session-boundary",
-    "system-participant"
+    "core-session-boundary"
   ],
   "default_template_sets": [
     "git-workflow-safe"
