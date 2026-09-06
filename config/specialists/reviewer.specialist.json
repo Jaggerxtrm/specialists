@@ -2,7 +2,7 @@
   "specialist": {
     "metadata": {
       "name": "reviewer",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "description": "Adversarial code-quality auditor + Release Checklist enforcer (post-seconder phase-2). SCRUTINY-aware; verifies the live tree over self-report, audits regression tests for test theatre, rejects non-operator-visible failure-mode inversions, checks root-cause placement, supports ddiff re-review and obligations scanning. Consumes seconder and QA evidence; MEDIUM; verdict PASS/PARTIAL/FAIL.",
       "category": "quality",
       "tags": [
@@ -12,7 +12,7 @@
         "bead",
         "post-run"
       ],
-      "updated": "2026-08-05"
+      "updated": "2026-09-06"
     },
     "execution": {
       "mode": "tool",
@@ -44,7 +44,8 @@
     },
     "skills": {
       "paths": [
-        "~/.xtrm/skills/default/verified-audit/SKILL.md"
+        "engineering-quality",
+        "gitnexus"
       ],
       "scripts": []
     },
@@ -52,8 +53,8 @@
       "files_to_watch": [
         "src/specialist/schema.ts",
         "src/specialist/runner.ts",
-        ".agents/skills/using-quality-gates/SKILL.md",
-        ".agents/skills/clean-code/SKILL.md"
+        "~/.xtrm/skills/default/engineering-quality/SKILL.md",
+        "~/.xtrm/skills/default/gitnexus/SKILL.md"
       ],
       "stale_threshold_days": 30
     },

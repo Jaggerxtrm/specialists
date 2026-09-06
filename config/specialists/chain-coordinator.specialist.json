@@ -2,14 +2,14 @@
   "specialist": {
     "metadata": {
       "name": "chain-coordinator",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "description": "Interactive Pi persona a main orchestrator spawns to coordinate ONE epic or task-group by dispatching sp specialist chains. Fresh context per epic; prevents parent-context monitoring rot. Escalates judgment calls to parent via xtmux message-send. Bash-only; does not implement.",
       "category": "orchestration",
       "tags": [
         "coordinator",
         "interactive"
       ],
-      "updated": "2026-07-15"
+      "updated": "2026-09-06"
     },
     "execution": {
       "mode": "tool",
@@ -31,7 +31,7 @@
     },
     "skills": {
       "paths": [
-        "~/.xtrm/skills/default/using-specialists/SKILL.md"
+        "using-specialists"
       ],
       "scripts": []
     },
@@ -51,7 +51,8 @@
     "validation": {
       "files_to_watch": [
         "src/specialist/schema.ts",
-        "src/specialist/runner.ts"
+        "src/specialist/runner.ts",
+        "~/.xtrm/skills/default/using-specialists/SKILL.md"
       ],
       "stale_threshold_days": 30
     },

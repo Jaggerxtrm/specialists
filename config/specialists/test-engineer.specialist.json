@@ -2,8 +2,8 @@
   "specialist": {
     "metadata": {
       "name": "test-engineer",
-      "version": "1.0.0",
-      "description": "Post-implementation test authoring from actual diff. Use for adding/updating tests, fixtures, smoke/E2E harnesses, and telemetry assertions before test-runner. Not for production fixes, broad test execution, generic QA review, or release blessing. HIGH worktree via --job because authoring NEW test/fixture files needs the `write` tool (runtime: write\u2192HIGH, edit\u2192MEDIUM; MEDIUM cannot create files); prompt forbids production source edits unless bead explicitly authorizes test-helper/export changes.",
+      "version": "1.1.0",
+      "description": "Post-implementation test authoring from actual diff. Use for adding/updating tests, fixtures, smoke/E2E harnesses, and telemetry assertions before test-runner. Not for production fixes, broad test execution, generic QA review, or release blessing. HIGH worktree via --job because authoring NEW test/fixture files needs the `write` tool (runtime: write→HIGH, edit→MEDIUM; MEDIUM cannot create files); prompt forbids production source edits unless bead explicitly authorizes test-helper/export changes.",
       "category": "testing",
       "tags": [
         "tests",
@@ -13,7 +13,7 @@
         "telemetry",
         "devops"
       ],
-      "updated": "2026-05-31"
+      "updated": "2026-09-06"
     },
     "execution": {
       "mode": "tool",
@@ -96,7 +96,8 @@
     },
     "skills": {
       "paths": [
-        "~/.xtrm/skills/default/test-planning"
+        "planning",
+        "engineering-quality"
       ],
       "scripts": []
     },
@@ -118,7 +119,7 @@
         "config/specialists/test-engineer.specialist.json",
         "docs/design/chain-templates.md",
         "docs/specialists/handoff-schema.md",
-        "config/skills/specialists-creator/scripts/scaffold-specialist.ts"
+        "config/skills/using-specialists/scripts/specialist-definitions/scaffold-specialist.ts"
       ],
       "stale_threshold_days": 30
     },

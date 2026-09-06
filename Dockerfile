@@ -5,6 +5,7 @@ COPY package.json bun.lock bunfig.toml tsconfig.json vitest.config.ts ./
 COPY src ./src
 COPY config ./config
 COPY scripts/generate-asset-contract.mjs ./scripts/generate-asset-contract.mjs
+COPY scripts/postprocess-build.mjs ./scripts/postprocess-build.mjs
 COPY .gitignore ./.gitignore
 
 RUN bun install --frozen-lockfile

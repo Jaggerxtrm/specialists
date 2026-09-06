@@ -2,7 +2,7 @@ import { buildMandatoryRulesInjection } from './mandatory-rules.js';
 import { type BeadRecord } from './beads.js';
 import { type PayloadComponentMeasurement } from './payload-measure.js';
 import type { Specialist } from './schema.js';
-export declare const MANDATORY_RULES_TOKEN_LIMIT = 2000;
+export declare const MANDATORY_RULES_TOKEN_LIMIT = 2400;
 /**
  * A task_template referenced a `$name` that no caller provides and that is not a
  * known execution-only placeholder. Fail loud: a complete initial prompt is the

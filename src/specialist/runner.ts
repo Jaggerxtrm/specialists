@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { renderTemplate } from './templateEngine.js';
 import { buildBeadBoundaryInstruction, renderTaskPrompt } from './task-prompt.js';
 import { MandatoryRulesBudgetError } from './mandatory-rules.js';
+import { buildRequiredPlatformRulesBlock } from './required-platform-rules.js';
 import {
   PiAgentSession,
   SessionKilledError,
@@ -1270,6 +1271,13 @@ export class SpecialistRunner {
     // skill_inherit and skills.paths are declared via pi --skill (native flag)
     // and force-loaded at turn-1 via the /skill:name prefix baked into the user prompt.
     let agentsMd = renderTemplate(prompt.system ?? '', beadTemplateVariables);
+
+    // Bare mode remains a fresh specialist canvas, but required platform rules
+    // are non-bypassable because the worker still participates in XTRM.
+    if (execution.bare) {
+      const requiredPlatformRulesBlock = buildRequiredPlatformRulesBlock(runCwd);
+      if (requiredPlatformRulesBlock.trim()) agentsMd += `\n\n${requiredPlatformRulesBlock}`;
+    }
 
     // Always inject a Specialist Run Context block to override project-level CLAUDE.md/AGENTS.md
     // instructions that are meant for human developers, not specialist agents. Key overrides:

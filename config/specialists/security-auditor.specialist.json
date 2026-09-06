@@ -2,7 +2,7 @@
   "specialist": {
     "metadata": {
       "name": "security-auditor",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "description": "LOW-permission security auditor for diff-aware and repository-wide threat analysis, dependency advisory triage, and agent/config security. Uses repository-context comparison, source-to-sink tracing, explicit confidence, and candidate falsification. Recommends fixes only; never edits or exploits.",
       "category": "security",
       "tags": [
@@ -13,7 +13,7 @@
         "vulnerability-triage",
         "research"
       ],
-      "updated": "2026-08-05"
+      "updated": "2026-09-06"
     },
     "execution": {
       "mode": "tool",
@@ -82,17 +82,18 @@
       "system_prompt_mode": "append"
     },
     "skills": {
-      "paths": [],
+      "paths": [
+        "~/.xtrm/skills/optional/security-ops/security-ops/SKILL.md",
+        "~/.xtrm/skills/optional/research-methods/research/SKILL.md"
+      ],
       "scripts": []
     },
     "validation": {
       "files_to_watch": [
         "src/specialist/schema.ts",
         "src/specialist/runner.ts",
-        "~/.xtrm/skills/default/find-docs/SKILL.md",
-        "~/.xtrm/skills/default/deepwiki/SKILL.md",
-        "~/.xtrm/skills/default/github-search/SKILL.md",
-        "~/.xtrm/skills/default/last30days/SKILL.md"
+        "~/.xtrm/skills/optional/security-ops/security-ops/SKILL.md",
+        "~/.xtrm/skills/optional/research-methods/research/SKILL.md"
       ],
       "stale_threshold_days": 30
     },

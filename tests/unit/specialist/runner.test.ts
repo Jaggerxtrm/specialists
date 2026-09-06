@@ -245,7 +245,7 @@ describe('SpecialistRunner', () => {
     try {
       mkdirSync(join(cwd, 'config', 'mandatory-rules'), { recursive: true });
       writeFileSync(join(cwd, 'config', 'mandatory-rules', 'floor.md'), '---\nrules:\n  - id: floor-1\n    level: error\n    text: stay safe\n---\n');
-      writeFileSync(join(cwd, 'config', 'mandatory-rules', 'oversized.md'), `---\nrules:\n  - id: optional-1\n    level: info\n    text: ${'x'.repeat(9000)}\n---\n`);
+      writeFileSync(join(cwd, 'config', 'mandatory-rules', 'oversized.md'), `---\nrules:\n  - id: optional-1\n    level: info\n    text: ${'x'.repeat(11000)}\n---\n`);
       writeFileSync(join(cwd, 'config', 'mandatory-rules', 'index.json'), JSON.stringify({
         required_template_sets: ['floor'],
         default_template_sets: ['oversized'],
@@ -271,7 +271,7 @@ describe('SpecialistRunner', () => {
       const metaEvent = events.find((event) => event.type === 'meta' && event.details.source === 'mandatory_rules_injection');
       expect(metaEvent).toBeDefined();
       expect(metaEvent?.details.data).toMatchObject({
-        budget_limit: 2000,
+        budget_limit: 2400,
         outcome: 'degraded',
         injected_section_ids: ['floor'],
         evicted_section_ids: ['oversized'],
@@ -295,7 +295,7 @@ describe('SpecialistRunner', () => {
     const events: Array<{ type: string; details: Record<string, unknown> }> = [];
     try {
       mkdirSync(join(cwd, 'config', 'mandatory-rules'), { recursive: true });
-      writeFileSync(join(cwd, 'config', 'mandatory-rules', 'floor.md'), `---\nrules:\n  - id: floor-1\n    level: error\n    text: ${'x'.repeat(9000)}\n---\n`);
+      writeFileSync(join(cwd, 'config', 'mandatory-rules', 'floor.md'), `---\nrules:\n  - id: floor-1\n    level: error\n    text: ${'x'.repeat(11000)}\n---\n`);
       writeFileSync(join(cwd, 'config', 'mandatory-rules', 'index.json'), JSON.stringify({ required_template_sets: ['floor'] }));
       const runner = new SpecialistRunner({
         loader: makeLoader({}, 'never', {}, { mandatory_rules: { disable_default_globals: true } }),
@@ -308,7 +308,7 @@ describe('SpecialistRunner', () => {
         events.push({ type, details });
       })).rejects.toMatchObject({
         outcome: 'impossible',
-        budgetLimit: 2000,
+        budgetLimit: 2400,
         injectedSectionIds: [],
         evictedSectionIds: ['floor'],
       });
@@ -316,7 +316,7 @@ describe('SpecialistRunner', () => {
       expect(mockSession.start).not.toHaveBeenCalled();
       const impossible = events.find((event) => event.type === 'meta' && event.details.source === 'mandatory_rules_injection');
       expect(impossible?.details.data).toMatchObject({
-        budget_limit: 2000,
+        budget_limit: 2400,
         outcome: 'impossible',
         injected_tokens: 0,
         injected_section_ids: [],

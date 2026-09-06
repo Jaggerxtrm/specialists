@@ -105,7 +105,7 @@ describe('sp render-bead', () => {
     expect(out.mandatory_rules).not.toBeNull();
     expect(out.mandatory_rules.rules_count).toBeGreaterThan(0);
     expect(out.mandatory_rules).toMatchObject({
-      budget_limit: 2000,
+      budget_limit: 2400,
       candidate_tokens: expect.any(Number),
       injected_tokens: expect.any(Number),
       injected_section_ids: expect.any(Array),
