@@ -61,43 +61,54 @@ export function readContractState(beadId: string): string | undefined {
   return value ? value : undefined;
 }
 
+/** Every heading this parser recognises as terminating the previous section. */
+const ALL_HEADINGS = new Set<string>([...REQUIRED_SECTIONS, 'SCRUTINY']);
+
 /**
- * Find section headings in a Bead description.
+ * Normalise one line to a canonical heading name, or undefined when it is not a heading.
  *
- * Matched as a bare word on its own line, optionally decorated with markdown heading
- * marks, bold, or a trailing colon — `bd`'s own renderer pads them with trailing spaces,
- * and operators write them several ways. A section that appears only inside prose does not
- * count: a heading has to head something.
+ * Headings are matched as a bare word on their own line, optionally decorated with
+ * markdown heading marks, bold, or a trailing colon — `bd`'s renderer pads them and
+ * operators write them several ways. A section name appearing inside prose is not a
+ * heading: a heading has to head something.
  */
-function presentSections(description: string): Set<string> {
-  const found = new Set<string>();
-  for (const line of description.split('\n')) {
-    const bare = line.trim().replace(/^#+\s*/, '').replace(/\*/g, '').replace(/:$/, '').trim();
-    const normalized = bare.toUpperCase().replace(/[\s-]+/g, '_');
-    if ((REQUIRED_SECTIONS as readonly string[]).includes(normalized)) found.add(normalized);
-  }
-  return found;
+function headingOf(line: string): string | undefined {
+  const bare = line.trim().replace(/^#+\s*/, '').replace(/\*/g, '').replace(/:$/, '').trim();
+  const normalized = bare.toUpperCase().replace(/[\s-]+/g, '_');
+  return ALL_HEADINGS.has(normalized) ? normalized : undefined;
 }
 
-/** Whether a section has a non-empty body, so an empty heading is not mistaken for content. */
-function sectionHasBody(description: string, section: string): boolean {
-  const lines = description.split('\n');
-  const headings = new Set<string>([...REQUIRED_SECTIONS, 'SCRUTINY']);
+/**
+ * Split a Bead description into its sections, keyed by canonical heading name.
+ *
+ * The single parser for the 7-section contract. The gate uses it to decide admission and
+ * the StepContract compiler uses it to read section bodies; a second parser would let the
+ * two disagree about what a Bead says, which is worse than either being wrong alone.
+ * Sections with an empty body are present as empty strings, so callers can tell "absent"
+ * from "declared but empty".
+ */
+export function extractSections(description: string): Map<string, string> {
+  const sections = new Map<string, string>();
+  let current: string | undefined;
+  let body: string[] = [];
 
-  let index = -1;
-  for (let i = 0; i < lines.length; i += 1) {
-    const bare = lines[i].trim().replace(/^#+\s*/, '').replace(/\*/g, '').replace(/:$/, '').trim();
-    if (bare.toUpperCase().replace(/[\s-]+/g, '_') === section) { index = i; break; }
-  }
-  if (index === -1) return false;
+  const flush = () => {
+    if (current) sections.set(current, body.join('\n').trim());
+  };
 
-  for (let i = index + 1; i < lines.length; i += 1) {
-    const bare = lines[i].trim().replace(/^#+\s*/, '').replace(/\*/g, '').replace(/:$/, '').trim();
-    const normalized = bare.toUpperCase().replace(/[\s-]+/g, '_');
-    if (headings.has(normalized)) return false;
-    if (lines[i].trim().length > 0) return true;
+  for (const line of description.split('\n')) {
+    const heading = headingOf(line);
+    if (heading) {
+      flush();
+      current = heading;
+      body = [];
+      continue;
+    }
+    if (current) body.push(line);
   }
-  return false;
+  flush();
+
+  return sections;
 }
 
 /** Extract the declared SCRUTINY level, if any. */
@@ -132,10 +143,8 @@ export function evaluateBeadReadiness(bead: BeadRecord, options: BeadGateOptions
   }
 
   const description = bead.description ?? '';
-  const present = presentSections(description);
-  const missing = REQUIRED_SECTIONS.filter(
-    section => !present.has(section) || !sectionHasBody(description, section),
-  );
+  const sections = extractSections(description);
+  const missing = REQUIRED_SECTIONS.filter(section => !sections.get(section));
 
   if (missing.length > 0) {
     return {
