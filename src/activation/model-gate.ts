@@ -24,7 +24,16 @@ import type { PiSdk, PiModelRuntimeLike, PiModelScopeResult } from './pi-sdk.js'
 
 export interface ModelGateResult {
   ok: boolean;
-  /** Provider-qualified id actually resolved, when available. */
+  /**
+   * The resolved pi `Model` object.
+   *
+   * `createAgentSession` takes `model?: Model<any>`, NOT a provider-qualified string. A
+   * string is accepted by the call and then fails at request time with "No API key found
+   * for undefined", because the provider never resolves. The gate already holds the real
+   * object, so it hands it over rather than making the host re-resolve it.
+   */
+  model?: { id?: string; provider?: string };
+  /** Provider-qualified id actually resolved, when available. Diagnostics/telemetry only. */
   resolvedModel?: string;
   provider?: string;
   /** Human-readable rejection reason; present iff `ok` is false. */
@@ -101,6 +110,7 @@ export async function validateModelAvailable(
 
   return {
     ok: true,
+    model: first,
     resolvedModel: first.id ? `${provider}/${first.id}`.replace(`${provider}/${provider}/`, `${provider}/`) : requested,
     provider,
     diagnostics,

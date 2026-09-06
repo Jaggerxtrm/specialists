@@ -31,7 +31,7 @@ import type { PiSdk, PiAgentSessionLike, PiAgentSessionEvent } from '../../../sr
 
 interface FakeSessionOptions { record: { createArgs?: Record<string, unknown> } }
 
-function fakeSession(opts: FakeSessionOptions & { assistantText?: string }): PiAgentSessionLike & {
+function fakeSession(opts: FakeSessionOptions & { assistantText?: string; stopReason?: string; errorMessage?: string }): PiAgentSessionLike & {
   disposed: boolean; prompts: string[]; emit: (e: PiAgentSessionEvent) => void;
 } {
   const listeners: Array<(e: PiAgentSessionEvent) => void> = [];
@@ -46,7 +46,12 @@ function fakeSession(opts: FakeSessionOptions & { assistantText?: string }): PiA
     async prompt(text: string) {
       session.prompts.push(text);
       listeners.forEach(l => l({ type: 'agent_start' }));
-      messages.push({ role: 'assistant', content: opts.assistantText ?? 'done' });
+      messages.push({
+        role: 'assistant',
+        content: opts.assistantText ?? 'done',
+        ...(opts.stopReason ? { stopReason: opts.stopReason } : {}),
+        ...(opts.errorMessage ? { errorMessage: opts.errorMessage } : {}),
+      });
       listeners.forEach(l => l({ type: 'agent_end', willRetry: false }));
       listeners.forEach(l => l({ type: 'agent_settled' }));
     },
@@ -317,5 +322,67 @@ describe('createActivationForensicSink', () => {
     expect(() => createActivationForensicSink(null).emit({
       activationId: 'a', attemptId: 'b', participantId: 'c', specialist: 'd', name: 'activation_started',
     })).not.toThrow();
+  });
+});
+
+/**
+ * Both cases below are regressions found by the live smoke (unitAI-rrdnt.11), not by this
+ * file. The original doubles were permissive enough to pass while the real runtime failed:
+ * a stub `createAgentSession` accepts any `model` value, and a stub session never reports a
+ * failed turn. Each is now pinned here so the cheap suite catches it next time.
+ */
+describe('NativeActivationHost — defects found by the live smoke', () => {
+  it('passes the resolved pi Model object to createAgentSession, never a provider-qualified string', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const session = fakeSession({ record });
+    const host = new NativeActivationHost({
+      loader: loaderFor(readOnlySpec()),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => makeSdk(record, session),
+      cwd: process.cwd(),
+    });
+
+    const handle = await host.start({
+      specialist: 'researcher',
+      beadId: 'ISSUE-1',
+      requestedByParticipantId: 'coordinator:test',
+    });
+    await handle.result;
+
+    // pi's createAgentSession takes `model?: Model<any>`. A string is accepted silently and
+    // then fails mid-turn with "No API key found for undefined".
+    expect(record.createArgs?.model).toEqual({ id: 'test-model', provider: 'testprov' });
+    expect(typeof record.createArgs?.model).not.toBe('string');
+  });
+
+  it('reports a turn that ended in error as failed, not as completed with empty output', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const session = fakeSession({
+      record,
+      assistantText: '',
+      stopReason: 'error',
+      errorMessage: '429: monthly usage limit reached',
+    });
+    const sink = collectingSink();
+    const host = new NativeActivationHost({
+      loader: loaderFor(readOnlySpec()),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => makeSdk(record, session),
+      forensics: sink,
+      cwd: process.cwd(),
+    });
+
+    const handle = await host.start({
+      specialist: 'researcher',
+      beadId: 'ISSUE-1',
+      requestedByParticipantId: 'coordinator:test',
+    });
+    const result = await handle.result;
+
+    expect(result.status).toBe('failed');
+    expect(result.validation.valid).toBe(false);
+    expect(result.validation.errors?.[0]).toContain('429');
+    expect(sink.names).toContain('activation_failed');
+    expect(sink.names).not.toContain('activation_completed');
   });
 });
