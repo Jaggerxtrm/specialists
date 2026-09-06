@@ -879,8 +879,8 @@ released" step — so delivery is never guaranteed and must never be treated as 
 | 3 | Native path stops auto-provisioning worktrees for MEDIUM/HIGH (§5.4) | Phase 8 | PRD wins; legacy `sp run` unchanged |
 | 4 | Identity schema migration — add `attempt_id`, promote `pi_session_id`/`workspace_id` to indexed columns, redefine `participant_id` chain-independently (§6.2) | Phase 7 | do the migration; acceptance AL/AM cannot pass otherwise |
 | 5 | `SupervisorStatus` moves from `supervisor.ts:117` to a neutral module | Phase 7 | do it as its own small commit — it is the only thing making `writeStatusRow` non-pure |
-| 6 | **Claude transport reassignment (§5.16)** — MCP for request/response, peer channel for push, polling as fallback | **Phase 13/14** | promote the Phase 15 peer adapter onto the Phase 14 critical path (`unitAI-rrdnt.10`, P0) |
-| 7 | Whether `expected_output_keys` is honoured on the run path or documented as script-only (§5.13) | Phase 1 | honour it — the native path must not inherit the gap (`unitAI-rrdnt.8`) |
+| 6 | **Claude transport reassignment (§5.16)** — MCP for request/response, peer channel for push, polling as fallback | **Phase 13/14** | **Resolved — `docs/design/claude-transport-decision.md`** (`unitAI-rrdnt.10`). Peer adapter is a Phase 14 prerequisite. Measured on the authoring host: the roster misreports liveness (10 of 20 registrations named dead PIDs while advertising `status: idle`), so liveness is `/proc/<pid>` + `procStart`, never socket existence |
+| 7 | Whether `expected_output_keys` is honoured on the run path or documented as script-only (§5.13) | Phase 1 | **Resolved — documented as script-only** (`unitAI-rrdnt.8`). The "honour it" default was wrong: the sole declarer (`service-knowledge-sync`) binds those keys to its JSON `script_template`, not its markdown `task_template`, so enforcing on the run path would reject compliant runs. The native path still must not inherit the gap |
 
 ---
 
