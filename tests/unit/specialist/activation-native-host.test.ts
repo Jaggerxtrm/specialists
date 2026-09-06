@@ -84,11 +84,29 @@ function makeSdk(record: { createArgs?: Record<string, unknown> }, session: PiAg
   };
 }
 
+/**
+ * A COMPLETE task contract. The Phase 3 bead gate refuses anything less, so this fixture
+ * carries all seven sections plus SCRUTINY — it is a stub for the host's other assertions,
+ * not the subject of them. Gate behaviour itself is tested in activation-bead-gate.test.ts.
+ */
 const BEAD = {
   id: 'ISSUE-1',
   title: 'Investigate the thing',
-  description: 'PROBLEM\nx\n\nSUCCESS\ny',
+  status: 'open',
+  description: [
+    'PROBLEM', 'The thing is unclear.', '',
+    'SUCCESS', 'The thing is clear.', '',
+    'SCOPE', 'Investigate the thing.', '',
+    'NON_GOALS', 'Does not fix the thing.', '',
+    'CONSTRAINTS', 'Read-only.', '',
+    'VALIDATION', 'A written finding.', '',
+    'OUTPUT', 'A finding.', '',
+    'SCRUTINY', 'LOW — investigation only.',
+  ].join('\n'),
 };
+
+/** Keeps the gate off the real `bd` binary in unit tests. */
+const NO_CONTRACT_STATE = { readContractState: () => undefined };
 
 function loaderFor(spec: Record<string, unknown>) {
   return { get: async () => spec } as never;
@@ -126,6 +144,7 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
     const sink = collectingSink();
 
     const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
       loader: loaderFor(readOnlySpec()),
       beadsClient: { readBead: () => BEAD } as never,
       forensics: sink,
@@ -152,6 +171,7 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
     const session = fakeSession({ record });
 
     const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
       loader: loaderFor(readOnlySpec()),
       beadsClient: { readBead: () => BEAD } as never,
       loadSdk: async () => makeSdk(record, session),
@@ -179,6 +199,7 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
     const session = fakeSession({ record });
 
     const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
       loader: loaderFor(readOnlySpec()),
       beadsClient: { readBead: () => BEAD } as never,
       loadSdk: async () => makeSdk(record, session),
@@ -205,6 +226,7 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
     const sink = collectingSink();
 
     const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
       loader: loaderFor(readOnlySpec()),
       beadsClient: { readBead: () => BEAD } as never,
       forensics: sink,
@@ -231,6 +253,7 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
     (spec.specialist.execution as Record<string, unknown>).permission_required = 'HIGH';
 
     const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
       loader: loaderFor(spec),
       beadsClient: { readBead: () => BEAD } as never,
       forensics: sink,
@@ -260,6 +283,7 @@ describe('NativeActivationHost — Phase 1 read-only', () => {
     });
 
     const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
       loader: loaderFor(readOnlySpec()),
       beadsClient: { readBead: () => BEAD } as never,
       forensics: sink,
@@ -336,6 +360,7 @@ describe('NativeActivationHost — defects found by the live smoke', () => {
     const record: { createArgs?: Record<string, unknown> } = {};
     const session = fakeSession({ record });
     const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
       loader: loaderFor(readOnlySpec()),
       beadsClient: { readBead: () => BEAD } as never,
       loadSdk: async () => makeSdk(record, session),
@@ -365,6 +390,7 @@ describe('NativeActivationHost — defects found by the live smoke', () => {
     });
     const sink = collectingSink();
     const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
       loader: loaderFor(readOnlySpec()),
       beadsClient: { readBead: () => BEAD } as never,
       loadSdk: async () => makeSdk(record, session),

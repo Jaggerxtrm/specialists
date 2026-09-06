@@ -10,8 +10,6 @@
  *   - no writer support. Only read-only Specialists are admitted; the workspace writer
  *     lease does not exist yet, and admitting a writer before it does would allow two
  *     concurrent mutators in one worktree.
- *   - no Bead readiness gate. Contract validation is a separate phase; until then this
- *     inherits the legacy behaviour of requiring only that the Bead is readable.
  *   - no interaction protocol, no Fleet, no model picker.
  *
  * Session lifetime deliberately exceeds turn lifetime: reaching `agent_settled` makes a
@@ -26,6 +24,7 @@ import { validateBeforeRun } from '../specialist/runner.js';
 import { resolveRuntimeToolContract } from '../pi/session.js';
 import { resolveModelChain } from '../specialist/model-chain.js';
 import { BeadsClient } from '../specialist/beads.js';
+import { evaluateBeadReadiness, type BeadGateOptions } from './bead-gate.js';
 import { loadPiSdk, type PiSdk, type PiAgentSessionLike, type PiAgentSessionEvent } from './pi-sdk.js';
 import { createGateModelRuntime, validateModelAvailable } from './model-gate.js';
 import {
@@ -70,6 +69,8 @@ export interface NativeActivationHostDeps {
   forensics?: ActivationForensicSink;
   /** Injected for tests; defaults to resolving the real Pi SDK. */
   loadSdk?: () => Promise<PiSdk>;
+  /** Bead readiness gate seams. Defaults read the real `bd` state marker. */
+  beadGate?: BeadGateOptions;
   /** Defaults to `process.cwd()`. */
   cwd?: string;
   now?: () => number;
@@ -87,6 +88,7 @@ export class NativeActivationHost {
   private readonly beadsClient: Pick<BeadsClient, 'readBead'>;
   private readonly forensics: ActivationForensicSink;
   private readonly loadSdk: () => Promise<PiSdk>;
+  private readonly beadGate: BeadGateOptions;
   private readonly cwd: string;
   private readonly now: () => number;
 
@@ -98,6 +100,7 @@ export class NativeActivationHost {
     this.beadsClient = deps.beadsClient ?? new BeadsClient();
     this.forensics = deps.forensics ?? NULL_FORENSIC_SINK;
     this.loadSdk = deps.loadSdk ?? loadPiSdk;
+    this.beadGate = deps.beadGate ?? {};
     this.now = deps.now ?? (() => Date.now());
   }
 
@@ -153,6 +156,16 @@ export class NativeActivationHost {
 
     const bead = this.beadsClient.readBead(request.beadId);
     if (!bead) return reject('bead_unreadable');
+
+    // `--bead` is the prompt. A Bead that is not a usable task contract is refused here,
+    // before a model turn is spent guessing at the scope it does not carry.
+    const readiness = evaluateBeadReadiness(bead, this.beadGate);
+    if (!readiness.ok) {
+      return reject('bead_contract_incomplete', {
+        detail: readiness.reason,
+        ...(readiness.missing.length > 0 ? { missing: readiness.missing } : {}),
+      });
+    }
 
     const toolContract = resolveRuntimeToolContract({
       level: tier,

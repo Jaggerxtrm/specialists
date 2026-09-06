@@ -185,11 +185,26 @@ describe('live smoke: native Specialist activation', () => {
       forensics: createActivationForensicSink(observability),
     });
 
-    const create = run('bd', ['create', '--title=native activation live smoke probe', '--type=task'], repoRoot);
+    // The Phase 3 bead gate refuses anything that is not a complete task contract, so the
+    // throwaway probe bead carries all seven sections and a SCRUTINY level.
+    const probeContract = [
+      'PROBLEM', 'The native activation host has no observed live run.', '',
+      'SUCCESS', 'One short model turn completes in-process.', '',
+      'SCOPE', 'Reply with one short sentence confirming you are running, then stop.', '',
+      'NON_GOALS', 'No file edits. No commands. No further work.', '',
+      'CONSTRAINTS', 'Read-only. One sentence.', '',
+      'VALIDATION', 'A non-empty assistant reply.', '',
+      'OUTPUT', 'One sentence.', '',
+      'SCRUTINY', 'LOW — throwaway smoke probe.',
+    ].join('\n');
+
+    const create = run('bd', [
+      'create', '--title=native activation live smoke probe', '--type=task',
+      `--description=${probeContract}`,
+    ], repoRoot);
     expect(create.status).toBe(0);
     beadId = create.stdout.match(/unitAI-[a-z0-9.]+/)?.[0] ?? '';
     expect(beadId).toMatch(/^unitAI-/);
-    run('bd', ['update', beadId, '--notes', 'Reply with one short sentence confirming you are running, then stop.'], repoRoot);
   }, 120_000);
 
   afterAll(async () => {
