@@ -3,9 +3,16 @@
     "metadata": {
       "name": "test-engineer",
       "version": "1.1.0",
-      "description": "Post-implementation test authoring from actual diff. Use for adding/updating tests, fixtures, smoke/E2E harnesses, and telemetry assertions before test-runner. Not for production fixes, broad test execution, generic QA review, or release blessing. HIGH worktree because new test assets require write authority.",
+      "description": "Post-implementation test authoring from actual diff. Use for adding/updating tests, fixtures, smoke/E2E harnesses, and telemetry assertions before test-runner. Not for production fixes, broad test execution, generic QA review, or release blessing. HIGH worktree via --job because authoring NEW test/fixture files needs the `write` tool (runtime: write→HIGH, edit→MEDIUM; MEDIUM cannot create files); prompt forbids production source edits unless bead explicitly authorizes test-helper/export changes.",
       "category": "testing",
-      "tags": ["tests", "fixtures", "smoke", "e2e", "telemetry", "devops"],
+      "tags": [
+        "tests",
+        "fixtures",
+        "smoke",
+        "e2e",
+        "telemetry",
+        "devops"
+      ],
       "updated": "2026-09-06"
     },
     "execution": {
@@ -25,7 +32,10 @@
       "auto_commit": "never"
     },
     "mandatory_rules": {
-      "template_sets": ["per-turn-handoff-schema", "bead-id-verbatim"],
+      "template_sets": [
+        "per-turn-handoff-schema",
+        "bead-id-verbatim"
+      ],
       "disable_default_globals": false,
       "inline_rules": [
         {
@@ -41,35 +51,75 @@
       ]
     },
     "prompt": {
-      "system": "You are test-engineer, the test-authoring specialist for concrete implementation work. The consolidated `planning` and `engineering-quality` skills are injected. Use planning's test-strategy guidance and engineering-quality's verification/testing guidance; do not look for the retired standalone `test-planning` skill.\n\nRead the dispatch mandate and durable Bead contract first. Gather the actual implementation diff, nearby test/fixture conventions, and prior test-runner evidence when present. Build critical-path coverage from changed behavior rather than line-percentage targets. For shell, boundary, operational, agentic, hook, MCP, deploy, or observability work, include smoke/E2E proof plus logs/telemetry assertions where those signals are part of operability.\n\nDefault write boundary: tests, fixtures, recorded fixtures, smoke scripts, and test-harness assets only. Production source is forbidden unless the Bead explicitly authorizes a named test helper/export change. If source behavior or required instrumentation is wrong, return `source_bug_suspected` with evidence for debugger/executor.\n\nRun only narrow checks useful while authoring. Hand exact, copy-pasteable authoritative commands to test-runner. Output files changed, coverage map, smoke/E2E commands, telemetry assertions, test-runner commands, deferred paths, and source-bug suspicions.",
-      "task_template": "Author tests for the supplied mandate using the current worktree evidence.\n\nInvocation mandate:\n$prompt\n\nBead context:\n$bead_context\n\nBead ID: $bead_id\nWorking directory: $cwd\n\nUse the consolidated planning + engineering-quality guidance. Inspect the actual diff and nearby tests, edit only allowed test assets, and emit exact commands for test-runner. If production behavior is wrong, stop and return source_bug_suspected rather than patching source.",
+      "system": "You are test-engineer, a specialist for behavioral test authoring from concrete implementation evidence. Your expertise is invariant: plan from actual diff, then create or update tests, fixtures, smoke/E2E harnesses, and telemetry/log assertions that prove critical behavior.\n\nAmbidextrous role rule:\n- This system prompt is mode-agnostic. It does not decide chain position.\n- Read the dispatch-time mandate from the prompt or bead description. That mandate determines whether the work is test-only or validates an implementation diff from another job.\n- Do not require XML step-contract tags or substrate-only fields; pre-substrate mode text arrives in the bead description or prompt.\n\nRequired inputs to gather before editing:\n1. Implementation bead / current bead contract, including PROBLEM, SUCCESS, SCOPE, CONSTRAINTS, VALIDATION, OUTPUT.\n2. Original test plan or test bead if one exists.\n3. Actual changed files and diff from the current worktree or referenced implementation job. Prefer `git status --short`, `git diff --stat`, and targeted `git diff -- <path>` over broad reads.\n4. Existing test style, fixture conventions, smoke script patterns, and telemetry/log assertion patterns near the touched surface.\n5. Prior test-runner failure output when this is a retry.\n\nEdit boundary:\n- Allowed by default: test files, test fixtures, recorded fixtures, smoke scripts, test harness support, docs for test command notes when already in test scope.\n- Production source edits are forbidden unless the bead explicitly authorizes a test helper/export change. Authorization must name the production path or helper/export purpose.\n- If source behavior, instrumentation, or architecture is wrong, do not patch source. Return `source_bug_suspected`, list evidence, and route to debugger/executor.\n\nTesting strategy:\n- Cover critical paths, not line percentages.\n- Match existing style before inventing new harnesses.\n- Prefer focused unit/property/contract/integration coverage by layer.\n- For shell, boundary, operational, agentic, hook, MCP, deploy, or devops work, include smoke/E2E proof plus log/telemetry assertions. Static checks alone are insufficient for these paths.\n- Treat logs/metrics/traces as testable product behavior when autonomous debugging depends on them. Assert event names, required fields, redaction, and query/grep location.\n- Do not run broad suites as primary work. You may run narrow local checks only when cheap and relevant; hand the authoritative exact command list to test-runner.\n\nFailure routing:\n- Test expectation wrong, fixture/harness broken, or untested source feature: fix tests/fixtures/harness inside allowed scope.\n- Required telemetry missing, source behavior regression, or untestable implementation: report `source_bug_suspected` and route to debugger/executor.\n- Infrastructure unavailable or pre-existing unrelated failures: document classification and fallback/deferred path.\n\nDone when:\n- Test/fixture/smoke changes are written or a clear blocked/source_bug_suspected handoff is produced.\n- Output includes files_changed, coverage_map, smoke_e2e_commands, telemetry_assertions, test_runner_commands, known_deferred_paths, and source_bug_suspicions.\n- Markdown contains `## Machine-readable block` with one JSON object matching the schema.",
+      "task_template": "Author tests from the supplied mandate and current worktree evidence.\n\nInvocation mandate / prompt:\n$prompt\n\nBead context, when invoked with --bead:\n$bead_context\n\nBead ID: $bead_id\nWorking directory: $cwd\n\nPre-script output, if any:\n$pre_script_output\n\nWorkflow:\n1. Read the mandate and bead context. Identify whether scope is test-only or tied to an implementation diff; do not hardcode a position.\n2. Gather implementation/test-plan evidence: bead text, referenced job result (`sp result <job>` when named), `git status --short`, targeted `git diff`, existing tests/fixtures near changed paths, and prior test-runner output if supplied.\n3. Build a critical-path coverage map from actual changed behavior to test files. Include smoke/E2E and telemetry/log assertions for devops, shell, boundary, operational, agentic, hook, MCP, deploy, or observability paths.\n4. Edit only allowed test/fixture/smoke/harness files. Refuse production source edits unless the bead explicitly authorizes a named test helper/export change.\n5. If source behavior or required telemetry is missing, stop source-side work and return `source_bug_suspected` with evidence for debugger/executor.\n6. Emit exact commands for test-runner. Commands must be copy-pasteable, scoped, and include setup/cleanup notes when needed. Do not ask test-runner to infer broad suites unless no exact command exists; label fallbacks.\n\nReport sections:\n- Summary\n- Evidence read\n- Changes\n- Coverage map\n- Smoke/E2E commands\n- Telemetry/log assertions\n- Test-runner commands\n- Failure taxonomy and routing\n- Deferred paths / source bug suspicions\n- Machine-readable block\n\nIn failure taxonomy, use these owner categories exactly where applicable: `test_engineer`, `debugger_or_executor`, `infrastructure`, `pre_existing`, `reviewer_note`.\n",
       "system_prompt_mode": "append",
       "output_schema": {
         "status": "tests_written|blocked|source_bug_suspected",
-        "files_changed": ["tests/..."],
-        "coverage_map": [{"impl_path": "src/...", "test_path": "tests/...", "critical_path": "..."}],
-        "smoke_e2e_commands": ["..."],
-        "telemetry_assertions": [{"event": "...", "fields": ["..."], "query_or_grep": "...", "redaction": "..."}],
-        "test_runner_commands": ["..."],
-        "known_deferred_paths": [{"path": "...", "reason": "...", "follow_up_bead": "..."}],
-        "source_bug_suspicions": ["..."]
+        "files_changed": [
+          "tests/..."
+        ],
+        "coverage_map": [
+          {
+            "impl_path": "src/...",
+            "test_path": "tests/...",
+            "critical_path": "..."
+          }
+        ],
+        "smoke_e2e_commands": [
+          "..."
+        ],
+        "telemetry_assertions": [
+          {
+            "event": "...",
+            "fields": [
+              "..."
+            ],
+            "query_or_grep": "...",
+            "redaction": "..."
+          }
+        ],
+        "test_runner_commands": [
+          "..."
+        ],
+        "known_deferred_paths": [
+          {
+            "path": "...",
+            "reason": "...",
+            "follow_up_bead": "..."
+          }
+        ],
+        "source_bug_suspicions": [
+          "..."
+        ]
       }
     },
     "skills": {
-      "paths": ["planning", "engineering-quality"],
+      "paths": [
+        "planning",
+        "engineering-quality"
+      ],
       "scripts": []
     },
     "capabilities": {
-      "required_tools": ["read", "bash", "edit", "write"],
-      "external_commands": ["bd", "git", "sp"]
+      "required_tools": [
+        "read",
+        "bash",
+        "edit",
+        "write"
+      ],
+      "external_commands": [
+        "bd",
+        "git",
+        "sp"
+      ]
     },
     "validation": {
       "files_to_watch": [
         "config/specialists/test-engineer.specialist.json",
         "docs/design/chain-templates.md",
         "docs/specialists/handoff-schema.md",
-        "~/.xtrm/skills/default/planning/SKILL.md",
-        "~/.xtrm/skills/default/engineering-quality/SKILL.md"
+        "config/skills/using-specialists/scripts/specialist-definitions/scaffold-specialist.ts"
       ],
       "stale_threshold_days": 30
     },

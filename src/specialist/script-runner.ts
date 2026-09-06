@@ -17,6 +17,7 @@ import { PiAgentSession, RuntimeToolCatalogResolutionError, applyExtensionToolPo
 import { getReadLineNumbersExtensionPath } from '../pi/read-line-numbers-extension.js';
 import { SpecialistLoader } from './loader.js';
 import { buildMandatoryRulesInjection } from './mandatory-rules.js';
+import { buildRequiredPlatformRulesBlock } from './required-platform-rules.js';
 import { resolveModelChain } from './model-chain.js';
 import { ensureObservabilityDbFile, resolveObservabilityDbLocation } from './observability-db.js';
 import { createObservabilitySqliteClient, createObservabilitySqliteClientAtPath } from './observability-sqlite.js';
@@ -835,13 +836,13 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
       ...(resolvedToolContractBlock ? { resolved_tool_contract: resolvedToolContractBlock } : {}),
     };
     let prompt = applyOutputContract(renderTaskTemplate(template, variables), spec);
-    if (!spec.specialist.execution.bare) {
-      try {
-        const mandatoryRulesBlock = buildMandatoryRulesInjection({ cwd: baseDir, specialist: spec.specialist }).block;
-        if (mandatoryRulesBlock.trim()) prompt = `${prompt}\n\n${mandatoryRulesBlock}`;
-      } catch (error) {
-        console.warn(`[script-runner] Skipping MANDATORY_RULES injection: ${String(error)}`);
-      }
+    try {
+      const mandatoryRulesBlock = spec.specialist.execution.bare
+        ? buildRequiredPlatformRulesBlock(baseDir)
+        : buildMandatoryRulesInjection({ cwd: baseDir, specialist: spec.specialist }).block;
+      if (mandatoryRulesBlock.trim()) prompt = `${prompt}\n\n${mandatoryRulesBlock}`;
+    } catch (error) {
+      console.warn(`[script-runner] Skipping MANDATORY_RULES injection: ${String(error)}`);
     }
 
     const modelCandidates = collectModelCandidates(input, spec, options);

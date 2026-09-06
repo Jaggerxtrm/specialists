@@ -6,7 +6,7 @@ import { buildBeadContext, type BeadRecord } from './beads.js';
 import { measurePayloadComponent, type PayloadComponentMeasurement } from './payload-measure.js';
 import type { Specialist } from './schema.js';
 
-export const MANDATORY_RULES_TOKEN_LIMIT = 2000;
+export const MANDATORY_RULES_TOKEN_LIMIT = 2400;
 const SKILL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /**

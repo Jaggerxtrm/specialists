@@ -629,7 +629,7 @@ describe('mandatory rules budget compiler', () => {
     ]],
   ] as const)('retains the complete %s governance set under the production budget', async (name, expectedIds) => {
     const config = JSON.parse(await readFile(join(process.cwd(), 'config', 'specialists', `${name}.specialist.json`), 'utf-8'));
-    const result = buildMandatoryRulesInjection({ cwd: process.cwd(), specialist: config.specialist }, 2000);
+    const result = buildMandatoryRulesInjection({ cwd: process.cwd(), specialist: config.specialist }, 2400);
 
     expect(result.outcome).toBe('full');
     expect(result.injectedTokens).toBeLessThanOrEqual(result.budgetLimit);

@@ -133,7 +133,7 @@ describe('selective loading: coordinator gets the router, not advanced reference
   const prompt = coordinator.specialist.prompt?.system ?? '';
 
   it('chain-coordinator eagerly injects only the root router', () => {
-    expect(declared).toEqual(['~/.xtrm/skills/default/using-specialists/SKILL.md']);
+    expect(declared).toEqual(['using-specialists']);
   });
 
   it('chain-coordinator prompt preserves runtime-aware communication invariants', () => {

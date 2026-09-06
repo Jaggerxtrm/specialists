@@ -44,3 +44,7 @@ belongs to XTRM-owned surfaces rather than duplicated in every Specialist prompt
 A definition is ready only when schema validation passes, resolved config shows the
 intended tools/model/skills/permissions, referenced dependencies exist, and a representative
 smoke produces the expected output contract.
+
+## Bare-mode invariant
+
+`execution.bare: true` removes ordinary Specialist framing, default rules, and specialist-selected rules, but it does **not** remove package `required_template_sets`. Bare workers are still XTRM system participants and always receive the fleet boundary.
