@@ -315,11 +315,11 @@ describe('createActivationForensicSink', () => {
     } as never);
 
     sink.emit({
-      activationId: 'act:abc', attemptId: 'att:abc:1', participantId: 'specialist:researcher',
+      activationId: 'act:abc', attemptId: 'att:abc:1', participantId: 'specialist::researcher',
       specialist: 'researcher', beadId: 'ISSUE-1', name: 'activation_admitted', payload: { tier: 'READ_ONLY' },
     });
     sink.emit({
-      activationId: 'act:abc', attemptId: 'att:abc:1', participantId: 'specialist:researcher',
+      activationId: 'act:abc', attemptId: 'att:abc:1', participantId: 'specialist::researcher',
       specialist: 'researcher', beadId: 'ISSUE-1', name: 'activation_rejected', payload: { reason: 'x' },
     });
 
@@ -332,7 +332,7 @@ describe('createActivationForensicSink', () => {
     expect(rows[1].event.severity).toBe('error');
     // attempt_id has no column yet, so it must at least survive in the body.
     expect((rows[0].event.body as Record<string, unknown>).attempt_id).toBe('att:abc:1');
-    expect((rows[0].event.correlation as Record<string, unknown>).participant_id).toBe('specialist:researcher');
+    expect((rows[0].event.correlation as Record<string, unknown>).participant_id).toBe('specialist::researcher');
 
     // Forensics must never be the reason an activation fails.
     const exploding = createActivationForensicSink({
@@ -356,6 +356,32 @@ describe('createActivationForensicSink', () => {
  * failed turn. Each is now pinned here so the cheap suite catches it next time.
  */
 describe('NativeActivationHost — defects found by the live smoke', () => {
+  it('derives participant_id with the house `::` separator, the lineage join key', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const session = fakeSession({ record });
+    const sink = collectingSink();
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec()),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => makeSdk(record, session),
+      forensics: sink,
+      cwd: process.cwd(),
+    });
+
+    const handle = await host.start({
+      specialist: 'researcher',
+      beadId: 'ISSUE-1',
+      requestedByParticipantId: 'coordinator:test',
+    });
+    await handle.result;
+
+    // `orch::`, `node::` and `<container>::emitter::` all use `::`. A single colon here
+    // writes a participant_id that no cross-runtime lineage query joins against.
+    expect(handle.participantId).toBe('specialist::researcher');
+    expect(sink.events.every(e => e.participantId === 'specialist::researcher')).toBe(true);
+  });
+
   it('passes the resolved pi Model object to createAgentSession, never a provider-qualified string', async () => {
     const record: { createArgs?: Record<string, unknown> } = {};
     const session = fakeSession({ record });
