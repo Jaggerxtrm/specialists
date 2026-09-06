@@ -116,3 +116,6 @@ open-issues.json
 # is intentionally tracked, so git descends into the directory regardless.
 .agents/skills/*
 !.agents/skills/beads/
+
+# Beads / Dolt files (added by bd init)
+*.gate.lock*
