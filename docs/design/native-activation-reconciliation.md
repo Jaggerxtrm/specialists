@@ -442,7 +442,7 @@ preserved, mechanism changes) · `deferred` (explicitly not in v0, with reason) 
 
 | Feature | Current owner | Native path | Class | Test |
 |---|---|---|---|---|
-| `SpecialistLoader` layered merge | `loader.ts:500` | consumed unchanged; PRD §8 forbids a second resolver | native | acceptance A |
+| `SpecialistLoader` layered merge (**three** layers — see §5.14) | `loader.ts:500`, scan dirs `loader.ts:158-170` | consumed unchanged; PRD §8 forbids a second resolver | native | acceptance A |
 | `metadata.name/version` | `schema.ts:9-11` | carried into activation identity | native | A |
 | `metadata.description/category/updated/tags` | `schema.ts:12-16` | carried verbatim, no runtime effect | native | schema round-trip |
 | `OVERRIDE_ALLOWED_*` / `BLOCKED_OVERRIDE_FIELDS` / `BlockedFieldWarning` | `schema.ts:170-235` | enforced by the same loader | native | existing loader tests |
@@ -454,7 +454,7 @@ preserved, mechanism changes) · `deferred` (explicitly not in v0, with reason) 
 | `execution.model` | `loader.ts` + `model-chain.ts` | `CreateAgentSessionOptions.model` | native | B |
 | `execution.fallback_model` / `fallback_models` | `selectAvailableModel` `runner.ts:1016` | reused via extracted `runWithModelChain` | native | B |
 | `execution.surface_models` | `loader.ts` | resolved before session creation | native | B |
-| activation model **override** | **ABSENT today** | new `ActivationRequest.modelOverride`, validated against `ModelRegistry` before creation | native *(new)* | C, D, F |
+| activation model **override** | **already exists** — CLI `--model` `cli/run.ts:162`; MCP `backend_override` `use_specialist.tool.ts:11,59` → `runner.ts:1132` | `ActivationRequest.modelOverride`; the genuinely new part is **pre-creation validation** (§5.10), not the override | adapted | C, D, F |
 | `execution.thinking_level` | `--thinking` argv | `CreateAgentSessionOptions.thinkingLevel` | native | B |
 | `execution.max_retries` | `runner.ts:1548-1633` | extracted retry loop; retries become **attempts under one activation** | adapted | AM |
 | `execution.timeout_ms` | `waitForDone` `session.ts:1491` | host timer over the session | native | *(new)* |
@@ -464,7 +464,7 @@ preserved, mechanism changes) · `deferred` (explicitly not in v0, with reason) 
 | `execution.bare` | `loader.ts` | carried | native | schema round-trip |
 | `execution.stdout_limit_bytes` / `prompt_limit_bytes` | `capStream` `runner.ts:154` | reused | native | existing |
 | `execution.response_format` / `output_type` | `runner.ts:666-975` | reused, promoted from advisory to enforced | adapted | AO |
-| `execution.expected_output_keys` | `validateOutputContract` `runner.ts:975` | same, enforced | adapted | AO |
+| `execution.expected_output_keys` | **`script-runner.ts:633` `collectRequiredOutputKeys` only** — the `sp run` path never reads it (see §5.13) | honoured on every dispatch path | adapted | AO |
 | `execution.permission_required` | `resolvePermissionTools` `session.ts:425` | → `tools`/`excludeTools`/`noTools` | adapted | G, R |
 | `execution.extensions` | `-e` argv `session.ts:476` | → `bindExtensions` + `customTools` | adapted | R |
 | `execution.requires_worktree` | `run.ts:1664-1672` | **semantics change — see §8.1** | adapted | AT |
@@ -754,6 +754,120 @@ The lease consequence follows: because the MCP server hosts sessions in-process,
 Specialist children are covered by the same `tool_call` guard as the Pi extension's
 children, satisfying acceptance BA (a Claude-launched Specialist obeys the same lease).
 
+### 5.13 `expected_output_keys` is silently ignored on the `sp run` path
+
+`schema.ts` documents `execution.expected_output_keys` as triggering a required-keys check
+"independent of `response_format`", returning `error_type: 'invalid_json'` on a miss, so
+that "hallucinated key sets" cannot pass as success. That is true only of the `sp script`
+surface. The sole consumer is `collectRequiredOutputKeys`
+(`src/specialist/script-runner.ts:633`); `SpecialistRunner.run` never reads the field.
+
+So a Specialist authored with `expected_output_keys` and dispatched via `sp run` gets no
+required-keys check at all — the precise failure the field exists to prevent. Compounding
+it, output validation on the run path is advisory: `validateOutputContract`
+(`runner.ts:975`) writes stderr warnings and never fails the run.
+
+Filed as `unitAI-rrdnt.8`. It predates this project and is independent of it, but the
+native path must not inherit the gap — hence the `adapted` classification in §7.2 rather
+than `native`.
+
+### 5.14 The override contract has three layers, not four
+
+PRD §8 lists "package canonical / global user override / repo default override / repo user
+Specialist override". The repo `.specialists/default/` mirror was **retired** by commit
+`31a6421c` and is no longer walked by the loader (`loader.ts:147-157`). The live contract
+is three layers (KAN-90):
+
+```
+package canonical  →  ~/.config/specialists/user.json  →  repo .specialists/user/<name>
+```
+
+Stale `.specialists/default/` files left on disk are detected by `drift-detector` and
+removed by `sp prune-stale-defaults`, but they do not feed the merge. The legacy paths
+`./specialists`, `.claude/specialists` and `.agent-forge/specialists` belonged to the same
+retired `scope: 'default'` tier and are likewise non-authoritative.
+
+Consuming the loader unchanged (PRD §8) is still correct; only the PRD's description of the
+layer stack is stale. Nothing else in this document depends on the count.
+
+### 5.15 Empirical verification of §5.8-§5.10
+
+The claims in §5.8, §5.9 and §5.10 were originally derived from reading Pi's shipped
+JavaScript. They have since been **verified by execution** against 0.84.3 (harness and
+results at `/tmp/xtrm-pi-veto-probe/`, 5 short model turns). Everything below is EXECUTED,
+not READ.
+
+**§5.9 confirmed, and improved.** A real parallel batch — one assistant message, two tool
+calls — where the `tool_call` handler for call #1 called `setActiveTools` to revoke call
+#2's tool: **call #2 still executed** (both marker files created). The same batch with
+`{block:true}`: both handlers fired, neither file created. `setActiveToolsByName` cannot
+revoke a planned call; `block` is the only fence.
+
+The improvement: **every `tool_call` handler in a batch fires before any tool in that batch
+executes** — prepare-all runs to completion, then a `Promise.all`
+(`pi-agent-core/dist/agent-loop.js:332-374`). Therefore a lease acquired during call #1
+*can* still block call #2 in the same batch, via `block`. Mid-batch lease acquisition is
+enforceable, just never by tool removal. §5.9's original wording understated the
+guarantee.
+
+**§5.8 confirmed on both sides.** All five LLM tool paths — built-in `edit`, `write`,
+`bash`, a `registerTool` tool, and an SDK `customTool` — fired the handler *and* had
+execution prevented, proven by side effect (target file unchanged, four marker files
+absent), with a veto-off control run confirming the negatives were real rather than broken
+plumbing. A blocked call surfaces as `isError=true` carrying the reason string. The two
+predicted holes were confirmed with the veto active and blocking everything:
+`AgentSession.executeBash()` and `pi.exec()` inside an extension handler each exited 0,
+wrote their file, and fired the handler **zero times**.
+
+**§5.10 confirmed, and both halves of the gate are load-bearing.** With
+`--provider nvidia --model no-such-model-at-all`, `resolveCliModel` returns a *fabricated*
+model — `error: undefined`, only `warning: 'Model "…" not found for provider "nvidia".
+Using custom model id.'` — while `hasConfiguredAuth('nvidia')` is `true`. An auth-only gate
+accepts a model that does not exist; only the `no-match` diagnostic catches it. Conversely
+a real model under an unauthenticated provider resolves cleanly through `resolveCliModel`
+and is caught only by the auth check. Neither half alone is sufficient.
+
+**Operational trap:** `ModelRuntime.create({ refreshOnCreate: false })` yields zero
+configured-auth providers and an empty `getAvailable()`, which would make the gate reject
+every model. Use `{ allowModelNetwork: false }` and leave `refreshOnCreate` alone.
+
+### 5.16 MCP cannot push to a busy Claude Code coordinator
+
+PRD §102 assumes Specialist→Claude events can be pushed "through the supported Claude MCP
+channel/event surface where available". Against Claude Code's MCP **client**
+implementation, that surface is not available: `sampling/createMessage` is not implemented
+(anthropics/claude-code#1785); `resources/subscribe` + `notifications/resources/updated`
+are ignored and never refresh model context (#7252); progress notifications and tokens are
+not implemented (#31893, #51713); `notifications/message` logging is received and silently
+discarded (#3174, #33679); `elicitation/create` is CLI-only and partial (#2799, #85442);
+`tools/list_changed` works across turns but not same-turn (#31893).
+
+PRD Phase 14 as specified is therefore not buildable, and acceptance AX cannot be satisfied
+over MCP.
+
+**But out-of-band push does work.** Claude Code's own cross-session messaging delivers
+unsolicited messages into a running session mid-turn — observed repeatedly while authoring
+this document, arriving as `<cross-session-message from="uds:/run/user/1000/cc-socks/<pid>.sock">`.
+Both mechanisms `pi-claude-link` (MIT) documents are present and were verified on this
+machine: per-PID `0600` sockets under `/run/user/1000/cc-socks/`, and session registration
+files under `~/.claude/sessions/<pid>.json`.
+
+Consequent transport reassignment, filed as `unitAI-rrdnt.10` (P0):
+
+```
+MCP channel      coordinator → Specialist   (delegate, status, stop, message-in)
+peer transport   Specialist → coordinator   (clarification, escalation, finding, completion)
+polling          degraded fallback when no peer channel is registered
+```
+
+This promotes the PRD Phase 15 roster/peer adapter to a **Phase 14 prerequisite** rather
+than an additive layer. It remains an adapter: PRD §107 and invariant 14 still hold, so it
+never becomes the source of activation identity, lease authority, result state or forensic
+state. Peer delivery passes a user approval gate — observed as an explicit "approved and
+released" step — so delivery is never guaranteed and must never be treated as authority
+(PRD §26, §111); an undeliverable push degrades to pending state readable via
+`specialist_status`, satisfying §30's no-silent-loss rule.
+
 ---
 
 ## 6. Open decisions requiring an owner
@@ -765,6 +879,8 @@ children, satisfying acceptance BA (a Claude-launched Specialist obeys the same 
 | 3 | Native path stops auto-provisioning worktrees for MEDIUM/HIGH (§5.4) | Phase 8 | PRD wins; legacy `sp run` unchanged |
 | 4 | Identity schema migration — add `attempt_id`, promote `pi_session_id`/`workspace_id` to indexed columns, redefine `participant_id` chain-independently (§6.2) | Phase 7 | do the migration; acceptance AL/AM cannot pass otherwise |
 | 5 | `SupervisorStatus` moves from `supervisor.ts:117` to a neutral module | Phase 7 | do it as its own small commit — it is the only thing making `writeStatusRow` non-pure |
+| 6 | **Claude transport reassignment (§5.16)** — MCP for request/response, peer channel for push, polling as fallback | **Phase 13/14** | promote the Phase 15 peer adapter onto the Phase 14 critical path (`unitAI-rrdnt.10`, P0) |
+| 7 | Whether `expected_output_keys` is honoured on the run path or documented as script-only (§5.13) | Phase 1 | honour it — the native path must not inherit the gap (`unitAI-rrdnt.8`) |
 
 ---
 
@@ -786,11 +902,25 @@ The reusable seams are identified. Concretely:
 - **Do not port:** the subprocess boundary, one-turn dispose, chain/step materialization,
   `pi-intercom` for same-process children, `pi-subagents`' file-set telemetry.
 
-Three findings change the plan rather than merely informing it: bead-readiness enforcement
-does not exist at all (§ map, PRD Phases 3 and 13 must each add it at a named insertion
-point — `src/cli/run.ts:1923-1931` and `src/tools/specialist/use_specialist.tool.ts:39-46`,
-sharing one validator); no workspace lease exists and one identifier misleadingly presents
-as one (§5.5); and only one of the PRD's four identity layers is durable (§6.2).
+Five findings change the plan rather than merely informing it:
 
-Phase 1 (read-only native Specialist) is unblocked and can start against the installed
-Pi 0.84.3 surface.
+1. **Bead-readiness enforcement does not exist at all** — not weakly enforced, absent. PRD
+   Phases 3 and 13 must each add it, at `src/cli/run.ts:1923-1931` and
+   `src/tools/specialist/use_specialist.tool.ts:39-46`, sharing one validator.
+2. **No workspace lease exists**, and `worktree_owner_job_id` misleadingly presents as one
+   in the console (§5.5).
+3. **Only one of the PRD's four identity layers is durable** (§6.2); `attempt_id` is absent
+   outright, so acceptance AM cannot pass without a migration.
+4. **The §52 defense-in-depth ordering is inverted** (§5.9, verified by execution in
+   §5.15). The per-call `block` is the enforcement layer. Building it as the PRD describes
+   would produce a lease that leaks for the remainder of every turn in which it is acquired.
+5. **MCP cannot push to a busy Claude coordinator** (§5.16). PRD Phase 14 is not buildable
+   as specified; the Phase 15 peer adapter moves onto the Phase 14 critical path.
+
+Two PRD statements are additionally stale rather than wrong-in-consequence: the override
+stack is three layers, not four (§5.14), and per-activation model override already exists
+(§7.2) — the new work is pre-creation validation.
+
+`buildSystemPrompt` is extracted (`unitAI-rrdnt.3`, commit `378e55fe`), so **Phase 1
+(read-only native Specialist) is unblocked** and can start against the installed Pi 0.84.3
+surface.
