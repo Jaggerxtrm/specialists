@@ -15828,6 +15828,35 @@ function buildMandatoryRulesInjection(specialistConfig, budgetLimit = Number.POS
   };
 }
 
+// src/specialist/required-platform-rules.ts
+function buildRequiredPlatformRulesInjection(cwd, budgetLimit = Number.POSITIVE_INFINITY) {
+  const resolved = buildMandatoryRulesInjection({
+    cwd,
+    specialist: {
+      mandatory_rules: {
+        disable_default_globals: true,
+        template_sets: [],
+        inline_rules: []
+      }
+    }
+  });
+  const requiredCandidates = resolved.sections.filter((section) => section.priority === "must_keep");
+  const compiled = compileMandatoryRulesBudget(requiredCandidates, budgetLimit);
+  const injectedIds = new Set(compiled.injectedSectionIds);
+  const retainedRequired = requiredCandidates.filter((section) => injectedIds.has(section.setId));
+  return {
+    ...resolved,
+    ...compiled,
+    setsLoaded: retainedRequired.map((section) => section.setId),
+    ruleCount: retainedRequired.reduce((count, section) => count + section.ruleCount, 0),
+    inlineRulesCount: 0,
+    globalsDisabled: true
+  };
+}
+function buildRequiredPlatformRulesBlock(cwd, budgetLimit = Number.POSITIVE_INFINITY) {
+  return buildRequiredPlatformRulesInjection(cwd, budgetLimit).block;
+}
+
 // src/specialist/model-chain.ts
 function resolveModelChain(execution) {
   const primary = normalizeModel(execution.model);
@@ -16969,16 +16998,14 @@ async function runScriptSpecialist(input, options) {
       ...resolvedToolContractBlock ? { resolved_tool_contract: resolvedToolContractBlock } : {}
     };
     let prompt = applyOutputContract(renderTaskTemplate(template, variables), spec);
-    if (!spec.specialist.execution.bare) {
-      try {
-        const mandatoryRulesBlock = buildMandatoryRulesInjection({ cwd: baseDir, specialist: spec.specialist }).block;
-        if (mandatoryRulesBlock.trim())
-          prompt = `${prompt}
+    try {
+      const mandatoryRulesBlock = spec.specialist.execution.bare ? buildRequiredPlatformRulesBlock(baseDir) : buildMandatoryRulesInjection({ cwd: baseDir, specialist: spec.specialist }).block;
+      if (mandatoryRulesBlock.trim())
+        prompt = `${prompt}
 
 ${mandatoryRulesBlock}`;
-      } catch (error) {
-        console.warn(`[script-runner] Skipping MANDATORY_RULES injection: ${String(error)}`);
-      }
+    } catch (error) {
+      console.warn(`[script-runner] Skipping MANDATORY_RULES injection: ${String(error)}`);
     }
     const modelCandidates = collectModelCandidates(input, spec, options);
     const promptLimitBytes = resolvePromptLimitBytes(spec);

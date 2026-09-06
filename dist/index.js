@@ -23086,7 +23086,7 @@ ${mandatoryRulesBlock}`;
     resolvedPrompt
   };
 }
-var MANDATORY_RULES_TOKEN_LIMIT = 2000, SKILL_NAME_PATTERN, OPTIONALLY_ABSENT_PLACEHOLDERS, TemplatePlaceholderError;
+var MANDATORY_RULES_TOKEN_LIMIT = 2400, SKILL_NAME_PATTERN, OPTIONALLY_ABSENT_PLACEHOLDERS, TemplatePlaceholderError;
 var init_task_prompt = __esm(() => {
   init_templateEngine();
   init_mandatory_rules();
@@ -23110,6 +23110,38 @@ var init_task_prompt = __esm(() => {
       this.unresolved = unresolved;
     }
   };
+});
+
+// src/specialist/required-platform-rules.ts
+function buildRequiredPlatformRulesInjection(cwd, budgetLimit = Number.POSITIVE_INFINITY) {
+  const resolved = buildMandatoryRulesInjection({
+    cwd,
+    specialist: {
+      mandatory_rules: {
+        disable_default_globals: true,
+        template_sets: [],
+        inline_rules: []
+      }
+    }
+  });
+  const requiredCandidates = resolved.sections.filter((section) => section.priority === "must_keep");
+  const compiled = compileMandatoryRulesBudget(requiredCandidates, budgetLimit);
+  const injectedIds = new Set(compiled.injectedSectionIds);
+  const retainedRequired = requiredCandidates.filter((section) => injectedIds.has(section.setId));
+  return {
+    ...resolved,
+    ...compiled,
+    setsLoaded: retainedRequired.map((section) => section.setId),
+    ruleCount: retainedRequired.reduce((count, section) => count + section.ruleCount, 0),
+    inlineRulesCount: 0,
+    globalsDisabled: true
+  };
+}
+function buildRequiredPlatformRulesBlock(cwd, budgetLimit = Number.POSITIVE_INFINITY) {
+  return buildRequiredPlatformRulesInjection(cwd, budgetLimit).block;
+}
+var init_required_platform_rules = __esm(() => {
+  init_mandatory_rules();
 });
 
 // src/pi/read-line-numbers-extension.ts
@@ -25479,6 +25511,13 @@ ${buildBeadBoundaryInstruction(runCwd, options.worktreeBoundary)}`.trim();
       system_prompt_present: !!prompt.system
     });
     let agentsMd = renderTemplate(prompt.system ?? "", beadTemplateVariables);
+    if (execution.bare) {
+      const requiredPlatformRulesBlock = buildRequiredPlatformRulesBlock(runCwd);
+      if (requiredPlatformRulesBlock.trim())
+        agentsMd += `
+
+${requiredPlatformRulesBlock}`;
+    }
     let staticTokens = 0;
     let memoryTokens = 0;
     let gitnexusTokens = 0;
@@ -25937,6 +25976,7 @@ var init_runner = __esm(() => {
   init_templateEngine();
   init_task_prompt();
   init_mandatory_rules();
+  init_required_platform_rules();
   init_session();
   init_circuitBreaker();
   init_observability_sqlite();
@@ -33860,16 +33900,14 @@ async function runScriptSpecialist(input2, options) {
       ...resolvedToolContractBlock ? { resolved_tool_contract: resolvedToolContractBlock } : {}
     };
     let prompt = applyOutputContract(renderTaskTemplate(template, variables), spec);
-    if (!spec.specialist.execution.bare) {
-      try {
-        const mandatoryRulesBlock = buildMandatoryRulesInjection({ cwd: baseDir, specialist: spec.specialist }).block;
-        if (mandatoryRulesBlock.trim())
-          prompt = `${prompt}
+    try {
+      const mandatoryRulesBlock = spec.specialist.execution.bare ? buildRequiredPlatformRulesBlock(baseDir) : buildMandatoryRulesInjection({ cwd: baseDir, specialist: spec.specialist }).block;
+      if (mandatoryRulesBlock.trim())
+        prompt = `${prompt}
 
 ${mandatoryRulesBlock}`;
-      } catch (error2) {
-        console.warn(`[script-runner] Skipping MANDATORY_RULES injection: ${String(error2)}`);
-      }
+    } catch (error2) {
+      console.warn(`[script-runner] Skipping MANDATORY_RULES injection: ${String(error2)}`);
     }
     const modelCandidates = collectModelCandidates(input2, spec, options);
     const promptLimitBytes = resolvePromptLimitBytes(spec);
@@ -34401,6 +34439,7 @@ var init_script_runner = __esm(() => {
   init_session();
   init_read_line_numbers_extension();
   init_mandatory_rules();
+  init_required_platform_rules();
   init_observability_db();
   init_observability_sqlite();
   init_runner();
