@@ -11,6 +11,8 @@
  * server construct.
  */
 
+import type { StepContract } from './step-contract.js';
+
 /** Stable logical participant identity — the role, across activations. */
 export type ParticipantId = string;
 
@@ -152,6 +154,8 @@ export interface ActivationHandle {
   access: WorkspaceAccess;
   workspace: WorkspaceIdentity;
   resolvedModel: string;
+  /** The bounded contract this activation was compiled to. Derived, never persisted. */
+  stepContract: StepContract;
   /** Resolves when the activation reaches a validated result. */
   result: Promise<ActivationResult>;
 }

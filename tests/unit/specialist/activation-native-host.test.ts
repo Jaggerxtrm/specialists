@@ -382,6 +382,36 @@ describe('NativeActivationHost — defects found by the live smoke', () => {
     expect(sink.events.every(e => e.participantId === 'specialist::researcher')).toBe(true);
   });
 
+  it('attaches a compiled StepContract to the activation and records its provenance', async () => {
+    const record: { createArgs?: Record<string, unknown> } = {};
+    const session = fakeSession({ record });
+    const sink = collectingSink();
+    const host = new NativeActivationHost({
+      beadGate: NO_CONTRACT_STATE,
+      loader: loaderFor(readOnlySpec()),
+      beadsClient: { readBead: () => BEAD } as never,
+      loadSdk: async () => makeSdk(record, session),
+      forensics: sink,
+      cwd: process.cwd(),
+    });
+
+    const handle = await host.start({
+      specialist: 'researcher',
+      beadId: 'ISSUE-1',
+      requestedByParticipantId: 'coordinator:test',
+    });
+    await handle.result;
+
+    expect(handle.stepContract.rootWorkRef).toBe('ISSUE-1');
+    expect(handle.stepContract.provenance.specialist).toBe('researcher');
+    expect(handle.stepContract.nonGoals).toEqual(['Does not fix the thing.']);
+    expect(sink.names).toContain('step_contract_compiled');
+
+    // Compilation is derived and creates nothing: the root ref is the Bead itself, never
+    // a synthetic step id that would seed a second work graph.
+    expect(handle.stepContract.rootWorkRef).toBe(handle.beadId);
+  });
+
   it('passes the resolved pi Model object to createAgentSession, never a provider-qualified string', async () => {
     const record: { createArgs?: Record<string, unknown> } = {};
     const session = fakeSession({ record });

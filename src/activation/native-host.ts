@@ -25,6 +25,7 @@ import { resolveRuntimeToolContract } from '../pi/session.js';
 import { resolveModelChain } from '../specialist/model-chain.js';
 import { BeadsClient } from '../specialist/beads.js';
 import { evaluateBeadReadiness, type BeadGateOptions } from './bead-gate.js';
+import { compileStepContract, type StepContract } from './step-contract.js';
 import { loadPiSdk, type PiSdk, type PiAgentSessionLike, type PiAgentSessionEvent } from './pi-sdk.js';
 import { createGateModelRuntime, validateModelAvailable } from './model-gate.js';
 import {
@@ -216,6 +217,25 @@ export class NativeActivationHost {
       worktreePath: this.cwd,
     };
 
+    // PRD §15: bound this activation to its role. Derived and in-memory — compiling a
+    // StepContract creates no issue, chain, or graph (Phase 4, invariant 4).
+    const stepContract = compileStepContract({
+      bead,
+      specialist: specialist.specialist.metadata.name,
+      responseFormat: execution.response_format,
+      now: this.now,
+    });
+
+    emit('step_contract_compiled', {
+      root_work_ref: stepContract.rootWorkRef,
+      inputs: stepContract.inputs.length,
+      outputs: stepContract.outputs.length,
+      non_goals: stepContract.nonGoals.length,
+      constraints: stepContract.constraints?.length ?? 0,
+      validation: stepContract.validation?.length ?? 0,
+      source_bead_revision: stepContract.provenance.sourceBeadRevision ?? null,
+    });
+
     emit('activation_admitted', {
       tier, access,
       configured_model: configuredModel ?? null,
@@ -289,6 +309,7 @@ export class NativeActivationHost {
       specialist: request.specialist,
       beadId: request.beadId,
       access, workspace, resolvedModel,
+      stepContract,
       result,
     };
   }
