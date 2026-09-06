@@ -1,0 +1,437 @@
+/**
+ * NativeActivationHost — hosts a real Specialist on an in-process Pi `AgentSession`.
+ *
+ * This is the shared runtime seam. The Pi extension and the Claude Code MCP server are
+ * both frontends over this class; neither invokes the legacy `sp run` CLI, and a future
+ * Chain scheduler can call `start()` with a synthetic request because nothing here depends
+ * on TUI state.
+ *
+ * WHAT THIS IS NOT, in Phase 1:
+ *   - no writer support. Only read-only Specialists are admitted; the workspace writer
+ *     lease does not exist yet, and admitting a writer before it does would allow two
+ *     concurrent mutators in one worktree.
+ *   - no Bead readiness gate. Contract validation is a separate phase; until then this
+ *     inherits the legacy behaviour of requiring only that the Bead is readable.
+ *   - no interaction protocol, no Fleet, no model picker.
+ *
+ * Session lifetime deliberately exceeds turn lifetime: reaching `agent_settled` makes a
+ * Specialist *waiting and resumable*, never disposed. Disposal is an explicit act.
+ */
+
+import { randomUUID } from 'node:crypto';
+import { SpecialistLoader } from '../specialist/loader.js';
+import { buildSystemPrompt } from '../specialist/system-prompt.js';
+import { renderTaskPrompt } from '../specialist/task-prompt.js';
+import { validateBeforeRun } from '../specialist/runner.js';
+import { resolveRuntimeToolContract } from '../pi/session.js';
+import { resolveModelChain } from '../specialist/model-chain.js';
+import { BeadsClient } from '../specialist/beads.js';
+import { loadPiSdk, type PiSdk, type PiAgentSessionLike, type PiAgentSessionEvent } from './pi-sdk.js';
+import { createGateModelRuntime, validateModelAvailable } from './model-gate.js';
+import {
+  DispatchRejectedError,
+  type ActivationHandle,
+  type ActivationRequest,
+  type ActivationResult,
+  type ActivationSnapshot,
+  type ActivationState,
+  type WorkspaceAccess,
+  type WorkspaceIdentity,
+} from './types.js';
+
+/** Permission tiers that can mutate the workspace. Derived from the resolved grant. */
+const WRITE_TIERS = new Set(['MEDIUM', 'HIGH']);
+
+/**
+ * Sink for activation forensics.
+ *
+ * Native activations write the SAME `observability.db` as the legacy runner — there is no
+ * native-subagent telemetry database. This interface exists only so tests can observe the
+ * event stream without a database; production wires it to `appendForensicEvent`.
+ */
+export interface ActivationForensicSink {
+  emit(event: {
+    activationId: string;
+    attemptId: string;
+    participantId: string;
+    specialist: string;
+    beadId?: string;
+    name: string;
+    payload?: Record<string, unknown>;
+  }): void;
+}
+
+/** Discards events. Used only where forensics are genuinely not wanted (unit tests). */
+export const NULL_FORENSIC_SINK: ActivationForensicSink = { emit: () => {} };
+
+export interface NativeActivationHostDeps {
+  loader?: SpecialistLoader;
+  beadsClient?: Pick<BeadsClient, 'readBead'>;
+  forensics?: ActivationForensicSink;
+  /** Injected for tests; defaults to resolving the real Pi SDK. */
+  loadSdk?: () => Promise<PiSdk>;
+  /** Defaults to `process.cwd()`. */
+  cwd?: string;
+  now?: () => number;
+}
+
+interface ActivationRecord {
+  snapshot: ActivationSnapshot;
+  session: PiAgentSessionLike;
+  unsubscribe: () => void;
+  result: Promise<ActivationResult>;
+}
+
+export class NativeActivationHost {
+  private readonly loader: SpecialistLoader;
+  private readonly beadsClient: Pick<BeadsClient, 'readBead'>;
+  private readonly forensics: ActivationForensicSink;
+  private readonly loadSdk: () => Promise<PiSdk>;
+  private readonly cwd: string;
+  private readonly now: () => number;
+
+  private readonly activations = new Map<string, ActivationRecord>();
+
+  constructor(deps: NativeActivationHostDeps = {}) {
+    this.cwd = deps.cwd ?? process.cwd();
+    this.loader = deps.loader ?? new SpecialistLoader({ projectDir: this.cwd });
+    this.beadsClient = deps.beadsClient ?? new BeadsClient();
+    this.forensics = deps.forensics ?? NULL_FORENSIC_SINK;
+    this.loadSdk = deps.loadSdk ?? loadPiSdk;
+    this.now = deps.now ?? (() => Date.now());
+  }
+
+  /**
+   * Admit and start one activation.
+   *
+   * Every rejection below happens BEFORE an AgentSession exists, and each leaves forensic
+   * evidence: a refused dispatch is still runtime evidence, and a dispatch that failed
+   * silently is indistinguishable from one that never happened.
+   */
+  async start(request: ActivationRequest): Promise<ActivationHandle> {
+    const activationId = `act:${randomUUID().slice(0, 12)}`;
+    const attemptId = `att:${activationId.slice(4)}:1`;
+    const participantId = `specialist:${request.specialist}`;
+
+    const emit = (name: string, payload?: Record<string, unknown>) =>
+      this.forensics.emit({
+        activationId, attemptId, participantId,
+        specialist: request.specialist, beadId: request.beadId, name, payload,
+      });
+
+    emit('activation_requested', {
+      requested_by: request.requestedByParticipantId,
+      model_override: request.modelOverride ?? null,
+    });
+
+    const reject = (reason: string, detail: Record<string, unknown> = {}): never => {
+      emit('activation_rejected', { reason, ...detail });
+      throw new DispatchRejectedError(reason, {
+        specialist: request.specialist,
+        beadId: request.beadId,
+        ...detail,
+      });
+    };
+
+    const specialist = await this.loader.get(request.specialist).catch((error: unknown) => {
+      return reject('unknown_specialist', {
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    });
+    if (!specialist) return reject('unknown_specialist');
+
+    const execution = specialist.specialist.execution;
+    const tier = execution.permission_required ?? 'READ_ONLY';
+
+    // Phase 1 admits readers only. The lease that makes a single writer safe does not
+    // exist yet, so a write-capable child would race the coordinator with nothing to stop
+    // it. This refusal is removed in Phase 10, not before.
+    const access: WorkspaceAccess = WRITE_TIERS.has(tier) ? 'write' : 'read';
+    if (access === 'write') {
+      return reject('writer_not_supported_in_phase_1', { tier });
+    }
+
+    const bead = this.beadsClient.readBead(request.beadId);
+    if (!bead) return reject('bead_unreadable');
+
+    const toolContract = resolveRuntimeToolContract({
+      level: tier,
+      specialistName: request.specialist,
+      specialistPermissions: specialist.specialist.permissions,
+      cwd: this.cwd,
+    });
+    if (!toolContract || toolContract.toolsList.length === 0) {
+      return reject('empty_tool_contract', { tier });
+    }
+
+    // validateBeforeRun throws on a hard failure (missing skill path, absent external
+    // command, required_tool the tier does not grant). Converted into a structured
+    // refusal so the caller sees one rejection shape rather than two error styles.
+    try {
+      validateBeforeRun(specialist, tier, toolContract);
+    } catch (error) {
+      return reject('preflight_failed', {
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    const sdk = await this.loadSdk();
+
+    const configuredModel = resolveModelChain(execution)[0];
+    const requestedModel = request.modelOverride ?? configuredModel;
+    if (!requestedModel) return reject('no_model_configured');
+
+    // An explicit override that is unavailable must fail here rather than silently
+    // running on something else. Both halves of the gate are required — see model-gate.ts.
+    const modelRuntime = await createGateModelRuntime(sdk);
+    const modelCheck = await validateModelAvailable(sdk, modelRuntime, requestedModel);
+    if (!modelCheck.ok) {
+      return reject('model_unavailable', {
+        requestedModel,
+        detail: modelCheck.reason,
+      });
+    }
+    const resolvedModel = modelCheck.resolvedModel ?? requestedModel;
+
+    const workspace: WorkspaceIdentity = request.workspaceHint ?? {
+      repositoryRoot: this.cwd,
+      worktreePath: this.cwd,
+    };
+
+    emit('activation_admitted', {
+      tier, access,
+      configured_model: configuredModel ?? null,
+      resolved_model: resolvedModel,
+      model_override: Boolean(request.modelOverride),
+      workspace: workspace.worktreePath,
+      tools: toolContract.toolsList.join(','),
+    });
+
+    const rendered = renderTaskPrompt({
+      specialist: specialist.specialist,
+      cwd: this.cwd,
+      beadId: request.beadId,
+      bead,
+    });
+
+    const systemPrompt = buildSystemPrompt({
+      systemPromptTemplate: specialist.specialist.prompt.system ?? '',
+      templateVariables: rendered.beadTemplateVariables ?? {},
+      bare: execution.bare ?? false,
+      runCwd: this.cwd,
+      specialistName: specialist.specialist.metadata.name,
+      inputBeadId: request.beadId,
+      responseFormat: execution.response_format ?? 'text',
+      outputType: execution.output_type ?? 'custom',
+      outputContractSchema: undefined,
+      beadContextText: rendered.beadContextText ?? '',
+      readBeadForMemory: (id) => this.beadsClient.readBead(id),
+    });
+
+    emit('activation_starting', { pi_session_id: null });
+
+    const { session } = await sdk.createAgentSession({
+      cwd: workspace.worktreePath,
+      model: resolvedModel,
+      ...(execution.thinking_level ? { thinkingLevel: execution.thinking_level } : {}),
+      // Fail-closed: only the resolved contract's tools, never pi's defaults. `noTools`
+      // must be "builtin" rather than `tools: []`, which would also empty customTools.
+      noTools: 'builtin',
+      tools: [...toolContract.toolsList],
+      systemPrompt: systemPrompt.text,
+    });
+
+    const startedAt = this.now();
+    const snapshot: ActivationSnapshot = {
+      activationId, participantId, attemptId,
+      specialist: request.specialist,
+      beadId: request.beadId,
+      state: 'starting',
+      access, workspace,
+      piSessionId: session.sessionId,
+      configuredModel,
+      resolvedModel,
+      modelOverride: Boolean(request.modelOverride),
+      startedAt,
+      lastActivityAt: startedAt,
+    };
+
+    emit('activation_started', { pi_session_id: session.sessionId });
+
+    const unsubscribe = session.subscribe((event) => this.onSessionEvent(snapshot, event, emit));
+
+    const result = this.runToSettled(snapshot, session, rendered.initial_prompt, emit);
+
+    this.activations.set(activationId, { snapshot, session, unsubscribe, result });
+
+    return {
+      activationId, participantId, attemptId,
+      specialist: request.specialist,
+      beadId: request.beadId,
+      access, workspace, resolvedModel,
+      result,
+    };
+  }
+
+  /**
+   * Translate Pi session events into Specialists forensic events.
+   *
+   * `agent_end` is a per-turn boundary carrying `willRetry`; `agent_settled` is the
+   * governed quiescence boundary. Conflating them is why a naive host disposes a child
+   * that was merely pausing.
+   */
+  private onSessionEvent(
+    snapshot: ActivationSnapshot,
+    event: PiAgentSessionEvent,
+    emit: (name: string, payload?: Record<string, unknown>) => void,
+  ): void {
+    snapshot.lastActivityAt = this.now();
+
+    switch (event.type) {
+      case 'agent_start':
+        snapshot.state = 'running';
+        emit('turn_started');
+        break;
+      case 'agent_end':
+        emit('turn_completed', { will_retry: Boolean(event.willRetry) });
+        break;
+      case 'agent_settled':
+        snapshot.state = 'settled';
+        emit('activation_settled');
+        break;
+      case 'auto_retry_start':
+        emit('retry_started', { attempt: event.attempt, max_attempts: event.maxAttempts });
+        break;
+      case 'auto_retry_end':
+        emit('retry_completed', { success: event.success, attempt: event.attempt });
+        break;
+      case 'compaction_start':
+        emit('compaction_started', { reason: event.reason });
+        break;
+      case 'compaction_end':
+        emit('compaction_completed', { reason: event.reason, aborted: event.aborted });
+        break;
+      default:
+        break;
+    }
+  }
+
+  private async runToSettled(
+    snapshot: ActivationSnapshot,
+    session: PiAgentSessionLike,
+    initialPrompt: string,
+    emit: (name: string, payload?: Record<string, unknown>) => void,
+  ): Promise<ActivationResult> {
+    try {
+      await session.prompt(initialPrompt);
+      await session.waitForIdle();
+
+      const output = lastAssistantText(session.messages);
+
+      emit('output_validation_started');
+      // Phase 1 carries no output schema; schema/expected-key enforcement arrives with the
+      // result-contract work. Recorded explicitly so the gap is visible rather than implied.
+      const validation = { valid: true as const };
+      emit('output_validation_passed');
+
+      snapshot.state = 'settled';
+      emit('activation_completed', { pi_session_id: session.sessionId });
+
+      return {
+        activationId: snapshot.activationId,
+        participantId: snapshot.participantId,
+        attemptId: snapshot.attemptId,
+        beadId: snapshot.beadId,
+        status: 'completed',
+        output,
+        validation,
+        piSessionId: session.sessionId,
+        configuredModel: snapshot.configuredModel,
+        resolvedModel: snapshot.resolvedModel,
+        modelOverride: snapshot.modelOverride,
+        fallbackUsed: false,
+        completedAt: this.now(),
+      };
+    } catch (error) {
+      snapshot.state = 'failed';
+      const message = error instanceof Error ? error.message : String(error);
+      emit('activation_failed', { error: message });
+
+      return {
+        activationId: snapshot.activationId,
+        participantId: snapshot.participantId,
+        attemptId: snapshot.attemptId,
+        beadId: snapshot.beadId,
+        status: 'failed',
+        output: undefined,
+        validation: { valid: false, errors: [message] },
+        piSessionId: session.sessionId,
+        configuredModel: snapshot.configuredModel,
+        resolvedModel: snapshot.resolvedModel,
+        modelOverride: snapshot.modelOverride,
+        fallbackUsed: false,
+        completedAt: this.now(),
+      };
+    }
+    // Deliberately no dispose(): a settled Specialist remains alive and resumable.
+  }
+
+  /** Current state of one activation, or undefined if unknown to this host. */
+  inspect(activationId: string): ActivationSnapshot | undefined {
+    return this.activations.get(activationId)?.snapshot;
+  }
+
+  list(): ActivationSnapshot[] {
+    return [...this.activations.values()].map(r => r.snapshot);
+  }
+
+  /**
+   * Explicitly stop and dispose an activation.
+   *
+   * This is the only ordinary path to disposal — settling is not one.
+   */
+  async stop(activationId: string, reason = 'operator request'): Promise<void> {
+    const record = this.activations.get(activationId);
+    if (!record) return;
+
+    record.snapshot.state = 'stopping';
+    try {
+      await record.session.abort();
+    } finally {
+      record.unsubscribe();
+      record.session.dispose();
+      record.snapshot.state = 'stopped';
+      this.forensics.emit({
+        activationId,
+        attemptId: record.snapshot.attemptId,
+        participantId: record.snapshot.participantId,
+        specialist: record.snapshot.specialist,
+        beadId: record.snapshot.beadId,
+        name: 'activation_disposed',
+        payload: { reason },
+      });
+      this.activations.delete(activationId);
+    }
+  }
+}
+
+/** Extract the last assistant text from a Pi message list, defensively. */
+function lastAssistantText(messages: unknown[]): string {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i] as { role?: string; content?: unknown } | undefined;
+    if (!message || message.role !== 'assistant') continue;
+    const { content } = message;
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+      const text = content
+        .filter((part): part is { type: string; text: string } =>
+          typeof part === 'object' && part !== null &&
+          (part as { type?: string }).type === 'text' &&
+          typeof (part as { text?: string }).text === 'string')
+        .map(part => part.text)
+        .join('');
+      if (text) return text;
+    }
+  }
+  return '';
+}

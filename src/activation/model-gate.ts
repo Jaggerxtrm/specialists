@@ -1,0 +1,108 @@
+/**
+ * Pre-creation validation of the model an activation will run on.
+ *
+ * An explicitly requested model that is unavailable must fail BEFORE the AgentSession
+ * exists, rather than silently running on a different model — a Specialist that quietly
+ * ran on a fallback produces results nobody can attribute.
+ *
+ * Two checks are required and neither is sufficient alone. This is not defensiveness; both
+ * failure modes were reproduced against pi 0.84.3:
+ *
+ *   - `resolveCliModel` given a KNOWN provider and an unknown model id returns a
+ *     *fabricated* model with `error: undefined` and only a warning ("Using custom model
+ *     id"). `hasConfiguredAuth(provider)` is then true, so an auth-only gate accepts a
+ *     model that does not exist. Only the `no-match` diagnostic catches this.
+ *   - A real model under a provider with no configured auth resolves cleanly through
+ *     `resolveCliModel`. Only the auth check catches this.
+ *
+ * Provider *reachability* cannot be determined here — neither API probes the network. A
+ * reachable-looking model that fails at request time is a runtime failure, not a dispatch
+ * rejection, and must be reported as such.
+ */
+
+import type { PiSdk, PiModelRuntimeLike, PiModelScopeResult } from './pi-sdk.js';
+
+export interface ModelGateResult {
+  ok: boolean;
+  /** Provider-qualified id actually resolved, when available. */
+  resolvedModel?: string;
+  provider?: string;
+  /** Human-readable rejection reason; present iff `ok` is false. */
+  reason?: string;
+  diagnostics: Array<{ type: string; code: string; message: string; pattern?: string }>;
+}
+
+/**
+ * Create a ModelRuntime suitable for availability checking.
+ *
+ * `refreshOnCreate: false` must NOT be used: it yields zero configured-auth providers and
+ * an empty `getAvailable()`, which would make this gate reject every model. Suppress
+ * network with `allowModelNetwork: false` instead and leave refresh alone.
+ */
+export async function createGateModelRuntime(sdk: PiSdk): Promise<PiModelRuntimeLike> {
+  return sdk.ModelRuntime.create({ allowModelNetwork: false });
+}
+
+/**
+ * Validate that `requested` is a real, authed model.
+ *
+ * @param requested provider-qualified model pattern, e.g. `anthropic/claude-sonnet-4-5`.
+ */
+export async function validateModelAvailable(
+  sdk: PiSdk,
+  modelRuntime: PiModelRuntimeLike,
+  requested: string,
+): Promise<ModelGateResult> {
+  let scope: PiModelScopeResult;
+  try {
+    scope = await sdk.resolveModelScopeWithDiagnostics([requested], modelRuntime);
+  } catch (error) {
+    return {
+      ok: false,
+      reason: `model resolution failed: ${error instanceof Error ? error.message : String(error)}`,
+      diagnostics: [],
+    };
+  }
+
+  const diagnostics = scope.diagnostics ?? [];
+
+  // Half one: a `no-match` diagnostic means the pattern matched nothing among models whose
+  // providers have complete auth configuration. Catches both unknown ids and the
+  // fabricated-custom-model case that `resolveCliModel` would wave through.
+  const noMatch = diagnostics.find(d => d.code === 'no-match');
+  if (noMatch) {
+    return {
+      ok: false,
+      reason: noMatch.message || `no model matches "${requested}"`,
+      diagnostics,
+    };
+  }
+
+  const first = scope.scopedModels?.[0]?.model;
+  if (!first) {
+    return { ok: false, reason: `no model resolved for "${requested}"`, diagnostics };
+  }
+
+  const provider = first.provider;
+  if (!provider) {
+    return { ok: false, reason: `resolved model for "${requested}" has no provider`, diagnostics };
+  }
+
+  // Half two: auth. Catches a real model under an unauthenticated provider.
+  const authed = await modelRuntime.hasConfiguredAuth(provider);
+  if (!authed) {
+    return {
+      ok: false,
+      reason: `provider "${provider}" has no configured auth for "${requested}"`,
+      provider,
+      diagnostics,
+    };
+  }
+
+  return {
+    ok: true,
+    resolvedModel: first.id ? `${provider}/${first.id}`.replace(`${provider}/${provider}/`, `${provider}/`) : requested,
+    provider,
+    diagnostics,
+  };
+}
