@@ -6,41 +6,48 @@ import { buildMandatoryRulesInjection } from '../../../src/specialist/mandatory-
 const repoRoot = process.cwd();
 const specialistsDir = join(repoRoot, 'config', 'specialists');
 
-const retiredSkillTokens = [
+const retiredSkillPathTokens = [
   'test-planning',
   'using-nodes',
-  'specialists-creator/SKILL.md',
-  'default/xt-merge',
-  'default/xt-debugging',
-  'default/clean-code',
+  'specialists-creator',
+  'xt-merge',
+  'xt-debugging',
+  'clean-code',
   'gitnexus-exploring',
   'gitnexus-impact-analysis',
-  'default/find-docs',
-  'default/deepwiki',
-  'default/github-search',
-  'default/last30days',
+  'find-docs',
+  'deepwiki',
+  'github-search',
+  'last30days',
+  'using-quality-gates',
+  'verified-audit',
 ];
 
+const read = (name: string) => JSON.parse(
+  readFileSync(join(specialistsDir, `${name}.specialist.json`), 'utf8'),
+);
+
 describe('skills-v4 default specialist wiring', () => {
-  it('contains no retired v3 skill references in package specialist configs', () => {
+  it('contains no retired v3 entries in specialist skills.paths', () => {
     const files = readdirSync(specialistsDir)
       .filter((name) => name.endsWith('.specialist.json'))
       .sort();
 
     const violations: string[] = [];
     for (const file of files) {
-      const text = readFileSync(join(specialistsDir, file), 'utf8');
-      for (const token of retiredSkillTokens) {
-        if (text.includes(token)) violations.push(`${file}: ${token}`);
+      const spec = JSON.parse(readFileSync(join(specialistsDir, file), 'utf8'));
+      const paths = spec?.specialist?.skills?.paths ?? [];
+      for (const path of paths) {
+        for (const token of retiredSkillPathTokens) {
+          if (String(path).includes(token)) violations.push(`${file}: ${path}`);
+        }
       }
     }
 
     expect(violations).toEqual([]);
   });
 
-  it('wires consolidated skills to the specialists that materially depend on them', () => {
-    const read = (name: string) => JSON.parse(readFileSync(join(specialistsDir, `${name}.specialist.json`), 'utf8'));
-
+  it('wires consolidated skills to specialists that materially depend on them', () => {
     expect(read('planner').specialist.skills.paths).toEqual(['planning']);
     expect(read('chain-coordinator').specialist.skills.paths).toEqual(['using-specialists']);
     expect(read('node-coordinator').specialist.skills.paths).toEqual(['using-specialists']);
@@ -48,6 +55,7 @@ describe('skills-v4 default specialist wiring', () => {
     expect(read('debugger').specialist.skills.paths).toEqual(['engineering-quality', 'gitnexus']);
     expect(read('explorer').specialist.skills.paths).toEqual(['gitnexus']);
     expect(read('seconder').specialist.skills.paths).toEqual(['engineering-quality', 'gitnexus']);
+    expect(read('test-engineer').specialist.skills.paths).toEqual(['planning', 'engineering-quality']);
     expect(read('researcher').specialist.skills.paths).toEqual([
       '~/.xtrm/skills/optional/research-methods/research/SKILL.md',
     ]);
@@ -61,7 +69,7 @@ describe('skills-v4 default specialist wiring', () => {
     expect(read('xt-merge').specialist.skills.paths).toEqual([]);
   });
 
-  it('loads the system-participant invariant even when ordinary global quick rules are disabled', () => {
+  it('keeps the coordinated-system contract in the required core boundary when quick rules are disabled', () => {
     const injection = buildMandatoryRulesInjection({
       cwd: repoRoot,
       specialist: {
@@ -73,10 +81,11 @@ describe('skills-v4 default specialist wiring', () => {
     });
 
     expect(injection.globalsDisabled).toBe(true);
-    expect(injection.setsLoaded).toContain('system-participant');
-    expect(injection.block).toContain('one worker in a coordinated XTRM system');
-    expect(injection.block).toContain('PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, or OUTPUT');
+    expect(injection.setsLoaded).toContain('core-session-boundary');
+    expect(injection.block).toContain('one worker in XTRM');
+    expect(injection.block).toContain('PROBLEM/SUCCESS/SCOPE/NON_GOALS/CONSTRAINTS/VALIDATION/OUTPUT');
     expect(injection.block).toContain('service-knowledge');
     expect(injection.block).toContain('bd memories');
+    expect(injection.block).toContain('ask the coordinator');
   });
 });
